@@ -126,6 +126,7 @@ TCBW_Scripts/
 - Original files remain untouched
 - Temporary conversion files: `filename[Trans].tmp`
 - Final encoded files: `filename.mkv`
+- Maintains original file date and time
 
 ## Configuration Options
 
