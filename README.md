@@ -1,5 +1,11 @@
 # TCBW Scripts - Video Processing Suite
 
+**USE AT YOUR OWN RISK**
+
+The setting in use work for me. You need to make sure things like bitrate meet your quality requirements. THESE WILL NOT WORK FOR UHD.
+
+**Overview**
+
 A collection of powerful video transcoding and deinterlacing scripts optimized for batch processing of video media. These scripts leverage hardware-accelerated encoding to efficiently convert interlaced video content to modern formats with reduced file sizes.
 
 ## Features
@@ -8,9 +14,9 @@ A collection of powerful video transcoding and deinterlacing scripts optimized f
 - **Batch Processing**: Parallel encoding with configurable concurrent jobs
 - **Smart Format Detection**: Automatically detects interlacing and decides whether conversion is needed
 - **Output Format**: x265 (HEVC) video codec with AAC audio
-- **Progress Tracking**: Real-time progress monitoring during batch operations
-- **Multi-Platform**: PowerShell scripts for Windows, shell scripts for Unix-like systems
-- **Organized Structure**: Separate handling for Movies, TV Shows, and Foreign content
+- **Progress Tracking**: Real-time progress monitoring during batch operations (TV Powershell only at this stage.)
+- **Multi-Platform**: PowerShell scripts for Windows, shell scripts for Unix-like systems. QSV used in Powershell and VAAPI in bash.
+- **Organized Structure**: Separate handling for Movies, TV Shows, and Foreign content (WIP)
 
 ## Prerequisites
 
