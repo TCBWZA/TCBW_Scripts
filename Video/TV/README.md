@@ -7,7 +7,7 @@ Deinterlacing and transcoding scripts optimized for TV show content. These scrip
 ### Common
 - **FFmpeg**: v4.0 or later, **must be on system PATH**
   - Verify installation: `ffmpeg -version`
-  - Windows: `choco install ffmpeg` or download from [ffmpeg.org](https://ffmpeg.org/download.html)
+  - Windows: `winget install FFmpeg` or `choco install ffmpeg` or download from [ffmpeg.org](https://ffmpeg.org/download.html)
   - Linux: `apt install ffmpeg` or `yum install ffmpeg`
 - **FFprobe**: Included with FFmpeg, used for video analysis
 

@@ -65,7 +65,10 @@ See each folder's README for detailed file descriptions and usage information.
 ### Required Software
 - **FFmpeg** and **ffprobe** - Video processing and analysis tools
   - Install via [ffmpeg.org](https://ffmpeg.org/download.html)
-  - Or use package manager: `choco install ffmpeg` (Windows), `brew install ffmpeg` (macOS), or `apt install ffmpeg` (Linux)
+  - Or use package manager: 
+    - Windows: `winget install FFmpeg` or `choco install ffmpeg`
+    - macOS: `brew install ffmpeg`
+    - Linux: `apt install ffmpeg` or `yum install ffmpeg`
 
 ### Hardware Requirements
 - **AMD Encoding**: AMD GPU with VCE support (Radeon RX series or newer)
