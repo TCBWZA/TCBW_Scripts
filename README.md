@@ -1,4 +1,4 @@
-# TCBW Scripts - Video Processing Suite
+# TCBW Scripts
 
 ## Project Structure
 
@@ -63,14 +63,16 @@ See each folder's README for detailed file descriptions and usage information.
 ## Prerequisites
 
 ### Required Software
+
 - **FFmpeg** and **ffprobe** - Video processing and analysis tools
   - Install via [ffmpeg.org](https://ffmpeg.org/download.html)
-  - Or use package manager: 
+  - Or use package manager:
     - Windows: `winget install FFmpeg` or `choco install ffmpeg`
     - macOS: `brew install ffmpeg`
     - Linux: `apt install ffmpeg` or `yum install ffmpeg`
 
 ### Hardware Requirements
+
 - **AMD Encoding**: AMD GPU with VCE support (Radeon RX series or newer)
 - **Intel QSV**: Intel processor with Quick Sync Video support (most modern Intel CPUs)
 - **Recommended**: 4GB+ VRAM, sufficient disk space for temporary files
@@ -78,12 +80,14 @@ See each folder's README for detailed file descriptions and usage information.
 ## Installation
 
 1. **Clone the repository**:
+
    ```bash
    git clone https://github.com/yourusername/TCBW_Scripts.git
    cd TCBW_Scripts
    ```
 
 2. **Verify FFmpeg Installation**:
+
    ```powershell
    # Windows
    ffmpeg -version
@@ -100,16 +104,19 @@ See each folder's README for detailed file descriptions and usage information.
 ### Windows (PowerShell)
 
 **For TV Content** (with Intel QSV):
+
 ```powershell
 .\Video\TV\deinterlace_qsv_x265_aac.ps1
 ```
 
 **For Movies** (with Intel QSV):
+
 ```powershell
 .\Video\Movies\deinterlace_qsv_x265_aac.ps1
 ```
 
 **For Foreign Content** (with Intel QSV):
+
 ```powershell
 .\Video\Foreign\deinterlace_qsv_x265_aac.ps1
 ```
@@ -117,16 +124,19 @@ See each folder's README for detailed file descriptions and usage information.
 ### Unix-like Systems (Bash)
 
 **For TV Content**:
+
 ```bash
 bash ./Video/TV/deinterlace_amd_x265_aac.sh
 ```
 
 **For Movies**:
+
 ```bash
 bash ./Video/Movies/deinterlace_amd_x265_aac.sh
 ```
 
 **For Foreign Content**:
+
 ```bash
 bash ./Video/Foreign/deinterlace_amd_x265_aac.sh
 # or for MP4-specific:
@@ -134,6 +144,7 @@ bash ./Video/Foreign/deinterlacemp4_amd_x265_aac.sh
 ```
 
 For detailed usage instructions and script options, see the README files in each folder:
+
 - [Video/TV/](Video/TV/README.md)
 - [Video/Movies/](Video/Movies/README.md)
 - [Video/Foreign/](Video/Foreign/README.md)
@@ -162,6 +173,7 @@ For detailed usage instructions and script options, see the README files in each
 Edit the script header to customize:
 
 **PowerShell (`deinterlace_qsv_x265_aac.ps1`)**:
+
 ```powershell
 $MaxJobs = 2                    # Number of parallel encoding jobs
 $TempDir = "D:\fasttemp"        # Temporary directory for intermediate files
@@ -169,6 +181,7 @@ $TempDir = "D:\fasttemp"        # Temporary directory for intermediate files
 ```
 
 **Bash (`deinterlace_amd_x265_aac.sh`)**:
+
 ```bash
 MAX_JOBS=2                      # Number of parallel encoding jobs
 ```
@@ -176,12 +189,14 @@ MAX_JOBS=2                      # Number of parallel encoding jobs
 ## Encoder Selection
 
 ### Intel QSV (Quick Sync Video)
+
 - **File**: `deinterlace_qsv_x265_aac.ps1` or `deinterlace_qsv_x265_aac.sh`
 - **Best For**: Intel processors with integrated graphics
 - **Performance**: Excellent power efficiency
 - **Compatibility**: Works with most modern Intel CPUs
 
 ### AMD
+
 - **File**: `deinterlace_amd_x265_aac.sh`
 - **Best For**: AMD GPUs (Radeon RX series)
 - **Performance**: High throughput for batch processing
@@ -220,6 +235,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Contributing
 
 Contributions are welcome! Feel free to:
+
 - Report bugs and issues
 - Suggest improvements and new features
 - Submit pull requests with enhancements
