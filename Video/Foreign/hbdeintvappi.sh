@@ -33,7 +33,7 @@ for f in "${files[@]}"; do
     echo "Checking $f"
 
     #####################################################
-    # Unified ffprobe JSON (requires jq)
+    # ffprobe JSON (requires jq)
     #####################################################
 
     probe=$(ffprobe -v quiet -print_format json -show_streams "$f")
@@ -56,10 +56,10 @@ for f in "${files[@]}"; do
     fi
 
     #####################################################
-    # Transcoding section
+    # Transcoding section (HandBrakeCLI)
     #####################################################
 
-    tmpfile="$dir/${base_no_ext}[Trans].tmp"
+    tmpfile="$dir/${base_no_ext}[Trans].tmp.mkv"
 
     echo "Input         : $f"
     echo "Temp Out      : $tmpfile"
@@ -67,12 +67,12 @@ for f in "${files[@]}"; do
     [ -f "$tmpfile" ] && rm -f "$tmpfile"
 
     #####################################################
-    # Optimised interlace detection
+    # Interlace detection → HandBrake filter selection
     #####################################################
 
     if [[ "$field_order" == "progressive" ]]; then
-        echo "Progressive (from ffprobe) -- skipping idet"
-        vf_chain="hwdownload,format=yuv420p,format=nv12,hwupload"
+        echo "Progressive (from ffprobe) -- no deinterlace"
+        hb_filter=""
     else
         echo "Detecting interlacing..."
 
@@ -84,37 +84,31 @@ for f in "${files[@]}"; do
             | grep -oP 'Interlaced:\s*\K[0-9]+')
 
         if (( interlaced_count > 0 )); then
-            echo "Detected interlaced video -- enabling bwdif"
-            vf_chain="hwdownload,format=yuv420p,bwdif=mode=send_frame,format=nv12,hwupload"
+            echo "Detected interlaced video -- enabling decomb"
+            hb_filter="--decomb"
         else
-            echo "Detected progressive video -- skipping deinterlace"
-            vf_chain="hwdownload,format=yuv420p,format=nv12,hwupload"
+            echo "Detected progressive video -- no deinterlace"
+            hb_filter=""
         fi
     fi
 
-    echo "Using filter chain: $vf_chain"
+    echo "Using HandBrake filter: $hb_filter"
 
     (
-        ffmpeg -nostdin -hide_banner \
-            -vaapi_device /dev/dri/renderD128 \
-            -hwaccel vaapi \
-            -hwaccel_output_format vaapi \
-            -i "$f" \
-            -copyts \
-            -fflags +genpts \
-            -fps_mode passthrough \
-            -vf "$vf_chain" \
-            -c:v hevc_vaapi \
-            -qp 22 \
-            -rc_mode VBR \
-            -b:v 1800k \
-            -maxrate 2000k \
-            -bufsize 4000k \
-            -quality 2 \
-            -c:a aac -b:a 160k \
-            -c:s copy \
-            -f matroska \
-            "$tmpfile"
+        HandBrakeCLI \
+            --input "$f" \
+            --output "$tmpfile" \
+            --format mkv \
+            --encoder vaapi_h265 \
+            --encoder-preset medium \
+            --quality 22 \
+            --vb 1800 \
+            --maxHeight 2160 \
+            --aencoder av_aac \
+            --ab 160 \
+            --mixdown stereo \
+            --subtitle copy \
+            $hb_filter
 
         if [[ $? -eq 0 ]]; then
             touch -r "$f" "$tmpfile"
@@ -128,7 +122,7 @@ for f in "${files[@]}"; do
     ) &
 
     #####################################################
-    # Improved parallelism using wait -n (Bash 5+)
+    # Parallel job control
     #####################################################
 
     while (( $(jobs -r | wc -l) >= MAX_JOBS )); do
@@ -140,13 +134,13 @@ done
 wait
 
 #####################################################
-# Cleanup section (combined and efficient)
+# Cleanup section
 #####################################################
 
 echo "Cleaning up leftover [Trans] files..."
 
 find . \
-  \( -type f -name '*[Trans].tmp' \
+  \( -type f -name '*[Trans].tmp*' \
   -o -type f -name '*[Trans].nfo' \
   -o -type f -name '*[Trans].jpg' \
   -o -type d -name '*[Trans].trickplay' \) \

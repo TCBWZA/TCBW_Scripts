@@ -1,103 +1,179 @@
+Write-Host "Starting up…"
+Write-Host "Scanning for files..."
+
+# Max parallel encodes
 $MaxJobs = 2
 
-Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
+# Optional temp directory for intermediate files (use "" to keep alongside source)
+$TempDir = "D:\fasttemp"   # or "" for same folder as source
+
+# Gather files
+$AllFiles = Get-ChildItem -Recurse -Include *.mkv,*.ts -File | Where-Object {
+    $Base = [System.IO.Path]::GetFileNameWithoutExtension($_.FullName)
+    -not ($Base.Contains("[Cleaned]") -or $Base.Contains("[Trans]")) -and
+    $_.Length -ge 1GB
+}
+
+$Total = $AllFiles.Count
+Write-Host "Found $Total files."
+Write-Host "Preparing parallel encoding tasks..."
+
+# Shared progress state
+$Progress = [System.Collections.Concurrent.ConcurrentDictionary[string,int]]::new()
+$Progress["Completed"] = 0
+
+Write-Host "Starting parallel processing with $MaxJobs concurrent jobs..."
+
+# Progress bar job (runs in main runspace)
+$progressJob = Start-Job -ArgumentList $Total, $Progress -ScriptBlock {
+    param($Total, $Progress)
+
+    while ($Progress["Completed"] -lt $Total) {
+        $percent = if ($Total -gt 0) { ($Progress["Completed"] / $Total) * 100 } else { 100 }
+        Write-Progress -Activity "Encoding Files" `
+                       -Status "$($Progress["Completed"]) of $Total completed" `
+                       -PercentComplete $percent
+        Start-Sleep -Milliseconds 300
+    }
+
+    Write-Progress -Activity "Encoding Files" -Completed
+}
+
+# Parallel processing
+$AllFiles | ForEach-Object -Parallel {
+
+    param($TempDir, $Progress)
 
     $File = $_.FullName
     $Base = [System.IO.Path]::GetFileNameWithoutExtension($File)
     $Dir  = $_.DirectoryName
 
-    # Skip cleaned/transcoded files 
-    if ($Base.Contains("[Cleaned]") -or $Base.Contains("[Trans]")) {
-        Remove-Item $File -Force 
-	return
+    # Decide temp location
+    if ([string]::IsNullOrWhiteSpace($TempDir)) {
+        $Tmp = Join-Path $Dir "$Base`[Trans`].tmp"
     }
-    # Skip small files (<1GB)
-    if ($_.Length -lt 1GB) {
-        return
+    else {
+        $Tmp = Join-Path $TempDir "$Base`[Trans`].tmp"
     }
 
     Write-Host "Checking $File"
 
-    # ffprobe checks
-    $vcodec = ffprobe -v error -select_streams v:0 `
-        -show_entries stream=codec_name -of default=nw=1:nk=1 "$File"
+    # Single ffprobe call (JSON)
+    $probeJson = ffprobe -v quiet -print_format json -show_streams "$File"
+    $probe     = $probeJson | ConvertFrom-Json
 
-    $vbitrate = ffprobe -v error -select_streams v:0 `
-        -show_entries stream=bit_rate -of default=nw=1:nk=1 "$File"
+    $video = $probe.streams | Where-Object { $_.codec_type -eq "video" } | Select-Object -First 1
+    $audio = $probe.streams | Where-Object { $_.codec_type -eq "audio" } | Select-Object -First 1
 
-    $acodec = ffprobe -v error -select_streams a:0 `
-        -show_entries stream=codec_name -of default=nw=1:nk=1 "$File"
-
-    $field = ffprobe -v error -select_streams v:0 `
-        -show_entries stream=field_order -of default=nw=1:nk=1 "$File"
+    $vcodec   = $video.codec_name
+    $vbitrate = $video.bit_rate
+    $field    = $video.field_order
+    $acodec   = $audio.codec_name
 
     $NeedsConvert = $false
 
     if ($vcodec -ne "hevc") { $NeedsConvert = $true }
-    if ([int]$vbitrate -gt 2500000) { $NeedsConvert = $true }
+    if ($vbitrate -match '^\d+$' -and [int]$vbitrate -gt 2500000) { $NeedsConvert = $true }
     if ($acodec -ne "aac") { $NeedsConvert = $true }
     if ($field -ne "progressive") { $NeedsConvert = $true }
 
     if (-not $NeedsConvert) {
         Write-Host "Skipping $File -- already in desired format"
+        $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
         return
     }
 
-    # Temp output
-    $Tmp = Join-Path $Dir "$Base`[Trans`].tmp"
+    # Remove stale temp file
+    if (Test-Path -LiteralPath $Tmp) {
+        Remove-Item -LiteralPath $Tmp -Force
+    }
 
-    if (Test-Path $Tmp) { Remove-Item $Tmp -Force }
-
-    # Detect interlacing using idet
-    $idet = ffmpeg -hide_banner -filter:v idet -frames:v 500 -an -f null - "$File" 2>&1
-    $InterlacedCount = ($idet | Select-String -Pattern "Interlaced:\s*(\d+)" -AllMatches).Matches.Groups[1].Value
-
-    if ([int]$InterlacedCount -gt 0) {
-        $vf = "deinterlace_qsv"
-    } else {
+    # Interlace detection (optimised)
+    if ($field -eq "progressive") {
         $vf = "format=qsv"
     }
+    else {
+        $idet = ffmpeg -hide_banner `
+            -skip_frame nokey `
+            -filter:v idet `
+            -frames:v 200 `
+            -an -f null - "$File" 2>&1
 
-    # Wait for job slots
-    while ((Get-Job -State Running).Count -ge $MaxJobs) {
-        Start-Sleep -Seconds 1
+        $match = $idet | Select-String -Pattern "Interlaced:\s*(\d+)" -AllMatches
+        $InterlacedCount = if ($match) { [int]$match.Matches.Groups[1].Value } else { 0 }
+
+        $vf = if ($InterlacedCount -gt 0) { "deinterlace_qsv" } else { "format=qsv" }
     }
 
-    # Start encoding job
-    Start-Job -ScriptBlock {
-        param($File, $Tmp, $vf)
+    Write-Host "Processing $File"
 
-        ffmpeg -hide_banner `
-            -hwaccel qsv -hwaccel_output_format qsv `
-            -i "$File" `
-            -vf "$vf" `
-            -c:v hevc_qsv `
-            -b:v 1800k -maxrate 2000k -bufsize 4000k `
-            -c:a aac -b:a 160k `
-            -c:s copy `
-            -f matroska `
-            "$Tmp"
+    ffmpeg -hide_banner `
+        -hwaccel qsv -hwaccel_output_format qsv `
+        -i "$File" `
+        -vf "$vf" `
+        -c:v hevc_qsv `
+        -b:v 1800k -maxrate 2000k -bufsize 4000k `
+        -c:a aac -b:a 160k `
+        -c:s copy `
+        -f matroska `
+        "$Tmp"
 
-        if ($LASTEXITCODE -eq 0) {
-            # Replace original
-            $timestamp = (Get-Item $File).LastWriteTime
+    if ($LASTEXITCODE -eq 0) {
+        try {
+            $timestamp = (Get-Item -LiteralPath $File).LastWriteTime
             Remove-Item -LiteralPath $File -Force
-            Move-Item -LiteralPath $Tmp -Destination $File
-            (Get-Item $File).LastWriteTime = $timestamp
-        } else {
-            Remove-Item $Tmp -Force
+            Move-Item -LiteralPath $Tmp -Destination $File -Force
+            (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
         }
+        catch {
+            Write-Host "Error finalizing $File : $($_.Exception.Message)"
+            if (Test-Path -LiteralPath $Tmp) {
+                Remove-Item -LiteralPath $Tmp -Force
+            }
+        }
+    }
+    else {
+        if (Test-Path -LiteralPath $Tmp) {
+            Remove-Item -LiteralPath $Tmp -Force
+        }
+    }
 
-    } -ArgumentList $File, $Tmp, $vf
+    # Update global progress
+    $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
 
-}
+} -ThrottleLimit $MaxJobs -ArgumentList @($TempDir, $Progress)
 
-# Wait for all jobs
-Get-Job | Wait-Job | Receive-Job
-Get-Job | Remove-Job
+# Wait for progress job to finish and clean it up
+Wait-Job $progressJob | Out-Null
+Receive-Job $progressJob | Out-Null
+Remove-Job $progressJob
 
-# Cleanup stray temp files
-Get-ChildItem -Recurse -Filter "*[Trans].tmp" | Remove-Item -Force
-Get-ChildItem -Recurse -Filter "*[Trans].nfo" | Remove-Item -Force
-Get-ChildItem -Recurse -Filter "*[Trans].jpg" | Remove-Item -Force
-Get-ChildItem -Recurse -Filter "*[Trans].trickplay" | Remove-Item -Recurse -Force
+Write-Host "All encoding tasks completed."
+Write-Host "Cleaning up leftover [Trans] sidecar files and directories..."
+
+# Cleanup leftover [Trans] sidecar files and directories
+$filePatterns = @(
+    "*`[Trans`].tmp",
+    "*`[Trans`].nfo",
+    "*`[Trans`].jpg"
+)
+
+$dirPatterns = @(
+    "*`[Trans`].trickplay"
+)
+
+# Remove matching files
+Get-ChildItem -Recurse -File |
+    Where-Object { $filePatterns -contains $_.Name } |
+    ForEach-Object {
+        Remove-Item -LiteralPath $_.FullName -Force
+    }
+
+# Remove matching directories
+Get-ChildItem -Recurse -Directory |
+    Where-Object { $dirPatterns -contains $_.Name } |
+    ForEach-Object {
+        Remove-Item -LiteralPath $_.FullName -Force -Recurse
+    }
+
+Write-Host "Cleanup complete. All tasks finished."

@@ -1,12 +1,54 @@
 # TCBW Scripts - Video Processing Suite
 
-**USE AT YOUR OWN RISK**
+## Project Structure
 
-The setting in use work for me. You need to make sure things like bitrate meet your quality requirements. THESE WILL NOT WORK FOR UHD.
+```
+TCBW_Scripts/
+├── README.md (this file)
+├── LICENSE
+├── Linux/
+│   └── lxc/
+│       └── pve-lxc-upgrade.sh         - Automated LXC container updater for Proxmox
+├── Video/
+│   ├── Foreign/                        - Deinterlacing scripts for foreign language content
+│   │   ├── README.md
+│   │   ├── deinterlace_amd_x265_aac.sh - AMD GPU deinterlacing (bash)
+│   │   ├── deinterlace_qsv_x265_aac.ps1 - Intel QSV deinterlacing (PowerShell)
+│   │   ├── deinterlacemp4_amd_x265_aac.sh - MP4-specific AMD deinterlacing
+│   │   └── hbdeintvappi.sh            - Alternative AMD VAAPI deinterlacing
+│   ├── Movies/                         - Deinterlacing scripts for movies
+│   │   ├── README.md
+│   │   ├── deinterlace_amd_x265_aac.sh - AMD GPU deinterlacing (bash)
+│   │   └── deinterlace_qsv_x265_aac.ps1 - Intel QSV deinterlacing (PowerShell)
+│   └── TV/                             - Deinterlacing scripts for TV shows
+│       ├── README.md
+│       ├── deinterlace_amd_x265_aac.sh - AMD GPU deinterlacing (bash)
+│       └── deinterlace_qsv_x265_aac.ps1 - Intel QSV deinterlacing (PowerShell)
+└── Files/
+    └── (legacy or additional files)
+```
 
-**Overview**
+## Linux
+
+See [Linux/README.md](Linux/README.md) for detailed descriptions of Linux utilities.
+
+## Video Processing Scripts
+
+**⚠️ USE AT YOUR OWN RISK**
+
+The settings in use work for me. You need to make sure things like bitrate meet your quality requirements. **THESE WILL NOT WORK FOR UHD.**
+
+### Overview
 
 A collection of powerful video transcoding and deinterlacing scripts optimized for batch processing of video media. These scripts leverage hardware-accelerated encoding to efficiently convert interlaced video content to modern formats with reduced file sizes.
+
+### Video Folder Organization
+
+- **[Foreign/](Video/Foreign/README.md)** - Deinterlacing scripts optimized for foreign language content
+- **[Movies/](Video/Movies/README.md)** - Deinterlacing scripts optimized for movie content  
+- **[TV/](Video/TV/README.md)** - Deinterlacing scripts optimized for TV show content
+
+See each folder's README for detailed file descriptions and usage information.
 
 ## Features
 
@@ -16,7 +58,7 @@ A collection of powerful video transcoding and deinterlacing scripts optimized f
 - **Output Format**: x265 (HEVC) video codec with AAC audio
 - **Progress Tracking**: Real-time progress monitoring during batch operations (TV Powershell only at this stage.)
 - **Multi-Platform**: PowerShell scripts for Windows, shell scripts for Unix-like systems. QSV used in Powershell and VAAPI in bash.
-- **Organized Structure**: Separate handling for Movies, TV Shows, and Foreign content (WIP)
+- **Organized Structure**: Separate handling for Movies, TV Shows, and Foreign content
 
 ## Prerequisites
 
@@ -59,11 +101,6 @@ A collection of powerful video transcoding and deinterlacing scripts optimized f
 .\Video\TV\deinterlace_qsv_x265_aac.ps1
 ```
 
-**For TV Content** (with AMD):
-```powershell
-.\Video\TV\deinterlace_amd_x265_aac.ps1
-```
-
 **For Movies** (with Intel QSV):
 ```powershell
 .\Video\Movies\deinterlace_qsv_x265_aac.ps1
@@ -89,31 +126,21 @@ bash ./Video/Movies/deinterlace_amd_x265_aac.sh
 **For Foreign Content**:
 ```bash
 bash ./Video/Foreign/deinterlace_amd_x265_aac.sh
+# or for MP4-specific:
+bash ./Video/Foreign/deinterlacemp4_amd_x265_aac.sh
 ```
+
+For detailed usage instructions and script options, see the README files in each folder:
+- [Video/TV/](Video/TV/README.md)
+- [Video/Movies/](Video/Movies/README.md)
+- [Video/Foreign/](Video/Foreign/README.md)
 
 ## Directory Structure
-
-```
-TCBW_Scripts/
-├── README.md                           # This file
-├── LICENSE                             # MIT License
-├── Files/                              # Additional file resources
-└── Video/                              # Video processing scripts
-    ├── Foreign/                        # Foreign language content
-    │   ├── deinterlace_amd_x265_aac.sh
-    │   └── deinterlace_qsv_x265_aac.ps1
-    ├── Movies/                         # Movie content
-    │   ├── deinterlace_amd_x265_aac.sh
-    │   └── deinterlace_qsv_x265_aac.ps1
-    └── TV/                             # TV series content
-        ├── deinterlace_amd_x265_aac.sh
-        └── deinterlace_qsv_x265_aac.ps1
-```
 
 ## How It Works
 
 1. **File Scanning**: Recursively scans for `.mkv` and `.ts` files in the script directory
-2. **Smart Filtering**: Skips files files smaller than 1GB
+2. **Smart Filtering**: Skips files smaller than 1GB
 3. **Format Analysis**: Uses ffprobe to detect:
    - Video codec and bitrate
    - Audio codec
@@ -127,21 +154,20 @@ TCBW_Scripts/
 6. **Parallel Processing**: Encodes multiple files simultaneously (configurable via `$MaxJobs`)
 7. **Output**: Creates new files with quality preservation while reducing file size
 
-## Output Naming
-
-- Original files remain untouched
-- Temporary conversion files: `filename[Trans].tmp`
-- Final encoded files: `filename.mkv`
-- Maintains original file date and time
-
 ## Configuration Options
 
 Edit the script header to customize:
 
+**PowerShell (`deinterlace_qsv_x265_aac.ps1`)**:
 ```powershell
 $MaxJobs = 2                    # Number of parallel encoding jobs
 $TempDir = "D:\fasttemp"        # Temporary directory for intermediate files
                                 # Use "" to keep files in source directory
+```
+
+**Bash (`deinterlace_amd_x265_aac.sh`)**:
+```bash
+MAX_JOBS=2                      # Number of parallel encoding jobs
 ```
 
 ## Encoder Selection
