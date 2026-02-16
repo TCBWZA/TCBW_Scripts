@@ -23,6 +23,10 @@ Compression and transcoding scripts optimized for files at least 5GB in size. Th
 
 - **Bash scripts (AMD)**: Linux/Unix system with bash shell and AMD GPU with VAAPI support (AMD Radeon RX series or newer)
 - **PowerShell scripts (Intel QSV)**: Windows with PowerShell 7.0 or later and Intel processor with Quick Sync Video support
+- **HandBrake-specific scripts**: HandBrakeCLI must be installed and on system PATH
+  - Windows: `winget install HandBrake` or `choco install handbrake` or download from [handbrake.fr](https://handbrake.fr/)
+  - Linux: `apt install handbrake-cli` or `yum install handbrake-cli`
+  - Verify installation: `HandBrakeCLI --version`
 
 ## Files
 
@@ -95,6 +99,14 @@ Features:
 - Parallel encoding support
 - Minimum file size: 5GB
 - **Note**: Does not perform audio/subtitle filtering; use `clean_compress_qsv_x265_aac.ps1` for track selection
+
+**Platform**: Windows with Intel Quick Sync support
+
+### hbcompress_qsv_x265_aac.ps1
+
+**Status**: Stable (HandBrake-specific variant)
+
+HandBrake-optimized PowerShell script using Intel Quick Sync Video (QSV). Specialized for HandBrake encoding workflows and integration. Optimized for files 5GB or larger.
 
 **Platform**: Windows with Intel Quick Sync support
 
