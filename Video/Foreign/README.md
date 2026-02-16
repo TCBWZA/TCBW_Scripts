@@ -113,8 +113,29 @@ HandBrake-optimized PowerShell script using Intel Quick Sync Video (QSV). Specia
 
 ## Notes
 
-- Interlace detection uses two-stage approach: metadata check followed by optional frame-level analysis
-- Temporary files use `.tmp` extension and are cleaned up on success or error
+### Skip Markers
+
+The scripts use hierarchical skip markers to prevent reprocessing of unsuitable content:
+
+- **`.skip` in parent directory**: Marks the entire parent directory as unsuitable for compression. When present, all scripts in that directory will be skipped.
+- **`.skip_SHOWNAME` in current directory**: Marks a specific show or episode group as unsuitable (based on the first word of the filename). Created automatically when compression doesn't reduce file size.
+
+The scripts check both markers before processing:
+
+1. If parent `/.skip` exists → skip all files in current and subdirectories
+2. If `.skip_SHOWNAME` exists → skip files matching that show name
+
+To retry compression on skipped files, delete the corresponding `.skip_*` files.
+
+### File Size Handling
+
+- Original file is only replaced if compressed version is smaller
+- If compression produces a file of equal or greater size, the compressed version is discarded and a `.skip_SHOWNAME` marker is created
+- File timestamps are preserved after successful replacement
+- Size comparisons use actual byte count (not disk allocation)
+
+### Other Notes
+
 - Original file timestamps are preserved after successful encoding
 - Original file ownership can be set by uncommenting the `chown` line in scripts (currently disabled for portability)
 - `compressmp4_amd_x265_aac.sh` is optimized for MP4 containers which may have different metadata structure

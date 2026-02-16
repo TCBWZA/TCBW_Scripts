@@ -318,11 +318,28 @@ foreach ($f in $files) {
         & ffmpeg $ffmpegArgs
         
         if ($LASTEXITCODE -eq 0) {
-            # Preserve original file timestamp
-            $origTime = (Get-Item $originalFile).LastWriteTime
-            Move-Item -Path $tmpfile -Destination $originalFile -Force
-            (Get-Item $originalFile).LastWriteTime = $origTime
-            Get-Item $originalFile | Set-ItemProperty -Name Attributes -Value (Get-Item $originalFile).Attributes -PassThru | Out-Null
+            # Only replace original if new file is smaller
+            $origFile = Get-Item $originalFile
+            $origSize = $origFile.Length
+            $newSize = (Get-Item $tmpfile).Length
+            
+            if ($newSize -lt $origSize) {
+                $origTime = $origFile.LastWriteTime
+                Move-Item -Path $tmpfile -Destination $originalFile -Force
+                (Get-Item $originalFile).LastWriteTime = $origTime
+                Get-Item $originalFile | Set-ItemProperty -Name Attributes -Value (Get-Item $originalFile).Attributes -PassThru | Out-Null
+                $origMB = [math]::Round($origSize / 1MB, 2)
+                $newMB = [math]::Round($newSize / 1MB, 2)
+                Write-Host "Replaced: ${origMB}MB → ${newMB}MB"
+            }
+            else {
+                $origMB = [math]::Round($origSize / 1MB, 2)
+                $newMB = [math]::Round($newSize / 1MB, 2)
+                Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip file"
+                $skipFile = Join-Path (Split-Path -LiteralPath $originalFile) '.skip'
+                New-Item -LiteralPath $skipFile -ItemType File -Force | Out-Null
+                Remove-Item -Path $tmpfile -Force -ErrorAction SilentlyContinue
+            }
         }
         else {
             Remove-Item -Path $tmpfile -Force -ErrorAction SilentlyContinue

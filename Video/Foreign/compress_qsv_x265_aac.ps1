@@ -48,6 +48,23 @@ $AllFiles | ForEach-Object -Parallel {
     $Base = [System.IO.Path]::GetFileNameWithoutExtension($File)
     $Dir  = $_.DirectoryName
 
+    # Extract show name (first word) for hierarchical skip markers
+    $show_name = ($Base -split '\s+')[0]
+    $show_skip_file = Join-Path $Dir ".skip_$show_name"
+    $parent_skip_file = Join-Path (Split-Path -LiteralPath $Dir) ".skip"
+
+    # Check for skip markers
+    if (Test-Path -LiteralPath $parent_skip_file) {
+        Write-Host "Skipping $File -- parent directory marked as done"
+        $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
+        return
+    }
+    if (Test-Path -LiteralPath $show_skip_file) {
+        Write-Host "Skipping $File -- show marked as uncompressible"
+        $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
+        return
+    }
+
     # Decide temp location
     if ([string]::IsNullOrWhiteSpace($TempDir)) {
         $Tmp = Join-Path $Dir "$Base`[Trans`].tmp"
@@ -120,10 +137,27 @@ $AllFiles | ForEach-Object -Parallel {
 
     if ($LASTEXITCODE -eq 0) {
         try {
-            $timestamp = (Get-Item -LiteralPath $File).LastWriteTime
-            Remove-Item -LiteralPath $File -Force
-            Move-Item -LiteralPath $Tmp -Destination $File -Force
-            (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
+            # Only replace original if new file is smaller
+            $origFile = Get-Item -LiteralPath $File
+            $origSize = $origFile.Length
+            $newSize = (Get-Item -LiteralPath $Tmp).Length
+            
+            if ($newSize -lt $origSize) {
+                $timestamp = $origFile.LastWriteTime
+                Remove-Item -LiteralPath $File -Force
+                Move-Item -LiteralPath $Tmp -Destination $File -Force
+                (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
+                $origMB = [math]::Round($origSize / 1MB, 2)
+                $newMB = [math]::Round($newSize / 1MB, 2)
+                Write-Host "Replaced: ${origMB}MB → ${newMB}MB"
+            }
+            else {
+                $origMB = [math]::Round($origSize / 1MB, 2)
+                $newMB = [math]::Round($newSize / 1MB, 2)
+                Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_$show_name"
+                New-Item -LiteralPath $show_skip_file -ItemType File -Force | Out-Null
+                Remove-Item -LiteralPath $Tmp -Force
+            }
         }
         catch {
             Write-Host "Error finalizing $File : $($_.Exception.Message)"

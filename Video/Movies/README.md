@@ -143,3 +143,4 @@ For basic compression without track filtering:
 - Require `jq` for JSON parsing (especially important for track filtering scripts)
 - Temporary files use `.tmp` extension and are cleaned up on success
 - Original file ownership can be set by uncommenting the `chown` line in scripts (currently disabled for portability)
+- **Skip Files**: When compression does not result in a smaller file, a `.skip` file is created in the directory. This hidden file marks the directory as having files unsuitable for compression (already optimized). Delete the `.skip` file if you want to retry compression on that directory.

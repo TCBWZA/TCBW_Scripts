@@ -30,6 +30,21 @@ foreach ($f in $files) {
     $ext = $f.Extension
     $baseNoExt = $basename
 
+    # Extract show name (first word) for hierarchical skip markers
+    $show_name = ($basename -split '\s+')[0]
+    $show_skip_file = Join-Path $dir ".skip_$show_name"
+    $parent_skip_file = Join-Path (Split-Path -LiteralPath $dir) ".skip"
+
+    # Check for skip markers
+    if (Test-Path -LiteralPath $parent_skip_file) {
+        Write-Host "Skipping $($f.FullName) -- parent directory marked as done"
+        continue
+    }
+    if (Test-Path -LiteralPath $show_skip_file) {
+        Write-Host "Skipping $($f.FullName) -- show marked as uncompressible"
+        continue
+    }
+
     # Skip and delete cleaned/transcoded files
     if ($baseNoExt -match '\[Cleaned\]|\[Trans\]') {
         Remove-Item -LiteralPath $f.FullName -Force
@@ -100,12 +115,26 @@ foreach ($f in $files) {
             $hbFilter
 
         if ($LASTEXITCODE -eq 0) {
-            # Preserve timestamps
+            # Only replace original if new file is smaller
             $orig = Get-Item -LiteralPath $inputFile
-            Set-ItemProperty -LiteralPath $tmpFile -Name LastWriteTime -Value $orig.LastWriteTime
-
-            Remove-Item -LiteralPath $inputFile -Force
-            Move-Item -LiteralPath $tmpFile -Destination $inputFile -Force
+            $origSize = $orig.Length
+            $newSize = (Get-Item -LiteralPath $tmpFile).Length
+            
+            if ($newSize -lt $origSize) {
+                Set-ItemProperty -LiteralPath $tmpFile -Name LastWriteTime -Value $orig.LastWriteTime
+                Remove-Item -LiteralPath $inputFile -Force
+                Move-Item -LiteralPath $tmpFile -Destination $inputFile -Force
+                $origMB = [math]::Round($origSize / 1MB, 2)
+                $newMB = [math]::Round($newSize / 1MB, 2)
+                Write-Host "Replaced: ${origMB}MB → ${newMB}MB"
+            }
+            else {
+                $origMB = [math]::Round($origSize / 1MB, 2)
+                $newMB = [math]::Round($newSize / 1MB, 2)
+                Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_$show_name"
+                New-Item -LiteralPath $show_skip_file -ItemType File -Force | Out-Null
+                Remove-Item -LiteralPath $tmpFile -Force
+            }
         }
         else {
             Remove-Item -LiteralPath $tmpFile -Force

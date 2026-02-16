@@ -76,10 +76,25 @@ foreach ($f in $files) {
     $basename = $f.BaseName
     $dir = $f.DirectoryName
     $baseNoExt = $basename
+    
+    # Extract show name (everything before the last space followed by numbers, or up to first number sequence)
+    $show_name = ($basename -split '\s+')[0]
+    $show_skip_file = Join-Path $dir ".skip_$show_name"
+    $parent_skip_file = Join-Path (Split-Path $dir) ".skip"
 
     # Skip and delete cleaned/transcoded files
     if ($baseNoExt -match '\[Cleaned\]|\[Trans\]') {
         Remove-Item -LiteralPath $f.FullName -Force
+        continue
+    }
+    
+    # Check for skip markers
+    if (Test-Path -LiteralPath $parent_skip_file) {
+        Write-Host "Skipping $($f.FullName) -- parent directory marked with .skip"
+        continue
+    }
+    if (Test-Path -LiteralPath $show_skip_file) {
+        Write-Host "Skipping $($f.FullName) -- show marked with .skip_$show_name"
         continue
     }
 
@@ -187,10 +202,24 @@ foreach ($f in $files) {
 
     if ($exit -eq 0 -and (Test-Path $tmpfile)) {
         $orig = Get-Item -LiteralPath $f.FullName
-        Set-ItemProperty -LiteralPath $tmpfile -Name LastWriteTime -Value $orig.LastWriteTime
-
-        Remove-Item -LiteralPath $f.FullName -Force
-        Move-Item -LiteralPath $tmpfile -Destination $f.FullName -Force
+        $origSize = $orig.Length
+        $newSize = (Get-Item -LiteralPath $tmpfile).Length
+        
+        if ($newSize -lt $origSize) {
+            Set-ItemProperty -LiteralPath $tmpfile -Name LastWriteTime -Value $orig.LastWriteTime
+            Remove-Item -LiteralPath $f.FullName -Force
+            Move-Item -LiteralPath $tmpfile -Destination $f.FullName -Force
+            $origMB = [math]::Round($origSize / 1MB, 2)
+            $newMB = [math]::Round($newSize / 1MB, 2)
+            Write-Host "Replaced: ${origMB}MB → ${newMB}MB"
+        }
+        else {
+            $origMB = [math]::Round($origSize / 1MB, 2)
+            $newMB = [math]::Round($newSize / 1MB, 2)
+            Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_$show_name"
+            New-Item -LiteralPath $show_skip_file -ItemType File -Force | Out-Null
+            Remove-Item -LiteralPath $tmpfile -Force
+        }
     }
     else {
         Write-Host "HandBrake failed or temp file missing. Exit code: $exit"

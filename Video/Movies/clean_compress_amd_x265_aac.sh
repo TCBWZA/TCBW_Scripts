@@ -292,11 +292,22 @@ for f in "${files[@]}"; do
 
         # shellcheck disable=SC2181
         if [[ $? -eq 0 ]]; then
-            touch -r "$f" "$tmpfile"
-            rm -f "$f"
-            mv "$tmpfile" "$f"
-            # chown <USER>:<GROUP> "$f"  # Uncomment and set to desired owner if needed
-            chmod 666 "$f"
+            # Only replace original if new file is smaller
+            orig_size=$(stat -c%s "$f")
+            new_size=$(stat -c%s "$tmpfile")
+            
+            if (( new_size < orig_size )); then
+                touch -r "$f" "$tmpfile"
+                rm -f "$f"
+                mv "$tmpfile" "$f"
+                # chown <USER>:<GROUP> "$f"  # Uncomment and set to desired owner if needed
+                chmod 666 "$f"
+                echo "Replaced: $(( orig_size / 1024 / 1024 ))MB → $(( new_size / 1024 / 1024 ))MB"
+            else
+                echo "Skipped: new file not smaller ($(( orig_size / 1024 / 1024 ))MB → $(( new_size / 1024 / 1024 ))MB) - creating .skip file"
+                touch "${dir}/.skip"
+                rm -f "$tmpfile"
+            fi
         else
             rm -f "$tmpfile"
         fi

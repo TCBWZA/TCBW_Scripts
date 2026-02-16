@@ -23,10 +23,25 @@ for f in "${files[@]}"; do
     basename=$(basename "$f")
     base_no_ext="${basename%.*}"
     dir=$(dirname "$f")
+    
+    # Extract show name (everything before the last space followed by numbers, or up to first number sequence)
+    show_name="${base_no_ext%% *}"
+    show_skip_file="${dir}/.skip_${show_name}"
+    parent_skip_file="${dir}/../.skip"
 
     # Skip and delete cleaned/transcoded files
     if [[ "$base_no_ext" == *"[Cleaned]"* || "$base_no_ext" == *"[Trans]"* ]]; then
         rm -f "$f"
+        continue
+    fi
+    
+    # Check for skip markers
+    if [[ -f "$parent_skip_file" ]]; then
+        echo "Skipping $f -- parent directory marked with .skip"
+        continue
+    fi
+    if [[ -f "$show_skip_file" ]]; then
+        echo "Skipping $f -- show marked with .skip_${show_name}"
         continue
     fi
 
@@ -150,11 +165,22 @@ for f in "${files[@]}"; do
 
         # shellcheck disable=SC2181
         if [[ $? -eq 0 ]]; then
-            touch -r "$f" "$tmpfile"
-            rm -f "$f"
-            mv "$tmpfile" "$f"
-            # chown <USER>:<GROUP> "$f"  # Uncomment and set to desired owner if needed
-            chmod 666 "$f"
+            # Only replace original if new file is smaller
+            orig_size=$(stat -c%s "$f")
+            new_size=$(stat -c%s "$tmpfile")
+            
+            if (( new_size < orig_size )); then
+                touch -r "$f" "$tmpfile"
+                rm -f "$f"
+                mv "$tmpfile" "$f"
+                # chown <USER>:<GROUP> "$f"  # Uncomment and set to desired owner if needed
+                chmod 666 "$f"
+                echo "Replaced: $(( orig_size / 1024 / 1024 ))MB → $(( new_size / 1024 / 1024 ))MB"
+            else
+                echo "Skipped: new file not smaller ($(( orig_size / 1024 / 1024 ))MB → $(( new_size / 1024 / 1024 ))MB) - creating .skip_${show_name}"
+                touch "$show_skip_file"
+                rm -f "$tmpfile"
+            fi
         else
             rm -f "$tmpfile"
         fi
