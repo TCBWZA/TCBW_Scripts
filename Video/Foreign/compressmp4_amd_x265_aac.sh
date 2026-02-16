@@ -159,11 +159,12 @@ while read -r f; do
             -f mp4 \
             "$tmpfile"
 
+        # shellcheck disable=SC2181
         if [[ $? -eq 0 ]]; then
             touch -r "$f" "$tmpfile"
             rm -f "$f"
             mv "$tmpfile" "$f"
-            chown duncan:duncan "$f"
+            # chown <USER>:<GROUP> "$f"  # Uncomment and set to desired owner if needed
             chmod 666 "$f"
         else
             rm -f "$tmpfile"

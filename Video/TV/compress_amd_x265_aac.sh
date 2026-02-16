@@ -48,12 +48,71 @@ for f in "${files[@]}"; do
     [[ "$vcodec" != "hevc" ]] && needs_convert=true
     (( vbitrate > 2500000 )) && needs_convert=true
     [[ "$acodec" != "aac" ]] && needs_convert=true
-    [[ "$field_order" != "progressive" ]] && needs_convert=true
+
+    #####################################################
+    # TELECINE + INTERLACE DETECTION
+    #####################################################
+
+    status="progressive"
+
+    # Quick check: if field_order explicitly indicates interlaced, mark it immediately
+    if [[ "$field_order" =~ ^(tt|bb|tb|bt)$ ]]; then
+        status="interlaced"
+    # Otherwise, run deep scan unless explicitly progressive
+    elif [[ "$field_order" != "progressive" ]]; then
+        echo "Running deep scan for interlace/telecine..."
+
+        # Detect interlaced frames using idet filter
+        interlaced_count=$(ffmpeg -nostdin -hide_banner \
+            -skip_frame nokey \
+            -filter:v idet \
+            -frames:v 200 \
+            -an -f null - "$f" 2>&1 \
+            | grep -oP 'Interlaced:\s*\K[0-9]+')
+
+        # Detect telecine via repeat_pict
+        telecine_flag=$(ffprobe -v error -select_streams v:0 -show_frames \
+            -read_intervals "%+#300" \
+            -show_entries frame=repeat_pict \
+            -of csv=p=0 "$f" | grep -m1 1)
+
+        if (( interlaced_count > 0 )); then
+            status="interlaced"
+        elif [[ -n "$telecine_flag" ]]; then
+            status="telecine"
+        else
+            status="progressive"
+        fi
+    fi
+
+    echo "Detected: $status"
+
+    # Telecine or interlaced ALWAYS requires conversion
+    [[ "$status" != "progressive" ]] && needs_convert=true
 
     if ! $needs_convert; then
         echo "Skipping $f -- already in desired format"
         continue
     fi
+
+    #####################################################
+    # Filter chain selection
+    #####################################################
+
+    case "$status" in
+        interlaced)
+            echo "Using bwdif (interlaced)"
+            vf_chain="hwdownload,format=yuv420p,bwdif=mode=send_frame,format=nv12,hwupload"
+            ;;
+        telecine)
+            echo "Using fieldmatch+decimate+bwdif (telecine)"
+            vf_chain="hwdownload,format=yuv420p,fieldmatch,decimate,bwdif=mode=send_frame,format=nv12,hwupload"
+            ;;
+        progressive)
+            echo "Progressive -- no deinterlace"
+            vf_chain="hwdownload,format=yuv420p,format=nv12,hwupload"
+            ;;
+    esac
 
     #####################################################
     # Transcoding section
@@ -63,36 +122,9 @@ for f in "${files[@]}"; do
 
     echo "Input         : $f"
     echo "Temp Out      : $tmpfile"
+    echo "Using filter  : $vf_chain"
 
     [ -f "$tmpfile" ] && rm -f "$tmpfile"
-
-    #####################################################
-    # Optimised interlace detection
-    #####################################################
-
-    if [[ "$field_order" == "progressive" ]]; then
-        echo "Progressive (from ffprobe) -- skipping idet"
-        vf_chain="hwdownload,format=yuv420p,format=nv12,hwupload"
-    else
-        echo "Detecting interlacing..."
-
-        interlaced_count=$(ffmpeg -nostdin -hide_banner \
-            -skip_frame nokey \
-            -filter:v idet \
-            -frames:v 200 \
-            -an -f null - "$f" 2>&1 \
-            | grep -oP 'Interlaced:\s*\K[0-9]+')
-
-        if (( interlaced_count > 0 )); then
-            echo "Detected interlaced video -- enabling bwdif"
-            vf_chain="hwdownload,format=yuv420p,bwdif=mode=send_frame,format=nv12,hwupload"
-        else
-            echo "Detected progressive video -- skipping deinterlace"
-            vf_chain="hwdownload,format=yuv420p,format=nv12,hwupload"
-        fi
-    fi
-
-    echo "Using filter chain: $vf_chain"
 
     (
         ffmpeg -nostdin -hide_banner \
@@ -116,11 +148,12 @@ for f in "${files[@]}"; do
             -f matroska \
             "$tmpfile"
 
+        # shellcheck disable=SC2181
         if [[ $? -eq 0 ]]; then
             touch -r "$f" "$tmpfile"
             rm -f "$f"
             mv "$tmpfile" "$f"
-            chown duncan:duncan "$f"
+            # chown <USER>:<GROUP> "$f"  # Uncomment and set to desired owner if needed
             chmod 666 "$f"
         else
             rm -f "$tmpfile"
@@ -140,7 +173,7 @@ done
 wait
 
 #####################################################
-# Cleanup section (combined and efficient)
+# Cleanup section
 #####################################################
 
 echo "Cleaning up leftover [Trans] files..."

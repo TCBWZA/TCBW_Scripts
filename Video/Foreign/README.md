@@ -1,38 +1,116 @@
-# Foreign Content Video Scripts
+# Video Compression Scripts (1GB+ Minimum)
 
-Deinterlacing and transcoding scripts optimized for foreign language content. These scripts convert interlaced video to x265 (HEVC) format with AAC audio.
+Compression and transcoding scripts optimized for files at least 1GB in size. These scripts convert interlaced video to x265 (HEVC) format with AAC audio.
+
+## ⚠️ DISCLAIMER
+
+**Use at your own risk!** These scripts perform destructive operations on video files. Always test on non-critical files first and maintain backups of your original content before using these scripts.
 
 ## Requirements
 
 ### Common
+
 - **FFmpeg**: v4.0 or later, **must be on system PATH**
   - Verify installation: `ffmpeg -version`
   - Windows: `winget install FFmpeg` or `choco install ffmpeg` or download from [ffmpeg.org](https://ffmpeg.org/download.html)
   - Linux: `apt install ffmpeg` or `yum install ffmpeg`
 - **FFprobe**: Included with FFmpeg, used for video analysis
+- **jq**: JSON query utility (required for stream metadata extraction)
+  - Linux: `apt install jq` or `yum install jq`
+  - Windows: `scoop install jq` or `choco install jq`
 
 ### Platform-Specific
+
 - **Bash scripts (AMD)**: Linux/Unix system with bash shell and AMD GPU with VAAPI support (AMD Radeon RX series or newer)
 - **PowerShell scripts (Intel QSV)**: Windows with PowerShell 7.0 or later and Intel processor with Quick Sync Video support
 
 ## Files
 
-### deinterlace_amd_x265_aac.sh
-Bash script for deinterlacing video files using AMD GPU hardware acceleration (VAAPI). Processes .mkv, .mp4, and .ts files. Includes automatic filtering for already-processed files and supports parallel encoding (default: 2 concurrent jobs). Skips files smaller than 1GB.
+### compress_amd_x265_aac.sh
+
+**Status**: Stable
+
+Bash script for video compression using AMD GPU hardware acceleration (VAAPI).
+
+Features:
+
+- Processes .mkv, .mp4, and .ts files
+- Interlace/telecine detection with two-pass scanning
+- Deinterlace filters: bwdif (bilateral) for interlaced, fieldmatch+decimate+bwdif for telecine
+- Parallel encoding support (default: 2 concurrent jobs)
+- Minimum file size: 1GB
 
 **Platform**: Linux/Unix with AMD GPU support
 
-### deinterlace_qsv_x265_aac.ps1
-PowerShell script for deinterlacing using Intel Quick Sync Video (QSV) encoding. Processes .mkv and .ts files with configurable temporary directory for intermediate files. Includes progress tracking and filtering for already-processed content. Supports parallel encoding.
+### compress_qsv_x265_aac.ps1
+
+**Status**: Stable
+
+PowerShell script for video compression using Intel Quick Sync Video (QSV) encoding.
+
+Features:
+
+- Processes .mkv and .ts files
+- Configurable temporary directory for intermediate files
+- Progress tracking and filtering for already-processed content
+- Parallel encoding support
+- Same interlace/telecine detection as bash variant
+- Minimum file size: 1GB
 
 **Platform**: Windows with Intel Quick Sync support
 
-### deinterlacemp4_amd_x265_aac.sh
-Bash script specialized for MP4 file deinterlacing with AMD GPU acceleration. Handles MP4 container format conversion and includes automatic cleanup of previously processed files (marked with [Cleaned] or [Trans]). Optimized for batch MP4 processing.
+### compressmp4_amd_x265_aac.sh
+
+**Status**: Stable (MP4 specialized)
+
+Bash script specialized for MP4 file compression with AMD GPU acceleration.
+
+Features:
+
+- Processes MP4 container format specifically
+- Optimized for batch MP4 processing
+- Parallel job support
+- VAAPI hardware acceleration for AMD GPUs
+- Minimum file size: 1GB
 
 **Platform**: Linux/Unix with AMD GPU support
 
-### hbdeintvappi.sh
-Alternative bash-based deinterlacing script using VAAPI for AMD GPUs. Processes multiple video formats with parallel job support. Another variant for AMD GPU deinterlacing workflows.
+### hbcompress_qsv_x265_aac.ps1
 
-**Platform**: Linux/Unix with AMD GPU support
+**Status**: Stable (Alternative variant)
+
+Alternative PowerShell script using Intel QSV. Another variant for Intel GPU compression workflows, particularly useful for specific encoding scenarios.
+
+**Platform**: Windows with Intel Quick Sync support
+
+## Usage
+
+```bash
+# Bash - standard compression (AMD GPU)
+./compress_amd_x265_aac.sh
+
+# Bash - MP4 specific (AMD GPU)
+./compressmp4_amd_x265_aac.sh
+
+# PowerShell (Intel GPU)
+./compress_qsv_x265_aac.ps1
+
+# PowerShell - alternative variant (Intel GPU)
+./hbcompress_qsv_x265_aac.ps1
+```
+
+## Encoding Settings
+
+- **Video Codec**: hevc_vaapi (AMD) or hevc_qsv (Intel)
+- **Quality**: QP 24 (quantizer value, lower = better quality)
+- **Bitrate Target**: 1800kbps with max 2000kbps and 4000kbps buffer
+- **Audio**: AAC at 160kbps (copied if already AAC)
+- **Container**: Matroska (.mkv) or MP4 (.mp4)
+
+## Notes
+
+- Interlace detection uses two-stage approach: metadata check followed by optional frame-level analysis
+- Temporary files use `.tmp` extension and are cleaned up on success or error
+- Original file timestamps are preserved after successful encoding
+- Original file ownership can be set by uncommenting the `chown` line in scripts (currently disabled for portability)
+- `compressmp4_amd_x265_aac.sh` is optimized for MP4 containers which may have different metadata structure
