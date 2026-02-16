@@ -24,7 +24,7 @@ Compression and transcoding scripts optimized for TV show content. These scripts
 - **Bash scripts (AMD)**: Linux/Unix system with bash shell and AMD GPU with VAAPI support (AMD Radeon RX series or newer)
 - **PowerShell scripts (Intel QSV)**: Windows with PowerShell 7.0 or later and Intel processor with Quick Sync Video support
 - **HandBrake-specific scripts**: HandBrakeCLI must be installed and on system PATH
-  - Windows: `winget install HandBrake` or `choco install handbrake` or download from [handbrake.fr](https://handbrake.fr/)
+  - Windows: `choco install handbrake-cli` or `winget install HandBrake.HandBrakeCLI` or download from [handbrake.fr](https://handbrake.fr/)
   - Linux: `apt install handbrake-cli` or `yum install handbrake-cli`
   - Verify installation: `HandBrakeCLI --version`
 
@@ -47,23 +47,6 @@ Features:
 
 **Platform**: Linux/Unix with AMD GPU support
 
-### compress_qsv_x265_aac.ps1
-
-**Status**: Stable
-
-PowerShell script for video compression using Intel Quick Sync Video (QSV) encoding. Optimized for files 1GB or larger.
-
-Features:
-
-- Processes .mkv and .ts files
-- Configurable temporary directory for intermediate files
-- Progress tracking and filtering for already-processed content
-- Parallel encoding support
-- Same interlace/telecine detection as bash variant
-- Minimum file size: 1GB
-
-**Platform**: Windows with Intel Quick Sync support
-
 ### hbcompress_qsv_x265_aac.ps1
 
 **Status**: Stable (HandBrake-specific variant)
@@ -78,10 +61,7 @@ HandBrake-optimized PowerShell script using Intel Quick Sync Video (QSV). Specia
 # Bash (AMD GPU)
 ./compress_amd_x265_aac.sh
 
-# PowerShell (Intel GPU)
-./compress_qsv_x265_aac.ps1
-
-# PowerShell alternative variant
+# PowerShell (Intel GPU) - HandBrake variant
 ./hbcompress_qsv_x265_aac.ps1
 ```
 
