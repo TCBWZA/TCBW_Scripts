@@ -77,8 +77,8 @@ foreach ($f in $files) {
         elseif ($fieldOrder -ne "progressive") {
             Write-Host "Running deep scan for interlace/telecine..."
             
-            # Detect interlaced frames using idet filter
-            $idetOutput = & ffmpeg -nostdin -hide_banner -skip_frame nokey -filter:v idet -frames:v 200 -an -f null - $f.FullName 2>&1
+            # Detect interlaced frames using idet filter, skipping first 5 minutes to avoid credits/intros, then check 200 frames, skipping first 5 minutes and checking 200 frames
+            $idetOutput = & ffmpeg -nostdin -hide_banner -ss 300 -skip_frame nokey -filter:v idet -frames:v 200 -an -f null - $f.FullName 2>&1
             $interlacedCount = [regex]::Match($idetOutput -join "`n", 'Interlaced:\s*(\d+)').Groups[1].Value
             if ([string]::IsNullOrEmpty($interlacedCount)) { $interlacedCount = 0 }
             

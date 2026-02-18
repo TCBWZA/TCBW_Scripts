@@ -40,7 +40,10 @@ Features:
 
 - Processes .mkv, .mp4, and .ts files
 - Automatic filtering for already-processed files (marked with [Cleaned] or [Trans])
-- Interlace/telecine detection with two-pass scanning (metadata check + deep frame analysis)
+- Interlace/telecine detection with optimized two-pass scanning:
+  - Metadata check first (field_order)
+  - Deep frame analysis on actual content (skips first 5 minutes to avoid intros/credits)
+  - Analyzes 200 frames for accurate detection
 - Deinterlace filters: bwdif (bilateral) for interlaced, fieldmatch+decimate+bwdif for telecine
 - Parallel encoding support (default: 2 concurrent jobs)
 - Minimum file size: 1GB
@@ -53,16 +56,73 @@ Features:
 
 HandBrake-optimized PowerShell script using Intel Quick Sync Video (QSV). Specialized for HandBrake encoding workflows and integration. Optimized for files 1GB or larger.
 
+Features:
+
+- Processes .mkv, .mp4, and .ts files
+- Interlace/telecine detection with optimized frame analysis:
+  - Skips first 5 minutes of video to avoid intros/credits
+  - Analyzes 20 frames for accurate detection
+- Always applies decomb filter for interlaced content
+- Parallel job support
+
 **Platform**: Windows with Intel Quick Sync support
+
+### dedup.ps1
+
+**Status**: Stable
+
+PowerShell script for identifying and removing duplicate episodes within TV show directories.
+
+Features:
+
+- **Pattern Matching**: Scans recursive directory tree for files matching episode patterns:
+  - `S##E##` or `S##E###` (e.g., S01E05, S18E012) — standard format
+  - `##x##` or `##x###` (e.g., 01x05, 01x012) — alternative format
+  - Both formats normalized internally to S##E### for matching
+- **Duplicate Detection**:
+  - Groups files by episode code **within the same directory**
+  - Only considers files as duplicates if they share the same episode code AND are in the same folder
+  - Episodes with only one file are automatically kept (no decision needed)
+- **File Selection Logic** (when duplicates exist):
+  - **Primary**: File type priority: MKV > MP4 > TS > AVI
+  - **Secondary**: File size (largest wins if file types are equal)
+  - Example: If a directory has `Episode.S01E01.mkv` (500MB) and `Episode.S01E01.mp4` (600MB), the MKV is kept regardless of size
+- **Sidecar Cleanup**:
+  - Removes all associated files for deleted episodes:
+    - Subtitle files (.srt, .sub, .ass, .ssa)
+    - Metadata (.nfo, .xml)
+    - Images (.jpg, .png)
+    - Trickplay directories (.trickplay)
+    - Any file starting with the same base name as deleted video
+- **Audit Mode** (`-Audit` flag): Preview what would be deleted without making any changes
+- **Output**: Detailed summary report showing episodes kept, deleted, and sidecar files removed
+
+**Usage:**
+
+```powershell
+# Preview what would be deleted (audit mode - recommended for first run)
+./dedup.ps1 -Audit
+
+# Perform actual deduplication
+./dedup.ps1
+```
+
+**Platform**: Windows with PowerShell 7.0 or later
 
 ## Usage
 
 ```bash
-# Bash (AMD GPU)
+# Bash (AMD GPU) - Compression
 ./compress_amd_x265_aac.sh
 
-# PowerShell (Intel GPU) - HandBrake variant
+# PowerShell (Intel GPU) - HandBrake variant compression
 ./hbcompress_qsv_x265_aac.ps1
+
+# PowerShell - Deduplication (audit mode - preview changes)
+./dedup.ps1 -Audit
+
+# PowerShell - Deduplication (perform actual dedup)
+./dedup.ps1
 ```
 
 ## Encoding Settings
@@ -75,7 +135,11 @@ HandBrake-optimized PowerShell script using Intel Quick Sync Video (QSV). Specia
 
 ## Notes
 
-- Interlace detection runs in two stages: first checks field_order metadata, then performs frame-level analysis if needed
+### Compression Scripts
+
+- Interlace detection optimization: Skips first 5 minutes of video to avoid intros/credits, then analyzes frames for accurate detection
+  - This improves both detection accuracy and script performance
+  - Only analyzes relevant content (200 frames in bash, 20 in PowerShell)
 - Temporary files use `.tmp` extension and are cleaned up on success or error
 - Original file timestamps are preserved after successful encoding
 - Original file ownership can be set by uncommenting the `chown` line in scripts (currently disabled for portability)
@@ -84,3 +148,11 @@ HandBrake-optimized PowerShell script using Intel Quick Sync Video (QSV). Specia
   - `.skip_SHOWNAME` in current directory: marks specific show (extracted from filename prefix) as unsuitable for compression
   - Scripts check both markers before processing files
   - Delete skip files to retry compression on marked content
+
+### Deduplication Script
+
+- **Priority order**: File type (MKV > MP4 > TS > AVI) takes precedence over file size
+- Removes all sidecar files (.nfo, .srt, .jpg, .trickplay directories, etc.) for deleted episodes
+- Audit mode (`-Audit`) shows what would be deleted without making any changes — recommended for first run
+- Progress bars during directory deletion are suppressed for cleaner output
+- Timestamps on kept files are preserved from the original set

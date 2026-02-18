@@ -78,8 +78,9 @@ for f in "${files[@]}"; do
     elif [[ "$field_order" != "progressive" ]]; then
         echo "Running deep scan for interlace/telecine..."
 
-        # Detect interlaced frames using idet filter
+        # Detect interlaced frames using idet filter, skipping first 5 minutes
         interlaced_count=$(ffmpeg -nostdin -hide_banner \
+            -ss 300 \
             -skip_frame nokey \
             -filter:v idet \
             -frames:v 200 \

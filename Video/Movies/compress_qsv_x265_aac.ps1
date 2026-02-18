@@ -48,8 +48,8 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
 
     if (Test-Path $Tmp) { Remove-Item $Tmp -Force }
 
-    # Detect interlacing using idet
-    $idet = ffmpeg -hide_banner -filter:v idet -frames:v 500 -an -f null - "$File" 2>&1
+    # Detect interlacing using idet, skipping first 5 minutes to avoid credits/intros, then check 200 frames, skipping first 5 minutes and checking 200 frames
+    $idet = ffmpeg -hide_banner -ss 300 -filter:v idet -frames:v 200 -an -f null - "$File" 2>&1
     $interlaceMatch = $idet | Select-String -Pattern "Interlaced:\s*(\d+)" -AllMatches
     $InterlacedCount = if ($interlaceMatch) { [int]$interlaceMatch.Matches.Groups[1].Value } else { 0 }
 

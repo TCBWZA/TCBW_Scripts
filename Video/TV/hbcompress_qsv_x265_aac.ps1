@@ -161,9 +161,9 @@ foreach ($f in $files) {
     #####################################################
     # Build temp output
     #####################################################
-    $tmpfile = Join-Path $dir "$baseNoExt`[Trans].mkv"
+    $tmpfile = Join-Path $dir "$baseNoExt`[Trans].tmp"
 
-    if (Test-Path $tmpfile) { Remove-Item $tmpfile -Force }
+    if (Test-Path -LiteralPath $tmpfile) { Remove-Item -LiteralPath $tmpfile -Force }
 
     Write-Host "Input    : $($f.FullName)"
     Write-Host "Temp Out : $tmpfile"
@@ -209,13 +209,13 @@ foreach ($f in $files) {
     # SAFE EXIT HANDLING
     #####################################################
 
-    if ($exit -eq 0 -and (Test-Path $tmpfile)) {
+    if ($exit -eq 0 -and (Test-Path -LiteralPath $tmpfile)) {
         $orig = Get-Item -LiteralPath $f.FullName
         $origSize = $orig.Length
         $newSize = (Get-Item -LiteralPath $tmpfile).Length
         
         if ($newSize -lt $origSize) {
-            Set-ItemProperty -LiteralPath $tmpfile -Name LastWriteTime -Value $orig.LastWriteTime
+            Set-ItemProperty -Path $tmpfile -Name LastWriteTime -Value $orig.LastWriteTime
             Remove-Item -LiteralPath $f.FullName -Force
             Move-Item -LiteralPath $tmpfile -Destination $f.FullName -Force
             $origMB = [math]::Round($origSize / 1MB, 2)
@@ -232,7 +232,7 @@ foreach ($f in $files) {
     }
     else {
         Write-Host "HandBrake failed or temp file missing. Exit code: $exit"
-        if (Test-Path $tmpfile) { Remove-Item $tmpfile -Force }
+        if (Test-Path -LiteralPath $tmpfile) { Remove-Item -LiteralPath $tmpfile -Force }
         continue
     }
 }
@@ -245,7 +245,7 @@ Write-Host "Cleaning up leftover [Trans] files..."
 
 Get-ChildItem -Recurse -File |
     Where-Object {
-        $_.Name -match '\[Trans\]\.mkv' -or
+        $_.Name -match '\[Trans\]\.tmp' -or
         $_.Name -match '\[Trans\]\.nfo' -or
         $_.Name -match '\[Trans\]\.jpg'
     } |
