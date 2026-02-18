@@ -45,29 +45,29 @@ for f in "${files[@]}"; do
     acodec=$(jq -r '.streams[] | select(.codec_type=="audio") | .codec_name' <<< "$probe")
     field_order=$(jq -r '.streams[] | select(.codec_type=="video") | .field_order' <<< "$probe")
 
+    # Fast checks first, skip expensive detection if already need to convert
     needs_convert=false
-
-    if [[ "$vcodec" != "hevc" ]]; then
-        needs_convert=true
-    fi
-    if [[ "$vbitrate" =~ ^[0-9]+$ ]] && (( vbitrate > 2500000 )); then
-        needs_convert=true
-    fi
     if [[ "$acodec" != "aac" ]]; then
+        needs_convert=true
+    fi
+    if ! $needs_convert && [[ "$vcodec" != "hevc" ]]; then
+        needs_convert=true
+    fi
+    if ! $needs_convert && [[ "$vbitrate" =~ ^[0-9]+$ ]] && (( vbitrate > 2500000 )); then
         needs_convert=true
     fi
 
     #####################################################
-    # TELECINE + INTERLACE DETECTION (check first!)
+    # TELECINE + INTERLACE DETECTION (only if still needed!)
     #####################################################
 
     status="progressive"
 
     # Quick check: if field_order explicitly indicates interlaced, mark it immediately
-    if [[ "$field_order" =~ ^(tt|bb|tb|bt)$ ]]; then
+    if ! $needs_convert && [[ "$field_order" =~ ^(tt|bb|tb|bt)$ ]]; then
         status="interlaced"
-    # Otherwise, run deep scan unless explicitly progressive
-    elif [[ "$field_order" != "progressive" ]]; then
+    # Otherwise, run deep scan unless explicitly progressive or already need to convert
+    elif ! $needs_convert && [[ "$field_order" != "progressive" ]]; then
         echo "Running deep scan for interlace/telecine..."
 
         # Detect interlaced frames using idet filter
@@ -297,11 +297,13 @@ for f in "${files[@]}"; do
             new_size=$(stat -c%s "$tmpfile")
             
             if (( new_size < orig_size )); then
+                # Use original basename with .mkv extension (output format is always matroska)
+                final_file="$dir/${base_no_ext}.mkv"
                 touch -r "$f" "$tmpfile"
                 rm -f "$f"
-                mv "$tmpfile" "$f"
-                # chown <USER>:<GROUP> "$f"  # Uncomment and set to desired owner if needed
-                chmod 666 "$f"
+                mv "$tmpfile" "$final_file"
+                # chown <USER>:<GROUP> "$final_file"  # Uncomment and set to desired owner if needed
+                chmod 666 "$final_file"
                 echo "Replaced: $(( orig_size / 1024 / 1024 ))MB → $(( new_size / 1024 / 1024 ))MB"
             else
                 echo "Skipped: new file not smaller ($(( orig_size / 1024 / 1024 ))MB → $(( new_size / 1024 / 1024 ))MB) - creating .skip file"

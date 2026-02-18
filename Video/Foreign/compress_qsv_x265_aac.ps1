@@ -87,12 +87,12 @@ $AllFiles | ForEach-Object -Parallel {
     $field    = $video.field_order
     $acodec   = $audio.codec_name
 
+    # Fast checks first, skip expensive detection if already need to convert
     $NeedsConvert = $false
-
-    if ($vcodec -ne "hevc") { $NeedsConvert = $true }
-    if ($vbitrate -match '^\d+$' -and [int]$vbitrate -gt 2500000) { $NeedsConvert = $true }
     if ($acodec -ne "aac") { $NeedsConvert = $true }
-    if ($field -ne "progressive") { $NeedsConvert = $true }
+    if (-not $NeedsConvert -and $vcodec -ne "hevc") { $NeedsConvert = $true }
+    if (-not $NeedsConvert -and $vbitrate -match '^\d+$' -and [int]$vbitrate -gt 2500000) { $NeedsConvert = $true }
+    if (-not $NeedsConvert -and $field -ne "progressive") { $NeedsConvert = $true }
 
     if (-not $NeedsConvert) {
         Write-Host "Skipping $File -- already in desired format"
@@ -155,7 +155,7 @@ $AllFiles | ForEach-Object -Parallel {
                 $origMB = [math]::Round($origSize / 1MB, 2)
                 $newMB = [math]::Round($newSize / 1MB, 2)
                 Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_$show_name"
-                New-Item -LiteralPath $show_skip_file -ItemType File -Force | Out-Null
+                New-Item -Path $show_skip_file -ItemType File -Force | Out-Null
                 Remove-Item -LiteralPath $Tmp -Force
             }
         }

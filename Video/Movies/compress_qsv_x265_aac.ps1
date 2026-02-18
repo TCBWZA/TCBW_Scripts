@@ -31,12 +31,12 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
     $field = ffprobe -v error -select_streams v:0 `
         -show_entries stream=field_order -of default=nw=1:nk=1 "$File"
 
+    # Fast checks first, skip if true
     $NeedsConvert = $false
-
-    if ($vcodec -ne "hevc") { $NeedsConvert = $true }
-    if ([int]$vbitrate -gt 2500000) { $NeedsConvert = $true }
     if ($acodec -ne "aac") { $NeedsConvert = $true }
-    if ($field -ne "progressive") { $NeedsConvert = $true }
+    if (-not $NeedsConvert -and $vcodec -ne "hevc") { $NeedsConvert = $true }
+    if (-not $NeedsConvert -and $vbitrate -ne "N/A" -and [int]$vbitrate -gt 2500000) { $NeedsConvert = $true }
+    if (-not $NeedsConvert -and $field -ne "progressive") { $NeedsConvert = $true }
 
     if (-not $NeedsConvert) {
         Write-Host "Skipping $File -- already in desired format"
@@ -50,12 +50,13 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
 
     # Detect interlacing using idet
     $idet = ffmpeg -hide_banner -filter:v idet -frames:v 500 -an -f null - "$File" 2>&1
-    $InterlacedCount = ($idet | Select-String -Pattern "Interlaced:\s*(\d+)" -AllMatches).Matches.Groups[1].Value
+    $interlaceMatch = $idet | Select-String -Pattern "Interlaced:\s*(\d+)" -AllMatches
+    $InterlacedCount = if ($interlaceMatch) { [int]$interlaceMatch.Matches.Groups[1].Value } else { 0 }
 
     if ([int]$InterlacedCount -gt 0) {
         $vf = "deinterlace_qsv"
     } else {
-        $vf = "format=qsv"
+        $vf = ""
     }
 
     # Wait for job slots
@@ -67,19 +68,50 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
     # Start encoding job
     Start-Job -ScriptBlock {
         param($File, $Tmp, $vf)
+         
+        # Clean temp file immediately before ffmpeg runs
+        if (Test-Path -LiteralPath $Tmp) {
+            Remove-Item -LiteralPath $Tmp -Force -ErrorAction SilentlyContinue
+        }
 
-        ffmpeg -hide_banner `
-            -hwaccel qsv -hwaccel_output_format qsv `
-            -i "$File" `
-            -vf "$vf" `
-            -c:v hevc_qsv `
-            -b:v 1800k -maxrate 2000k -bufsize 4000k `
-            -c:a aac -b:a 160k `
-            -c:s copy `
-            -f matroska `
-            "$Tmp"
+        if ([string]::IsNullOrEmpty($vf)) {
+            ffmpeg -hide_banner `
+                -hwaccel qsv -hwaccel_output_format qsv `
+                -i "$File" `
+                -c:v hevc_qsv `
+                -b:v 1800k -maxrate 2000k -bufsize 4000k `
+                -c:a aac -b:a 160k `
+                -c:s copy `
+                -f matroska `
+                "$Tmp"
+        } else {
+            ffmpeg -hide_banner `
+                -hwaccel qsv -hwaccel_output_format qsv `
+                -i "$File" `
+                -vf "$vf" `
+                -c:v hevc_qsv `
+                -b:v 1800k -maxrate 2000k -bufsize 4000k `
+                -c:a aac -b:a 160k `
+                -c:s copy `
+                -f matroska `
+                "$Tmp"
+        }
+        
+        $ffmpegExitCode = $LASTEXITCODE
+        
+        # Verify output file and is not empty
+        if ($ffmpegExitCode -ne 0 -or -not (Test-Path -LiteralPath $Tmp)) {
+            Remove-Item -LiteralPath $Tmp -Force -ErrorAction SilentlyContinue
+            return
+        }
+        
+        $tmpSize = (Get-Item -LiteralPath $Tmp -ErrorAction SilentlyContinue).Length
+        if ($tmpSize -eq 0) {
+            Remove-Item -LiteralPath $Tmp -Force -ErrorAction SilentlyContinue
+            return
+        }
 
-        if ($LASTEXITCODE -eq 0) {
+        if ($ffmpegExitCode -eq 0) {
             # Only replace original if new file is smaller
             $origFile = Get-Item -LiteralPath $File
             $origSize = $origFile.Length
@@ -116,8 +148,8 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
 Get-Job | Wait-Job | Receive-Job
 Get-Job | Remove-Job
 
-# Cleanup stray temp files
-Get-ChildItem -Recurse -Filter "*`[Trans`].tmp" | Remove-Item -Force
-Get-ChildItem -Recurse -Filter "*`[Trans`].nfo" | Remove-Item -Force
-Get-ChildItem -Recurse -Filter "*`[Trans`].jpg" | Remove-Item -Force
-Get-ChildItem -Recurse -Filter "*`[Trans`].trickplay" | Remove-Item -Recurse -Force
+# Cleanup all stray [Trans] temp files
+Get-ChildItem -Recurse -Filter "*`[Trans`].tmp" | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Recurse -Filter "*`[Trans`].nfo" | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Recurse -Filter "*`[Trans`].jpg" | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Recurse -Filter "*`[Trans`].trickplay" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue

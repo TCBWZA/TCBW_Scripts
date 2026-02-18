@@ -55,14 +55,11 @@ while read -r f; do
         -show_entries stream=codec_name \
         -of default=nw=1:nk=1 "$f")
 
+    # Fast checks first, skip redundant checks once true
     needs_convert=false
-
-    # Video rules
-    (( vbitrate > 2500000 )) && needs_convert=true
-    [[ "$vcodec" != "hevc" ]] && needs_convert=true
-
-    # Audio rules
     [[ "$acodec" != "aac" ]] && needs_convert=true
+    ! $needs_convert && [[ "$vcodec" != "hevc" ]] && needs_convert=true
+    ! $needs_convert && (( vbitrate > 2500000 )) && needs_convert=true
 
     if ! $needs_convert; then
         echo "Skipping $f -- already in desired format"

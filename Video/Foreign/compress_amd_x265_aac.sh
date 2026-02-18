@@ -58,23 +58,23 @@ for f in "${files[@]}"; do
     acodec=$(jq -r '.streams[] | select(.codec_type=="audio") | .codec_name' <<< "$probe")
     field_order=$(jq -r '.streams[] | select(.codec_type=="video") | .field_order' <<< "$probe")
 
+    # Fast checks first, skip expensive detection if already need to convert
     needs_convert=false
-
-    [[ "$vcodec" != "hevc" ]] && needs_convert=true
-    (( vbitrate > 2500000 )) && needs_convert=true
     [[ "$acodec" != "aac" ]] && needs_convert=true
+    ! $needs_convert && [[ "$vcodec" != "hevc" ]] && needs_convert=true
+    ! $needs_convert && (( vbitrate > 2500000 )) && needs_convert=true
 
     #####################################################
-    # TELECINE + INTERLACE DETECTION
+    # TELECINE + INTERLACE DETECTION (only if still needed!)
     #####################################################
 
     status="progressive"
 
     # Quick check: if field_order explicitly indicates interlaced, mark it immediately
-    if [[ "$field_order" =~ ^(tt|bb|tb|bt)$ ]]; then
+    if ! $needs_convert && [[ "$field_order" =~ ^(tt|bb|tb|bt)$ ]]; then
         status="interlaced"
-    # Otherwise, run deep scan unless explicitly progressive
-    elif [[ "$field_order" != "progressive" ]]; then
+    # Otherwise, run deep scan unless explicitly progressive or already need to convert
+    elif ! $needs_convert && [[ "$field_order" != "progressive" ]]; then
         echo "Running deep scan for interlace/telecine..."
 
         # Detect interlaced frames using idet filter

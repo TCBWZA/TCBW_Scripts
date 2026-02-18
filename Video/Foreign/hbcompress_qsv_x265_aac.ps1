@@ -27,7 +27,6 @@ foreach ($f in $files) {
 
     $basename = $f.BaseName
     $dir = $f.DirectoryName
-    $ext = $f.Extension
     $baseNoExt = $basename
 
     # Extract show name (first word) for hierarchical skip markers
@@ -67,10 +66,11 @@ foreach ($f in $files) {
     $vbitrate = [int]$videoStream.bit_rate
     $acodec = $audioStream.codec_name
 
+    # Fast checks first, skip redundant checks once true
     $needs_convert = $false
-    if ($vcodec -ne "hevc") { $needs_convert = $true }
-    if ($vbitrate -gt 2500000) { $needs_convert = $true }
     if ($acodec -ne "aac") { $needs_convert = $true }
+    if (-not $needs_convert -and $vcodec -ne "hevc") { $needs_convert = $true }
+    if (-not $needs_convert -and $vbitrate -gt 2500000) { $needs_convert = $true }
 
     if (-not $needs_convert) {
         Write-Host "Skipping $($f.FullName) -- already in desired format"
@@ -132,7 +132,7 @@ foreach ($f in $files) {
                 $origMB = [math]::Round($origSize / 1MB, 2)
                 $newMB = [math]::Round($newSize / 1MB, 2)
                 Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_$show_name"
-                New-Item -LiteralPath $show_skip_file -ItemType File -Force | Out-Null
+                New-Item -Path $show_skip_file -ItemType File -Force | Out-Null
                 Remove-Item -LiteralPath $tmpFile -Force
             }
         }

@@ -79,7 +79,7 @@ HandBrake-optimized PowerShell script using Intel Quick Sync Video (QSV). Specia
 - Temporary files use `.tmp` extension and are cleaned up on success or error
 - Original file timestamps are preserved after successful encoding
 - Original file ownership can be set by uncommenting the `chown` line in scripts (currently disabled for portability)
-- **Skip Files**: 
+- **Skip Files**:
   - `.skip` in parent directory: marks entire parent directory as unsuitable for compression (one level up from season)
   - `.skip_SHOWNAME` in current directory: marks specific show (extracted from filename prefix) as unsuitable for compression
   - Scripts check both markers before processing files

@@ -2,7 +2,8 @@
 # Intel QSV H.265 encoder with intelligent audio/subtitle filtering
 
 param(
-    [int]$MAX_JOBS = 2
+    [int]$MAX_JOBS = 2,
+    [bool]$DEBUG = $false
 )
 
 $ErrorActionPreference = 'Continue'
@@ -48,49 +49,52 @@ foreach ($f in $files) {
     $acodec = ($probe.streams | Where-Object { $_.codec_type -eq "audio" } | Select-Object -First 1).codec_name
     $fieldOrder = ($probe.streams | Where-Object { $_.codec_type -eq "video" } | Select-Object -First 1).field_order
     
+    # Fast checks first, skip expensive detection if already need to convert
     $needsConvert = $false
-    
-    if ($vcodec -ne "hevc") {
-        $needsConvert = $true
-    }
-    if ($vbitrate -match '^\d+$' -and [int]$vbitrate -gt 2500000) {
-        $needsConvert = $true
-    }
     if ($acodec -ne "aac") {
+        $needsConvert = $true
+    }
+    if (-not $needsConvert -and $vcodec -ne "hevc") {
+        $needsConvert = $true
+    }
+    if (-not $needsConvert -and $vbitrate -match '^\d+$' -and [int]$vbitrate -gt 2500000) {
         $needsConvert = $true
     }
     
     #####################################################
-    # TELECINE + INTERLACE DETECTION (check first!)
+    # TELECINE + INTERLACE DETECTION (only if still needed!)
     #####################################################
     
     $status = "progressive"
     
-    # Quick check: if field_order explicitly indicates interlaced
-    if ($fieldOrder -match '^(tt|bb|tb|bt)$') {
-        $status = "interlaced"
-    }
-    # Otherwise, run deep scan unless explicitly progressive
-    elseif ($fieldOrder -ne "progressive") {
-        Write-Host "Running deep scan for interlace/telecine..."
-        
-        # Detect interlaced frames using idet filter
-        $idetOutput = & ffmpeg -nostdin -hide_banner -skip_frame nokey -filter:v idet -frames:v 200 -an -f null - $f.FullName 2>&1
-        $interlacedCount = [regex]::Match($idetOutput -join "`n", 'Interlaced:\s*(\d+)').Groups[1].Value
-        if ([string]::IsNullOrEmpty($interlacedCount)) { $interlacedCount = 0 }
-        
-        # Detect telecine via repeat_pict
-        $repeatPictOutput = & ffprobe -v error -select_streams v:0 -show_frames -read_intervals "%+#300" -show_entries frame=repeat_pict -of csv=p=0 $f.FullName 2>$null
-        $telecineFlag = ($repeatPictOutput | Select-String '1' -MaxMatches 1)
-        
-        if ([int]$interlacedCount -gt 0) {
+    # Only detect interlacing if we haven't already determined conversion is needed
+    if (-not $needsConvert) {
+        # Quick check: if field_order explicitly indicates interlaced
+        if ($fieldOrder -match '^(tt|bb|tb|bt)$') {
             $status = "interlaced"
         }
-        elseif ($null -ne $telecineFlag) {
-            $status = "telecine"
-        }
-        else {
-            $status = "progressive"
+        # Otherwise, run deep scan unless explicitly progressive
+        elseif ($fieldOrder -ne "progressive") {
+            Write-Host "Running deep scan for interlace/telecine..."
+            
+            # Detect interlaced frames using idet filter
+            $idetOutput = & ffmpeg -nostdin -hide_banner -skip_frame nokey -filter:v idet -frames:v 200 -an -f null - $f.FullName 2>&1
+            $interlacedCount = [regex]::Match($idetOutput -join "`n", 'Interlaced:\s*(\d+)').Groups[1].Value
+            if ([string]::IsNullOrEmpty($interlacedCount)) { $interlacedCount = 0 }
+            
+            # Detect telecine via repeat_pict
+            $repeatPictOutput = & ffprobe -v error -select_streams v:0 -show_frames -read_intervals "%+#300" -show_entries frame=repeat_pict -of csv=p=0 $f.FullName 2>$null
+            $telecineFlag = ($repeatPictOutput | Select-String '1' -MaxMatches 1)
+            
+            if ([int]$interlacedCount -gt 0) {
+                $status = "interlaced"
+            }
+            elseif ($null -ne $telecineFlag) {
+                $status = "telecine"
+            }
+            else {
+                $status = "progressive"
+            }
         }
     }
     
@@ -140,8 +144,8 @@ foreach ($f in $files) {
                 $vfChain = "hwdownload,format=yuv420p,fieldmatch,decimate,bwdif=mode=send_frame,format=nv12,hwupload"
             }
             "progressive" {
-                Write-Host "Progressive -- no deinterlace"
-                $vfChain = "hwdownload,format=yuv420p,format=nv12,hwupload"
+                Write-Host "Progressive -- no filter needed"
+                $vfChain = ""
             }
         }
     }
@@ -157,9 +161,12 @@ foreach ($f in $files) {
     
     # Build audio stream mapping (as array)
     $audioMapArgs = @()
+    $hasVideoMap = $false
+    
     if ($audioCount -eq 1) {
         # Single audio track: copy it
-        $audioMapArgs = @("-c:a", "copy")
+        $audioMapArgs = @("-map", "0:v:0", "-c:a", "copy")
+        $hasVideoMap = $true
         Write-Host "  → Single audio track: copying as-is"
     }
     elseif ($audioCount -gt 1) {
@@ -182,17 +189,22 @@ foreach ($f in $files) {
         # Combine: English + unknown/null
         $allAudio = $englishAudio + $unknownAudio
         
-        # Write-Host "  DEBUG: Found English audio indices: '$($englishAudio -join ', ')'"
-        # Write-Host "  DEBUG: Found unknown/null audio indices: '$($unknownAudio -join ', ')'"
+        if ($DEBUG) {
+            Write-Host "  DEBUG: Found English audio indices: '$($englishAudio -join ', ')'"
+            Write-Host "  DEBUG: Found unknown/null audio indices: '$($unknownAudio -join ', ')'"
+        }
         
         if ($allAudio.Count -gt 0) {
             # Build -map commands for all matched audio tracks using STREAM indices
             $audioMapArgs = @("-map", "0:v:0", "-c:a", "copy")
+            $hasVideoMap = $true
             foreach ($idx in $allAudio) {
                 $audioMapArgs += @("-map", "0:$idx")
             }
             Write-Host "  → Multiple audio tracks: keeping English/unknown tracks"
-            Write-Host "  DEBUG: Audio map args: $($audioMapArgs -join ' ')"
+            if ($DEBUG) {
+                Write-Host "  DEBUG: Audio map args: $($audioMapArgs -join ' ')"
+            }
         }
         else {
             # No English or unknown found, map first audio explicitly
@@ -203,12 +215,14 @@ foreach ($f in $files) {
                 Where-Object { $_.codec_type -eq "audio" -and $_.index -eq $firstAudioIdx } |
                 Select-Object -ExpandProperty tags).language ?? "unknown"
             $audioMapArgs = @("-map", "0:v:0", "-map", "0:$firstAudioIdx", "-c:a", "copy")
+            $hasVideoMap = $true
             Write-Host "  → No English/unknown audio found, keeping first audio stream $firstAudioIdx ($firstAudioLang)"
         }
     }
     else {
         # No audio tracks
-        $audioMapArgs = @()
+        $audioMapArgs = @("-map", "0:v:0")
+        $hasVideoMap = $true
         Write-Host "  → No audio tracks"
     }
     
@@ -217,7 +231,7 @@ foreach ($f in $files) {
     if ($subtitleCount -eq 1) {
         # Single subtitle: copy it
         $subtitleIdx = ($probe.streams | Where-Object { $_.codec_type -eq "subtitle" } | Select-Object -First 1).index
-        if ($audioMapArgs -notcontains "-map 0:v:0") {
+        if (-not $hasVideoMap) {
             $subtitleMapArgs = @("-map", "0:v:0", "-map", "0:$subtitleIdx", "-c:s", "copy")
         }
         else {
@@ -245,13 +259,14 @@ foreach ($f in $files) {
         # Combine: English + unknown/null
         $allSubs = $englishSubs + $unknownSubs
         
-        Write-Host "  DEBUG: Found English subtitle indices: '$($englishSubs -join ', ')'"
-        Write-Host "  DEBUG: Found unknown/null subtitle indices: '$($unknownSubs -join ', ')'"
+        if ($DEBUG) {
+            Write-Host "  DEBUG: Found English subtitle indices: '$($englishSubs -join ', ')'"
+            Write-Host "  DEBUG: Found unknown/null subtitle indices: '$($unknownSubs -join ', ')'"
+        }
         
         if ($allSubs.Count -gt 0) {
-            # MUST include -map 0:v:0 when using explicit -map for subtitles (v:0 skips attached pics)
-            # Only add it if audio_map doesn't already have it
-            if ($audioMapArgs -notcontains "-map 0:v:0") {
+            # Only add -map 0:v:0 if not already added by audio mapping
+            if (-not $hasVideoMap) {
                 $subtitleMapArgs = @("-map", "0:v:0", "-c:s", "copy")
             }
             else {
@@ -261,7 +276,9 @@ foreach ($f in $files) {
                 $subtitleMapArgs += @("-map", "0:$idx")
             }
             Write-Host "  → Multiple subtitle tracks: keeping English/unknown tracks"
-            Write-Host "  DEBUG: Subtitle map args: $($subtitleMapArgs -join ' ')"
+            if ($DEBUG) {
+                Write-Host "  DEBUG: Subtitle map args: $($subtitleMapArgs -join ' ')"
+            }
         }
         else {
             Write-Host "  → No English/unknown subtitles found"
@@ -309,15 +326,39 @@ foreach ($f in $files) {
                         "-vf", $vfChain) + $videoEncode.Split() + $audioMapArgs + $subtitleMapArgs + @("-f", "matroska", $tmpfile)
     }
     
-    Write-Host "  DEBUG: FFmpeg command: ffmpeg $($ffmpegArgs -join ' ')"
+    if ($DEBUG) {
+        Write-Host "  DEBUG: FFmpeg command: ffmpeg $($ffmpegArgs -join ' ')"
+    }
     
     # Start transcoding in background job
     $job = Start-Job -ScriptBlock {
         param($ffmpegArgs, $tmpfile, $originalFile)
         
-        & ffmpeg $ffmpegArgs
+        # Clean up temp file immediately before ffmpeg runs
+        if (Test-Path -LiteralPath $tmpfile) {
+            Remove-Item -LiteralPath $tmpfile -Force -ErrorAction SilentlyContinue
+        }
         
-        if ($LASTEXITCODE -eq 0) {
+        Write-Host "[JOB] Starting ffmpeg transcoding..."
+        & ffmpeg @ffmpegArgs 2>&1
+        $ffmpegExitCode = $LASTEXITCODE
+        Write-Host "[JOB] FFmpeg exit code: $ffmpegExitCode"
+        
+        # Verify output file exists and is not empty
+        if ($ffmpegExitCode -ne 0 -or -not (Test-Path -LiteralPath $tmpfile)) {
+            Write-Host "[JOB] ERROR: FFmpeg failed or output file not created"
+            Remove-Item -LiteralPath $tmpfile -Force -ErrorAction SilentlyContinue
+            return
+        }
+        
+        $tmpSize = (Get-Item -LiteralPath $tmpfile -ErrorAction SilentlyContinue).Length
+        if ($tmpSize -eq 0) {
+            Write-Host "[JOB] ERROR: Output file is empty (0 bytes)"
+            Remove-Item -LiteralPath $tmpfile -Force -ErrorAction SilentlyContinue
+            return
+        }
+        
+        if ($ffmpegExitCode -eq 0) {
             # Only replace original if new file is smaller
             $origFile = Get-Item $originalFile
             $origSize = $origFile.Length
@@ -325,9 +366,12 @@ foreach ($f in $files) {
             
             if ($newSize -lt $origSize) {
                 $origTime = $origFile.LastWriteTime
-                Move-Item -Path $tmpfile -Destination $originalFile -Force
-                (Get-Item $originalFile).LastWriteTime = $origTime
-                Get-Item $originalFile | Set-ItemProperty -Name Attributes -Value (Get-Item $originalFile).Attributes -PassThru | Out-Null
+                # Use original basename with .mkv extension (output format is always matroska)
+                $finalFile = Join-Path (Split-Path -LiteralPath $originalFile) "$((Get-Item $originalFile).BaseName).mkv"
+                Move-Item -Path $tmpfile -Destination $finalFile -Force
+                (Get-Item $finalFile).LastWriteTime = $origTime
+                Get-Item $finalFile | Set-ItemProperty -Name Attributes -Value (Get-Item $finalFile).Attributes -PassThru | Out-Null
+                Remove-Item -Path $originalFile -Force -ErrorAction SilentlyContinue
                 $origMB = [math]::Round($origSize / 1MB, 2)
                 $newMB = [math]::Round($newSize / 1MB, 2)
                 Write-Host "Replaced: ${origMB}MB → ${newMB}MB"
@@ -336,8 +380,8 @@ foreach ($f in $files) {
                 $origMB = [math]::Round($origSize / 1MB, 2)
                 $newMB = [math]::Round($newSize / 1MB, 2)
                 Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip file"
-                $skipFile = Join-Path (Split-Path -LiteralPath $originalFile) '.skip'
-                New-Item -LiteralPath $skipFile -ItemType File -Force | Out-Null
+                $skipFile = Join-Path (Split-Path -Path $originalFile) '.skip'
+                New-Item -Path $skipFile -ItemType File -Force | Out-Null
                 Remove-Item -Path $tmpfile -Force -ErrorAction SilentlyContinue
             }
         }
@@ -361,21 +405,59 @@ foreach ($f in $files) {
 }
 
 # Wait for all remaining jobs to complete
+Write-Host "Waiting for $($activeJobs.Count) remaining job(s)..."
 $activeJobs | ForEach-Object {
-    Receive-Job -Job $_ -Wait -ErrorAction SilentlyContinue
+    $jobOutput = Receive-Job -Job $_ -Wait
+    if ($jobOutput) {
+        Write-Host $jobOutput
+    }
     Remove-Job -Job $_
+}
+Write-Host "All jobs completed."
+
+#####################################################
+# Clean up any stray 0-byte temp files
+#####################################################
+
+Write-Host "Checking for 0-byte temp files..."
+Get-ChildItem -Recurse -File -Include @("*[Cleaned].tmp", "*[Trans].tmp") |
+    Where-Object { $_.Length -eq 0 } |
+    ForEach-Object {
+        Write-Host "Removing 0-byte file: $($_.FullName)"
+        Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+    }
+
+#####################################################
+# Final check: Remove any remaining [Cleaned]/[Trans] files
+#####################################################
+
+Write-Host "Running final check for leftover [Cleaned] and [Trans] video files..."
+
+Get-ChildItem -Recurse -File -Include @("*.mkv", "*.mp4", "*.ts") | Where-Object {
+    $_.BaseName -match '\[Cleaned\]|\[Trans\]'
+} | ForEach-Object {
+    Write-Host "Removing leftover: $($_.FullName)"
+    Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
 }
 
 #####################################################
 # Cleanup section
 #####################################################
 
-Write-Host "Cleaning up leftover [Cleaned] files..."
+Write-Host "Cleaning up leftover [Cleaned] and [Trans] files..."
 
-Get-ChildItem -Recurse -Include @("*[Cleaned].tmp", "*[Cleaned].nfo", "*[Cleaned].jpg") -Force |
+# Remove [Cleaned] files and sidecar files
+Get-ChildItem -Recurse -Include @("*[Cleaned].mkv", "*[Cleaned].tmp", "*[Cleaned].nfo", "*[Cleaned].jpg") -Force |
     Remove-Item -Force -ErrorAction SilentlyContinue
 
 Get-ChildItem -Recurse -Directory -Include "*[Cleaned].trickplay" |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+# Remove [Trans] files and sidecar files
+Get-ChildItem -Recurse -Include @("*[Trans].mkv", "*[Trans].tmp", "*[Trans].nfo", "*[Trans].jpg") -Force |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
+Get-ChildItem -Recurse -Directory -Include "*[Trans].trickplay" |
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host "All tasks complete."

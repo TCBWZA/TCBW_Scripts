@@ -58,14 +58,15 @@ for f in "${files[@]}"; do
     acodec=$(jq -r '.streams[] | select(.codec_type=="audio") | .codec_name' <<< "$probe")
     field_order=$(jq -r '.streams[] | select(.codec_type=="video") | .field_order' <<< "$probe")
 
+    # Fast checks first, skip expensive detection if already need to convert
     needs_convert=false
-
-    [[ "$vcodec" != "hevc" ]] && needs_convert=true
-    (( vbitrate > 2500000 )) && needs_convert=true
     [[ "$acodec" != "aac" ]] && needs_convert=true
+    ! $needs_convert && [[ "$vcodec" != "hevc" ]] && needs_convert=true
+    ! $needs_convert && (( vbitrate > 2500000 )) && needs_convert=true
 
     #####################################################
-    # TELECINE + INTERLACE DETECTION
+    # TELECINE + INTERLACE DETECTION (only if still needed!)
+    #####################################################
     #####################################################
 
     status="progressive"

@@ -40,16 +40,18 @@ function Get-VideoInterlaceStatus {
 
     #
     # SLOW PASS — ONLY IF field_order missing or unknown
+    # OPTIMIZED: Limit to first 20 frames to reduce analysis time
     #
     try {
-        $probeJson = ffprobe -v quiet -print_format json -show_frames -select_streams v "$Path"
+        $probeJson = ffprobe -v quiet -print_format json -show_frames -select_streams v -count:frames 20 "$Path"
         $probe = $probeJson | ConvertFrom-Json
     }
     catch {
         return "unknown"
     }
 
-    $frames = $probe.frames | Select-Object -First 200
+    # Skip first 5 minutes (9000 frames at 30fps) to avoid credits/intros, then check next 20 frames
+    $frames = $probe.frames | Select-Object -Skip 9000 -First 20
 
     if ($frames.interlaced_frame -contains 1) {
         return "interlaced"
@@ -114,17 +116,24 @@ foreach ($f in $files) {
     $acodec = $audioStream.codec_name
 
     #####################################################
-    # Detect interlacing BEFORE deciding conversion
+    # Fast checks first, only detect interlacing if needed
     #####################################################
-    $status = Get-VideoInterlaceStatus $f.FullName
-
     $needs_convert = $false
-    if ($vcodec -ne "hevc") { $needs_convert = $true }
-    if ($vbitrate -gt 2500000) { $needs_convert = $true }
     if ($acodec -ne "aac") { $needs_convert = $true }
-
-    # Telecine or interlaced ALWAYS requires conversion
-    if ($status -ne "progressive") { $needs_convert = $true }
+    if (-not $needs_convert -and $vcodec -ne "hevc") { $needs_convert = $true }
+    if (-not $needs_convert -and $vbitrate -gt 2500000) { $needs_convert = $true }
+    
+    # Only run expensive interlace detection if other checks pass
+    $status = $null
+    if (-not $needs_convert) {
+        $status = Get-VideoInterlaceStatus $f.FullName
+        # Telecine or interlaced ALWAYS requires conversion
+        if ($status -ne "progressive") { $needs_convert = $true }
+    }
+    else {
+        # If we already need to convert, we still need status for filter choice
+        $status = Get-VideoInterlaceStatus $f.FullName
+    }
 
     if (-not $needs_convert) {
         Write-Host "Skipping $($f.FullName) -- already in desired format"
@@ -217,7 +226,7 @@ foreach ($f in $files) {
             $origMB = [math]::Round($origSize / 1MB, 2)
             $newMB = [math]::Round($newSize / 1MB, 2)
             Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_$show_name"
-            New-Item -LiteralPath $show_skip_file -ItemType File -Force | Out-Null
+            New-Item -Path $show_skip_file -ItemType File -Force | Out-Null
             Remove-Item -LiteralPath $tmpfile -Force
         }
     }
