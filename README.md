@@ -10,20 +10,26 @@ TCBW_Scripts/
 │   └── lxc/
 │       └── pve-lxc-upgrade.sh         - Automated LXC container updater for Proxmox
 ├── Video/
-│   ├── Foreign/                        - Deinterlacing scripts for foreign language content
+│   ├── Foreign/                        - Compression scripts for foreign language content
 │   │   ├── README.md
-│   │   ├── deinterlace_amd_x265_aac.sh - AMD GPU deinterlacing (bash)
-│   │   ├── deinterlace_qsv_x265_aac.ps1 - Intel QSV deinterlacing (PowerShell)
-│   │   ├── deinterlacemp4_amd_x265_aac.sh - MP4-specific AMD deinterlacing
-│   │   └── hbdeintvappi.sh            - Alternative AMD VAAPI deinterlacing
-│   ├── Movies/                         - Deinterlacing scripts for movies
+│   │   ├── compress_amd_x265_aac.sh   - AMD GPU compression (bash)
+│   │   ├── compress_qsv_x265_aac.ps1  - Intel QSV compression (PowerShell)
+│   │   ├── compressmp4_amd_x265_aac.sh - MP4-specific AMD compression
+│   │   └── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV compression
+│   ├── Movies/                         - Compression & deduplication scripts for movies
 │   │   ├── README.md
-│   │   ├── deinterlace_amd_x265_aac.sh - AMD GPU deinterlacing (bash)
-│   │   └── deinterlace_qsv_x265_aac.ps1 - Intel QSV deinterlacing (PowerShell)
-│   └── TV/                             - Deinterlacing scripts for TV shows
+│   │   ├── compress_amd_x265_aac.sh   - AMD GPU compression (bash)
+│   │   ├── compress_qsv_x265_aac.ps1  - Intel QSV compression (PowerShell)
+│   │   ├── clean_compress_amd_x265_aac.sh - AMD GPU w/ metadata handling (bash)
+│   │   ├── clean_compress_qsv_x265_aac.ps1 - Intel QSV w/ metadata handling (PowerShell)
+│   │   ├── clean_compressUHD_qsv_x265_aac.ps1 - Intel QSV 4K compression (PowerShell)
+│   │   └── dedup.ps1                 - Duplicate removal (PowerShell)
+│   └── TV/                             - Compression & deduplication scripts for TV shows
 │       ├── README.md
-│       ├── deinterlace_amd_x265_aac.sh - AMD GPU deinterlacing (bash)
-│       └── deinterlace_qsv_x265_aac.ps1 - Intel QSV deinterlacing (PowerShell)
+│       ├── compress_amd_x265_aac.sh   - AMD GPU compression (bash)
+│       ├── compress_qsv_x265_aac.ps1  - Intel QSV compression (PowerShell)
+│       ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV compression
+│       └── dedup.ps1                 - Duplicate episode removal & priority-based selection
 └── Files/
     └── (legacy or additional files)
 ```
@@ -36,11 +42,11 @@ See [Linux/README.md](Linux/README.md) for detailed descriptions of Linux utilit
 
 **⚠️ USE AT YOUR OWN RISK**
 
-The settings in use work for me. You need to make sure things like bitrate meet your quality requirements. **THESE WILL NOT WORK FOR UHD.**
+The settings in use work for me. You need to make sure things like bitrate meet your quality requirements. **THESE WILL NOT WORK FOR UHD.** (except `clean_compressUHD_qsv_x265_aac.ps1`)
 
 ### Overview
 
-A collection of powerful video transcoding and deinterlacing scripts optimized for batch processing of video media. These scripts leverage hardware-accelerated encoding to efficiently convert interlaced video content to modern formats with reduced file sizes.
+A comprehensive collection of powerful video transcoding, compression, and deduplication scripts optimized for batch processing of video media. These scripts leverage hardware-accelerated encoding to efficiently convert interlaced video content to modern formats with reduced file sizes, and provide intelligent duplicate detection and removal.
 
 ### Video Folder Organization
 
@@ -52,13 +58,29 @@ See each folder's README for detailed file descriptions and usage information.
 
 ## Features
 
-- **Hardware-Accelerated Encoding**: Support for both AMD and Intel Quick Sync Video (QSV) encoders
+### Compression Scripts
+
+- **Hardware-Accelerated Encoding**: Support for both AMD VAAPI and Intel Quick Sync Video (QSV) encoders
 - **Batch Processing**: Parallel encoding with configurable concurrent jobs
 - **Smart Format Detection**: Automatically detects interlacing and decides whether conversion is needed
+- **Optimized Frame Analysis**: Skips first 5 minutes of video (intros/credits) when analyzing for interlacing
 - **Output Format**: x265 (HEVC) video codec with AAC audio
-- **Progress Tracking**: Real-time progress monitoring during batch operations (TV Powershell only at this stage.)
-- **Multi-Platform**: PowerShell scripts for Windows, shell scripts for Unix-like systems. QSV used in Powershell and VAAPI in bash.
+- **Metadata Handling**: Optional metadata and sidecar file management
+- **Skip Markers**: Support for `.skip` files to mark directories and shows as ineligible for compression
+
+### Deduplication Scripts
+
+- **Intelligent Duplicate Detection**: Matches episodes by S##E## or ##x## patterns
+- **Priority-Based Selection**: Keeps MKV > MP4 > TS > AVI when duplicates exist
+- **Comprehensive Cleanup**: Removes all associated sidecar files (.nfo, .srt, .jpg, .trickplay, etc.)
+- **Audit Mode**: Preview what would be deleted before making changes
+- **Directory-Scoped Matching**: Only considers files in the same directory as potential duplicates
+
+### General
+
+- **Multi-Platform**: PowerShell scripts for Windows, shell scripts for Unix-like systems
 - **Organized Structure**: Separate handling for Movies, TV Shows, and Foreign content
+- **Extensive Documentation**: Detailed README files for each content category
 
 ## Prerequisites
 
@@ -103,44 +125,51 @@ See each folder's README for detailed file descriptions and usage information.
 
 ### Windows (PowerShell)
 
-**For TV Content** (with Intel QSV):
+**Compression:**
 
 ```powershell
-.\Video\TV\deinterlace_qsv_x265_aac.ps1
+# TV Content - Intel QSV compression
+.\Video\TV\compress_qsv_x265_aac.ps1
+
+# Movies - Intel QSV compression
+.\Video\Movies\compress_qsv_x265_aac.ps1
+
+# Movies - Intel QSV with 4K support
+.\Video\Movies\clean_compressUHD_qsv_x265_aac.ps1
+
+# Foreign - Intel QSV compression
+.\Video\Foreign\compress_qsv_x265_aac.ps1
 ```
 
-**For Movies** (with Intel QSV):
+**Deduplication:**
 
 ```powershell
-.\Video\Movies\deinterlace_qsv_x265_aac.ps1
-```
+# TV Content - Audit mode (preview only)
+.\Video\TV\dedup.ps1 -Audit
 
-**For Foreign Content** (with Intel QSV):
+# TV Content - Perform deduplication
+.\Video\TV\dedup.ps1
 
-```powershell
-.\Video\Foreign\deinterlace_qsv_x265_aac.ps1
+# Movies - Audit mode (preview only)
+.\Video\Movies\dedup.ps1 -Audit
+
+# Movies - Perform deduplication
+.\Video\Movies\dedup.ps1
 ```
 
 ### Unix-like Systems (Bash)
 
-**For TV Content**:
+**Compression:**
 
 ```bash
-bash ./Video/TV/deinterlace_amd_x265_aac.sh
-```
+# TV Content - AMD GPU compression
+bash ./Video/TV/compress_amd_x265_aac.sh
 
-**For Movies**:
+# Movies - AMD GPU compression
+bash ./Video/Movies/compress_amd_x265_aac.sh
 
-```bash
-bash ./Video/Movies/deinterlace_amd_x265_aac.sh
-```
-
-**For Foreign Content**:
-
-```bash
-bash ./Video/Foreign/deinterlace_amd_x265_aac.sh
-# or for MP4-specific:
-bash ./Video/Foreign/deinterlacemp4_amd_x265_aac.sh
+# Foreign - AMD GPU compression
+bash ./Video/Foreign/compress_amd_x265_aac.sh
 ```
 
 For detailed usage instructions and script options, see the README files in each folder:
@@ -149,12 +178,12 @@ For detailed usage instructions and script options, see the README files in each
 - [Video/Movies/](Video/Movies/README.md)
 - [Video/Foreign/](Video/Foreign/README.md)
 
-## Directory Structure
-
 ## How It Works
 
-1. **File Scanning**: Recursively scans for `.mkv` and `.ts` files in the script directory
-2. **Smart Filtering**: Skips files smaller than 1GB
+### Compression Scripts
+
+1. **File Scanning**: Recursively scans for `.mkv`, `.mp4`, and `.ts` files in the script directory
+2. **Smart Filtering**: Skips files smaller than 1GB and previously processed files (marked [Cleaned] or [Trans])
 3. **Format Analysis**: Uses ffprobe to detect:
    - Video codec and bitrate
    - Audio codec
@@ -164,15 +193,26 @@ For detailed usage instructions and script options, see the README files in each
    - Bitrate exceeds 2.5 Mbps
    - Audio is not already AAC
    - Video is interlaced (not progressive)
-5. **Deinterlacing**: Uses FFmpeg's `idet` filter to automatically detect and apply appropriate deinterlacing
-6. **Parallel Processing**: Encodes multiple files simultaneously (configurable via `$MaxJobs`)
-7. **Output**: Creates new files with quality preservation while reducing file size
+5. **Interlace Detection**: Two-stage analysis:
+   - Quick metadata check first (field_order)
+   - Deep frame analysis on actual content (skips first 5 minutes to avoid intros/credits)
+6. **Deinterlacing**: Automatically applies appropriate filter based on detection (bwdif for interlaced, fieldmatch+decimate+bwdif for telecine)
+7. **Parallel Processing**: Encodes multiple files simultaneously (configurable via `$MaxJobs`)
+8. **Output**: Creates new files with quality preservation while reducing file size
+
+### Deduplication Scripts
+
+1. **Pattern Detection**: Scans files for episode codes (S##E##, ##x##, etc.)
+2. **Grouping**: Groups potential duplicates by episode code within each directory
+3. **Priority Selection**: Applies priority: File Type (MKV > MP4 > TS > AVI) → File Size (largest)
+4. **Cleanup**: Removes all sidecar files associated with deleted episodes
+5. **Reporting**: Generates detailed summary of actions taken
 
 ## Configuration Options
 
 Edit the script header to customize:
 
-**PowerShell (`deinterlace_qsv_x265_aac.ps1`)**:
+**PowerShell Compression Scripts (`compress_qsv_x265_aac.ps1`)**:
 
 ```powershell
 $MaxJobs = 2                    # Number of parallel encoding jobs
@@ -180,27 +220,42 @@ $TempDir = "D:\fasttemp"        # Temporary directory for intermediate files
                                 # Use "" to keep files in source directory
 ```
 
-**Bash (`deinterlace_amd_x265_aac.sh`)**:
+**Bash Compression Scripts (`compress_amd_x265_aac.sh`)**:
 
 ```bash
 MAX_JOBS=2                      # Number of parallel encoding jobs
+```
+
+**PowerShell Deduplication (`dedup.ps1`)**:
+
+```powershell
+# Run with -Audit flag for preview mode
+./dedup.ps1 -Audit              # Preview changes without deleting
+./dedup.ps1                     # Perform actual deduplication
 ```
 
 ## Encoder Selection
 
 ### Intel QSV (Quick Sync Video)
 
-- **File**: `deinterlace_qsv_x265_aac.ps1` or `deinterlace_qsv_x265_aac.sh`
+- **Files**: `compress_qsv_x265_aac.ps1`, `hbcompress_qsv_x265_aac.ps1`, `clean_compress_qsv_x265_aac.ps1`, `clean_compressUHD_qsv_x265_aac.ps1`
 - **Best For**: Intel processors with integrated graphics
 - **Performance**: Excellent power efficiency
 - **Compatibility**: Works with most modern Intel CPUs
+- **4K Support**: Use `clean_compressUHD_qsv_x265_aac.ps1` for UHD content
 
-### AMD
+### AMD VAAPI
 
-- **File**: `deinterlace_amd_x265_aac.sh`
+- **Files**: `compress_amd_x265_aac.sh`, `compressmp4_amd_x265_aac.sh`
 - **Best For**: AMD GPUs (Radeon RX series)
 - **Performance**: High throughput for batch processing
 - **Compatibility**: Requires compatible AMD hardware
+
+### HandBrake Integration
+
+- **Files**: `hbcompress_qsv_x265_aac.ps1` (Windows with Intel QSV)
+- **Best For**: HandBrake encoding workflows
+- **Features**: Specialized handling for HandBrake CLI integration
 
 ## Performance Tips
 
@@ -248,5 +303,5 @@ For questions, issues, or feature requests, please open an issue on the project 
 ---
 
 **Author**: TCBW  
-**Last Updated**: 2026  
-**Version**: 1.0
+**Last Updated**: February 2026  
+**Version**: 2.0
