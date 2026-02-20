@@ -112,7 +112,7 @@ foreach ($f in $files) {
     $audioStream = $probe.streams | Where-Object { $_.codec_type -eq "audio" } | Select-Object -First 1
 
     $vcodec = $videoStream.codec_name
-    $vbitrate = if ($videoStream.bit_rate) { [int]$videoStream.bit_rate } else { 0 }
+    $vbitrate = if ($videoStream.bit_rate) { [int]($videoStream.bit_rate[0]) } else { 0 }
     $acodec = $audioStream.codec_name
 
     #####################################################
