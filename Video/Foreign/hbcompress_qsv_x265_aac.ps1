@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 
 Register-EngineEvent PowerShell.Exiting -Action {
     Write-Host "Interrupted -- exiting safely"
-}
+} | Out-Null
 
 $MAX_JOBS = 2
 

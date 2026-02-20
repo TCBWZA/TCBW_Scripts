@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 
 Register-EngineEvent PowerShell.Exiting -Action {
     Write-Host "Interrupted -- exiting safely"
-}
+} | Out-Null
 
 Write-Host "Starting up..."
 Write-Host "Scanning for files..."
@@ -108,11 +108,11 @@ foreach ($f in $files) {
     $probeJson = ffprobe -v quiet -print_format json -show_streams $f.FullName
     $probe = $probeJson | ConvertFrom-Json
 
-    $videoStream = $probe.streams | Where-Object { $_.codec_type -eq "video" }
-    $audioStream = $probe.streams | Where-Object { $_.codec_type -eq "audio" }
+    $videoStream = $probe.streams | Where-Object { $_.codec_type -eq "video" } | Select-Object -First 1
+    $audioStream = $probe.streams | Where-Object { $_.codec_type -eq "audio" } | Select-Object -First 1
 
     $vcodec = $videoStream.codec_name
-    $vbitrate = [int]$videoStream.bit_rate
+    $vbitrate = if ($videoStream.bit_rate) { [int]$videoStream.bit_rate } else { 0 }
     $acodec = $audioStream.codec_name
 
     #####################################################
