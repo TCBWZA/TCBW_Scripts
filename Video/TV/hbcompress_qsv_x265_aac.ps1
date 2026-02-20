@@ -73,7 +73,7 @@ foreach ($f in $files) {
 
     # File size in GB
     $sizeGB = [math]::Floor($f.Length / 1GB)
-    if ($sizeGB -lt 0) { continue }
+    if ($sizeGB -lt 1) { continue }
 
     $basename = $f.BaseName
     $dir = $f.DirectoryName
