@@ -12,6 +12,7 @@ This folder contains utility scripts for Linux/Proxmox environments.
 ## Files
 
 ### pve-lxc-upgrade.sh
+
 Automated LXC container update script for Proxmox VE. Updates the host system and all LXC containers in parallel with configurable job limits. Automatically handles container startup, package updates, and reboots when needed. Logs all operations to `/var/log/lxc-update-*.log`.
 
 **Usage**: Run as root on Proxmox VE host.

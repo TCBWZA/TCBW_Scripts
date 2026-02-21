@@ -36,9 +36,11 @@ Compression and transcoding scripts optimized for files at least 1GB in size. Th
 
 Bash script for video compression using AMD GPU hardware acceleration (VAAPI).
 
-Features:
+**Features:**
 
 - Processes .mkv, .mp4, and .ts files
+- Automatic filtering for already-processed files (marked with [Cleaned] or [Trans])
+- Skip marker handling for content-specific exclusion
 - Interlace/telecine detection with two-pass scanning
 - Deinterlace filters: bwdif (bilateral) for interlaced, fieldmatch+decimate+bwdif for telecine
 - Parallel encoding support (default: 2 concurrent jobs)
@@ -52,9 +54,10 @@ Features:
 
 PowerShell script for video compression using Intel Quick Sync Video (QSV) encoding.
 
-Features:
+**Features:**
 
 - Processes .mkv and .ts files
+- Automatic filtering for already-processed files (marked with [Cleaned] or [Trans])
 - Configurable temporary directory for intermediate files
 - Progress tracking and filtering for already-processed content
 - Parallel encoding support
@@ -69,7 +72,7 @@ Features:
 
 Bash script specialized for MP4 file compression with AMD GPU acceleration.
 
-Features:
+**Features:**
 
 - Processes MP4 container format specifically
 - Optimized for batch MP4 processing
@@ -84,6 +87,14 @@ Features:
 **Status**: Stable (HandBrake-specific variant)
 
 HandBrake-optimized PowerShell script using Intel Quick Sync Video (QSV). Specialized for HandBrake encoding workflows and integration. Optimized for files 1GB or larger.
+
+**Features:**
+
+- HandBrake CLI integration
+- Interlace/telecine detection with frame analysis
+- Always applies decomb filter for interlaced content
+- Parallel job support
+- Automatic filtering for already-processed files (marked with [Cleaned] or [Trans])
 
 **Platform**: Windows with Intel Quick Sync support
 
@@ -133,6 +144,10 @@ To retry compression on skipped files, delete the corresponding `.skip_*` files.
 - If compression produces a file of equal or greater size, the compressed version is discarded and a `.skip_SHOWNAME` marker is created
 - File timestamps are preserved after successful replacement
 - Size comparisons use actual byte count (not disk allocation)
+
+### Cleanup Behavior
+
+On script shutdown, all files marked with `[Cleaned]` or `[Trans]` in the filename are removed (these indicate incomplete/crashed FFmpeg sessions).
 
 ### Other Notes
 

@@ -58,6 +58,18 @@ See each folder's README for detailed file descriptions and usage information.
 
 ## Features
 
+### Architecture & Design
+
+**Why Dual Script Implementations?**
+
+This repository maintains both bash (shell) and PowerShell script implementations due to specific hardware and software constraints:
+
+- **Bash Scripts (Linux/Debian)**: Run on a Debian box with an older version of FFmpeg that has a critical bug affecting files with embedded subtitles. When processing such files, the transcoding process runs at extremely low FPS (often single-digit FPS), making transcoding impractical.
+
+- **PowerShell Scripts (Windows)**: Run on a separate machine with current FFmpeg to work around this limitation. The PowerShell implementations handle transcodes that are problematic on the Debian box, achieving normal FPS rates and practical transcoding times.
+
+This dual-machine approach ensures reliable batch processing despite the Debian FFmpeg limitations, while maintaining the cost-efficiency of the Linux environment for compatible files.
+
 ### Compression Scripts
 
 - **Hardware-Accelerated Encoding**: Support for both AMD VAAPI and Intel Quick Sync Video (QSV) encoders
@@ -117,6 +129,7 @@ See each folder's README for detailed file descriptions and usage information.
    ```
 
 3. **Configure Script Parameters** (optional):
+
    Open your chosen script and modify:
    - `$MaxJobs`: Number of concurrent encoding jobs (default: 2)
    - `$TempDir`: Directory for temporary files (default: "D:\fasttemp")
