@@ -186,29 +186,25 @@ Remove-Job $progressJob
 Write-Host "All encoding tasks completed."
 Write-Host "Cleaning up leftover [Trans] sidecar files and directories..."
 
-# Cleanup leftover [Trans] sidecar files and directories
-$filePatterns = @(
-    "*`[Trans`].tmp",
-    "*`[Trans`].nfo",
-    "*`[Trans`].jpg"
-)
+# Cleanup section
+#####################################################
 
-$dirPatterns = @(
-    "*`[Trans`].trickplay"
-)
+Write-Host "Cleaning up all [Cleaned] and [Trans] files and directories..."
 
-# Remove matching files
-Get-ChildItem -Recurse -File |
-    Where-Object { $filePatterns -contains $_.Name } |
-    ForEach-Object {
-        Remove-Item -LiteralPath $_.FullName -Force
-    }
+# Remove ALL [Cleaned] files (including .mkv, .tmp, .nfo, .jpg, etc.)
+Get-ChildItem -Recurse -Include "*[Cleaned].*" -Force |
+    Remove-Item -Force -ErrorAction SilentlyContinue
 
-# Remove matching directories
-Get-ChildItem -Recurse -Directory |
-    Where-Object { $dirPatterns -contains $_.Name } |
-    ForEach-Object {
-        Remove-Item -LiteralPath $_.FullName -Force -Recurse
-    }
+# Remove [Cleaned] trickplay directories
+Get-ChildItem -Recurse -Directory -Include "*[Cleaned].trickplay" |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-Write-Host "Cleanup complete. All tasks finished."
+# Remove ALL [Trans] files (including .mkv, .tmp, .nfo, .jpg, etc.)
+Get-ChildItem -Recurse -Include "*[Trans].*" -Force |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
+# Remove [Trans] trickplay directories
+Get-ChildItem -Recurse -Directory -Include "*[Trans].trickplay" |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+Write-Host "Cleanup complete."

@@ -158,21 +158,24 @@ $jobs | Wait-Job | Receive-Job | Out-Null
 # Cleanup section
 #####################################################
 
-Write-Host "Cleaning up leftover [Trans] files..."
+Write-Host "Cleaning up all [Cleaned] and [Trans] files and directories..."
 
-# Files
-Get-ChildItem -Recurse -File |
-    Where-Object {
-        $_.Name -match '\[Trans\]\.tmp' -or
-        $_.Name -match '\[Trans\]\.nfo' -or
-        $_.Name -match '\[Trans\]\.jpg'
-    } |
-    ForEach-Object {
-        Remove-Item -LiteralPath $_.FullName -Force
-    }
+# Remove ALL [Cleaned] files (including .mkv, .tmp, .nfo, .jpg, etc.)
+Get-ChildItem -Recurse -Include "*[Cleaned].*" -Force |
+    Remove-Item -Force -ErrorAction SilentlyContinue
 
-# Directories
-Get-ChildItem -Recurse -Directory |
+    
+# Remove [Cleaned] trickplay directories
+Get-ChildItem -Recurse -Directory -Include "*[Cleaned].trickplay" |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+# Remove ALL [Trans] files (including .mkv, .tmp, .nfo, .jpg, etc.)
+Get-ChildItem -Recurse -Include "*[Trans].*" -Force |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
+# Remove [Trans] trickplay directories
+Get-ChildItem -Recurse -Directory -Include "*[Trans].trickplay" |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     Where-Object { $_.Name -match '\[Trans\]\.trickplay' } |
     ForEach-Object {
         Remove-Item -LiteralPath $_.FullName -Recurse -Force

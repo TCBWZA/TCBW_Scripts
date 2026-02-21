@@ -304,5 +304,18 @@ Show-List "Trickplay folders deleted:" Red $Summary.TrickplayDeleted
 Show-List "Orphaned trickplay folders deleted:" Yellow $Summary.OrphanedTrickplayDeleted
 Show-List "Trailer trickplay folders deleted:" Red $Summary.TrailerTrickplayDeleted
 
-Write-Host "========================================================="
+Write-Host "=========================================================" 
 Write-Host ""
+
+# ============================================================
+# CLEANUP SECTION
+# ============================================================
+
+Write-Host "Cleaning up all [Cleaned] and [Trans] files and directories..." -ForegroundColor Cyan
+
+Get-ChildItem -Recurse -Include "*[Cleaned].*" -Force | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Recurse -Directory -Include "*[Cleaned].trickplay" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Recurse -Include "*[Trans].*" -Force | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Recurse -Directory -Include "*[Trans].trickplay" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+Write-Host "All tasks complete."

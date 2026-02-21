@@ -54,9 +54,9 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
     $InterlacedCount = if ($interlaceMatch) { [int]$interlaceMatch.Matches.Groups[1].Value } else { 0 }
 
     if ([int]$InterlacedCount -gt 0) {
-        $vf = "deinterlace_qsv"
+        $deinterlace = "--deinterlace"
     } else {
-        $vf = ""
+        $deinterlace = ""
     }
 
     # Wait for job slots
@@ -67,40 +67,45 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
     Write-Host "Processing $File"
     # Start encoding job
     Start-Job -ScriptBlock {
-        param($File, $Tmp, $vf)
+        param($File, $Tmp, $deinterlace)
          
-        # Clean temp file immediately before ffmpeg runs
+        # Clean temp file immediately before HandBrake runs
         if (Test-Path -LiteralPath $Tmp) {
             Remove-Item -LiteralPath $Tmp -Force -ErrorAction SilentlyContinue
         }
 
-        if ([string]::IsNullOrEmpty($vf)) {
-            ffmpeg -hide_banner `
-                -hwaccel qsv -hwaccel_output_format qsv `
+        # Construct Handbrake command with optional deinterlace
+        if ([string]::IsNullOrEmpty($deinterlace)) {
+            & HandBrakeCLI `
                 -i "$File" `
-                -c:v hevc_qsv `
-                -b:v 1800k -maxrate 2000k -bufsize 4000k `
-                -c:a aac -b:a 160k `
-                -c:s copy `
-                -f matroska `
-                "$Tmp"
+                -o "$Tmp" `
+                -f mkv `
+                -e hevc_qsv `
+                -q 20 `
+                -a 1 `
+                -E aac `
+                -B 160 `
+                --all-subtitles `
+                --all-audio
         } else {
-            ffmpeg -hide_banner `
-                -hwaccel qsv -hwaccel_output_format qsv `
+            & HandBrakeCLI `
                 -i "$File" `
-                -vf "$vf" `
-                -c:v hevc_qsv `
-                -b:v 1800k -maxrate 2000k -bufsize 4000k `
-                -c:a aac -b:a 160k `
-                -c:s copy `
-                -f matroska `
-                "$Tmp"
+                -o "$Tmp" `
+                -f mkv `
+                -e hevc_qsv `
+                -q 20 `
+                -a 1 `
+                -E aac `
+                -B 160 `
+                --all-subtitles `
+                --all-audio `
+                $deinterlace
         }
         
-        $ffmpegExitCode = $LASTEXITCODE
+        $hbExitCode = $LASTEXITCODE
         
         # Verify output file and is not empty
-        if ($ffmpegExitCode -ne 0 -or -not (Test-Path -LiteralPath $Tmp)) {
+        if ($hbExitCode -ne 0 -or -not (Test-Path -LiteralPath $Tmp)) {
             Remove-Item -LiteralPath $Tmp -Force -ErrorAction SilentlyContinue
             return
         }
@@ -111,7 +116,7 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
             return
         }
 
-        if ($ffmpegExitCode -eq 0) {
+        if ($hbExitCode -eq 0) {
             # Only replace original if new file is smaller
             $origFile = Get-Item -LiteralPath $File
             $origSize = $origFile.Length
@@ -140,7 +145,7 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
             }
         }
 
-    } -ArgumentList $File, $Tmp, $vf
+    } -ArgumentList $File, $Tmp, $deinterlace
 
 }
 

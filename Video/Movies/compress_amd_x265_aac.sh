@@ -188,13 +188,10 @@ wait
 # Cleanup section
 #####################################################
 
-echo "Cleaning up leftover [Trans] files..."
+echo "Cleaning up all [Cleaned] and [Trans] files and directories..."
 
 find . \
-  \( -type f -name '*[Trans].tmp' \
-  -o -type f -name '*[Trans].nfo' \
-  -o -type f -name '*[Trans].jpg' \
-  -o -type d -name '*[Trans].trickplay' \) \
-  -exec rm -rf {} +
+  \( -name '*[Cleaned].*' -o -name '*[Trans].*' \) \
+  -exec rm -rf {} + 2>/dev/null
 
 echo "All tasks complete."

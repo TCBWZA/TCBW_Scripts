@@ -241,22 +241,12 @@ foreach ($f in $files) {
 # Cleanup section
 #####################################################
 
-Write-Host "Cleaning up leftover [Trans] files..."
+Write-Host "Cleaning up all [Trans] files and directories..."
 
-Get-ChildItem -Recurse -File |
-    Where-Object {
-        $_.Name -match '\[Trans\]\.tmp' -or
-        $_.Name -match '\[Trans\]\.nfo' -or
-        $_.Name -match '\[Trans\]\.jpg'
-    } |
-    ForEach-Object {
-        Remove-Item -LiteralPath $_.FullName -Force
-    }
+Get-ChildItem -Recurse -Include "*[Trans].*" -Force |
+    Remove-Item -Force -ErrorAction SilentlyContinue
 
-Get-ChildItem -Recurse -Directory |
-    Where-Object { $_.Name -match '\[Trans\]\.trickplay' } |
-    ForEach-Object {
-        Remove-Item -LiteralPath $_.FullName -Recurse -Force
-    }
+Get-ChildItem -Recurse -Directory -Include "*[Trans].trickplay" |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host "All tasks complete."

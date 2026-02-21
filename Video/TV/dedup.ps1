@@ -351,5 +351,16 @@ Show-List "Episodes kept:" Green $Summary.EpisodesKept
 Show-List "Episodes deleted:" Red $Summary.EpisodesDeleted
 Show-List "Sidecar files deleted:" Red $Summary.SidecarsDeleted
 
-Write-Host "========================================================="
+Write-Host "=========================================================" 
 Write-Host ""
+
+# ============================================================
+# CLEANUP SECTION
+# ============================================================
+
+Write-Host "Cleaning up all [Trans] files and directories..." -ForegroundColor Cyan
+
+Get-ChildItem -Recurse -Include "*[Trans].*" -Force | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Recurse -Directory -Include "*[Trans].trickplay" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+Write-Host "All tasks complete."

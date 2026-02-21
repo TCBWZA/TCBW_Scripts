@@ -1,5 +1,6 @@
 #!/usr/bin/env pwsh
-# Intel QSV H.265 encoder with intelligent audio/subtitle filtering
+# Intel QSV H.265 encoder for 4K UHD content with intelligent audio/subtitle filtering
+# Optimized for file size while maintaining high-quality 4K streaming
 
 param(
     [int]$MAX_JOBS = 2,
@@ -22,13 +23,20 @@ $activeJobs = @()
 foreach ($f in $files) {
     $sizeGb = [math]::Floor($f.Length / 1GB)
     
-    # Skip files smaller than 5GB
-    if ($sizeGb -lt 5) {
+    # Skip files smaller than 8GB (4K content typically larger)
+    if ($sizeGb -lt 8) {
         continue
     }
     
     $baseNoExt = $f.BaseName
     $dir = $f.DirectoryName
+    
+    # Skip if directory contains .skip file
+    $skipFile = Join-Path $dir '.skip'
+    if (Test-Path $skipFile) {
+        Write-Host "Skipping $($f.FullName) -- .skip file found in directory"
+        continue
+    }
     
     # Skip and delete cleaned/transcoded files
     if ($baseNoExt -match '\[Cleaned\]|\[Trans\]') {
@@ -47,7 +55,7 @@ foreach ($f in $files) {
     $vcodec = ($probe.streams | Where-Object { $_.codec_type -eq "video" } | Select-Object -First 1).codec_name
     $vbitrate = ($probe.streams | Where-Object { $_.codec_type -eq "video" } | Select-Object -First 1).tags.BPS ?? ($probe.streams | Where-Object { $_.codec_type -eq "video" } | Select-Object -First 1).bit_rate ?? 0
     $acodec = ($probe.streams | Where-Object { $_.codec_type -eq "audio" } | Select-Object -First 1).codec_name
-    $fieldOrder = ($probe.streams | Where-Object { $_.codec_type -eq "video" } | Select-Object -First 1).field_order
+    $width = ($probe.streams | Where-Object { $_.codec_type -eq "video" } | Select-Object -First 1).width
     
     # Fast checks first, skip expensive detection if already need to convert
     $needsConvert = $false
@@ -57,53 +65,16 @@ foreach ($f in $files) {
     if (-not $needsConvert -and $vcodec -ne "hevc") {
         $needsConvert = $true
     }
-    if (-not $needsConvert -and $vbitrate -match '^\d+$' -and [int]$vbitrate -gt 2500000) {
+    if (-not $needsConvert -and $vbitrate -match '^\d+$' -and [int]$vbitrate -gt 3000000) {
         $needsConvert = $true
     }
     
-    #####################################################
-    # TELECINE + INTERLACE DETECTION (only if still needed!)
-    #####################################################
-    
-    $status = "progressive"
-    
-    # Only detect interlacing if we haven't already determined conversion is needed
-    if (-not $needsConvert) {
-        # Quick check: if field_order explicitly indicates interlaced
-        if ($fieldOrder -match '^(tt|bb|tb|bt)$') {
-            $status = "interlaced"
-        }
-        # Otherwise, run deep scan unless explicitly progressive
-        elseif ($fieldOrder -ne "progressive") {
-            Write-Host "Running deep scan for interlace/telecine..."
-            
-            # Detect interlaced frames using idet filter, skipping first 5 minutes to avoid credits/intros, then check 200 frames, skipping first 5 minutes and checking 200 frames
-            $idetOutput = & ffmpeg -nostdin -hide_banner -ss 300 -skip_frame nokey -filter:v idet -frames:v 200 -an -f null - $f.FullName 2>&1
-            $interlacedCount = [regex]::Match($idetOutput -join "`n", 'Interlaced:\s*(\d+)').Groups[1].Value
-            if ([string]::IsNullOrEmpty($interlacedCount)) { $interlacedCount = 0 }
-            
-            # Detect telecine via repeat_pict
-            $repeatPictOutput = & ffprobe -v error -select_streams v:0 -show_frames -read_intervals "%+#300" -show_entries frame=repeat_pict -of csv=p=0 $f.FullName 2>$null
-            $telecineFlag = ($repeatPictOutput | Select-String '1' -MaxMatches 1)
-            
-            if ([int]$interlacedCount -gt 0) {
-                $status = "interlaced"
-            }
-            elseif ($null -ne $telecineFlag) {
-                $status = "telecine"
-            }
-            else {
-                $status = "progressive"
-            }
-        }
-    }
-    
-    Write-Host "Detected: $status"
-    
-    # Interlaced or telecine ALWAYS requires conversion
-    if ($status -ne "progressive") {
+    # For 4K, bitrate threshold for compression - Profile 6.2 standard is ~20 Mbps
+    if ($width -ge 3840 -and -not $needsConvert -and $vbitrate -match '^\d+$' -and [int]$vbitrate -gt 20000000) {
         $needsConvert = $true
     }
+    
+    Write-Host "Detected: 4K/UHD content (progressive, no deinterlacing)"
     
     #####################################################
     # VIDEO CODEC DECISION
@@ -112,42 +83,17 @@ foreach ($f in $files) {
     $videoEncode = ""
     $vfChain = ""
     
-    # If interlaced/telecine, must encode; otherwise check if we can copy
-    if ($status -ne "progressive") {
-        $videoEncode = "-c:v hevc_qsv -qp 24 -load_plugin hevc_hw -b:v 1800k -maxrate 2000k -bufsize 4000k"
-        Write-Host "Interlaced/telecine detected: will encode video"
-        $vfChain = ""
-    }
-    elseif ($vcodec -eq "hevc" -and $vbitrate -match '^\d+$' -and [int]$vbitrate -le 2500000) {
+    # For 4K: Skip interlace detection, always assume progressive
+    if ($vcodec -eq "hevc" -and $vbitrate -match '^\d+$' -and [int]$vbitrate -le 3500000) {
         $videoEncode = "-c:v copy"
         Write-Host "Video codec is x265 and within bitrate limits: copying"
         $vfChain = ""
     }
     else {
-        $videoEncode = "-c:v hevc_qsv -qp 24 -load_plugin hevc_hw -b:v 1800k -maxrate 2000k -bufsize 4000k"
-        Write-Host "Video codec is not x265 or exceeds bitrate limits: encoding"
+        # QP 24 with profile 6.2 for constant quality UHD encoding
+        $videoEncode = "-c:v hevc_qsv -qp 24 -level 62 -load_plugin hevc_hw -preset slow"
+        Write-Host "Video codec is not x265 or exceeds bitrate limits: encoding 4K with constant quality (QP 24, profile 6.2)"
         $vfChain = ""
-    }
-    
-    #####################################################
-    # FILTER CHAIN SELECTION (only if not copying video)
-    #####################################################
-    
-    if ($videoEncode -ne "-c:v copy") {
-        switch ($status) {
-            "interlaced" {
-                Write-Host "Using bwdif (interlaced)"
-                $vfChain = "hwdownload,format=yuv420p,bwdif=mode=send_frame,format=nv12,hwupload"
-            }
-            "telecine" {
-                Write-Host "Using fieldmatch+decimate+bwdif (telecine)"
-                $vfChain = "hwdownload,format=yuv420p,fieldmatch,decimate,bwdif=mode=send_frame,format=nv12,hwupload"
-            }
-            "progressive" {
-                Write-Host "Progressive -- no filter needed"
-                $vfChain = ""
-            }
-        }
     }
     
     #####################################################
@@ -316,7 +262,7 @@ foreach ($f in $files) {
     $ffmpegArgs = @("-nostdin", "-hide_banner")
     
     if ([string]::IsNullOrEmpty($vfChain)) {
-        # No video filter (video is being copied)
+        # No video filter (video is being copied or already progressive)
         $ffmpegArgs += @("-i", $f.FullName, "-copyts") + $videoEncode.Split() + $audioMapArgs + $subtitleMapArgs + @("-f", "matroska", $tmpfile)
     }
     else {
@@ -351,18 +297,18 @@ foreach ($f in $files) {
             return
         }
         
-        $tmpSize = (Get-Item -LiteralPath $tmpfile -ErrorAction SilentlyContinue).Length
-        if ($tmpSize -eq 0) {
-            Write-Host "[JOB] ERROR: Output file is empty (0 bytes)"
-            Remove-Item -LiteralPath $tmpfile -Force -ErrorAction SilentlyContinue
-            return
-        }
-        
         if ($ffmpegExitCode -eq 0) {
+            # Check if the transcoded file is valid (not 0 bytes)
+            $newSize = (Get-Item -LiteralPath $tmpfile -ErrorAction SilentlyContinue).Length
+            if ($newSize -eq 0) {
+                Write-Host "[JOB] ERROR: Output file is empty (0 bytes), removing and returning"
+                Remove-Item -LiteralPath $tmpfile -Force -ErrorAction SilentlyContinue
+                return
+            }
+            
             # Only replace original if new file is smaller
             $origFile = Get-Item $originalFile
             $origSize = $origFile.Length
-            $newSize = (Get-Item $tmpfile).Length
             
             if ($newSize -lt $origSize) {
                 $origTime = $origFile.LastWriteTime
@@ -416,18 +362,18 @@ $activeJobs | ForEach-Object {
 Write-Host "All jobs completed."
 
 #####################################################
-# Clean up any stray 0-byte temp files
+# Final check: Remove any remaining [Cleaned]/[Trans] files
 #####################################################
 
-Write-Host "Checking for 0-byte temp files..."
-Get-ChildItem -Recurse -File -Include @("*[Cleaned].tmp", "*[Trans].tmp") |
-    Where-Object { $_.Length -eq 0 } |
-    ForEach-Object {
-        Write-Host "Removing 0-byte file: $($_.FullName)"
-        Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
-    }
+Write-Host "Running final check for leftover [Cleaned] and [Trans] video files..."
 
-#####################################################
+Get-ChildItem -Recurse -File -Include @("*.mkv", "*.mp4", "*.ts") | Where-Object {
+    $_.BaseName -match '\[Cleaned\]|\[Trans\]'
+} | ForEach-Object {
+    Write-Host "Removing leftover: $($_.FullName)"
+    Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
+}
+
 #####################################################
 # Cleanup section
 #####################################################
