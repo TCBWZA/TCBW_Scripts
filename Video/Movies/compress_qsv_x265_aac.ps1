@@ -1,4 +1,38 @@
-$MaxJobs = 2
+###############################################################
+# PRE-FLIGHT CHECKS
+###############################################################
+$requiredTools = @('ffprobe', 'ffmpeg')
+foreach ($tool in $requiredTools) {
+    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+        Write-Host "ERROR: $tool not found in PATH" -ForegroundColor Red
+        Write-Host "Please install or add to PATH before running this script."
+        exit 1
+    }
+}
+
+###############################################################
+# CLEANUP TRAP FOR INTERRUPTION
+###############################################################
+$tempFilesToCleanup = @()
+$cleanupTrap = {
+    if ($tempFilesToCleanup.Count -gt 0) {
+        Write-Host "`nCleaning up temp files due to interruption..."
+        foreach ($file in $tempFilesToCleanup) {
+            if (Test-Path -LiteralPath $file) {
+                Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+Register-EngineEvent PowerShell.Exiting -Action $cleanupTrap | Out-Null
+
+###############################################################
+# CONFIGURABLE THRESHOLDS
+###############################################################
+$MaxJobs = 2                      # Max parallel encodes
+$MinBitrate = 2500000            # Bitrate threshold (bps) - skip if > this
+$MinFileSize = 5                  # Minimum file size (GB)
+$MinDiskSpace = 50                # Minimum free disk space (GB)
 
 Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
 
@@ -11,12 +45,25 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
         Remove-Item -LiteralPath $File -Force
 	return
     }
-    # Skip small files (<5GB)
-    if ($_.Length -lt 5GB) {
+    # Skip small files
+    $FileSizeGB = [math]::Floor($_.Length / 1GB)
+    if ($FileSizeGB -lt $MinFileSize) {
         return
     }
 
     Write-Host "Checking $File"
+
+    #####################################################
+    # Check disk space before processing
+    #####################################################
+    $drive = $Dir -replace '(^[a-zA-Z]).*', '$1'
+    $diskInfo = Get-PSDrive -Name $drive[0]
+    $freespaceGB = [math]::Floor($diskInfo.Free / 1GB)
+    
+    if ($freespaceGB -lt $MinDiskSpace) {
+        Write-Host "Skipping $File -- insufficient disk space (${freespaceGB}GB free, need ${MinDiskSpace}GB)" -ForegroundColor Yellow
+        return
+    }
 
     # ffprobe checks
     $vcodec = ffprobe -v error -select_streams v:0 `
@@ -31,11 +78,17 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
     $field = ffprobe -v error -select_streams v:0 `
         -show_entries stream=field_order -of default=nw=1:nk=1 "$File"
 
+    # Skip AV1 files entirely
+    if ($vcodec -eq "av1") {
+        Write-Host "Skipping $File -- AV1 detected"
+        return
+    }
+
     # Fast checks first, skip if true
     $NeedsConvert = $false
     if ($acodec -ne "aac") { $NeedsConvert = $true }
     if (-not $NeedsConvert -and $vcodec -ne "hevc") { $NeedsConvert = $true }
-    if (-not $NeedsConvert -and $vbitrate -ne "N/A" -and [int]$vbitrate -gt 2500000) { $NeedsConvert = $true }
+    if (-not $NeedsConvert -and $vbitrate -ne "N/A" -and [int]$vbitrate -gt $MinBitrate) { $NeedsConvert = $true }
     if (-not $NeedsConvert -and $field -ne "progressive") { $NeedsConvert = $true }
 
     if (-not $NeedsConvert) {
@@ -45,6 +98,7 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
 
     # Temp output
     $Tmp = Join-Path $Dir "$Base`[Trans`].tmp"
+    $tempFilesToCleanup += $Tmp
 
     if (Test-Path $Tmp) { Remove-Item $Tmp -Force }
 

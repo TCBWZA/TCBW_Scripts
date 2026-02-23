@@ -1,8 +1,37 @@
 #!/bin/bash
 
-trap 'echo "Interrupted -- exiting safely"; exit 1' INT
+###############################################################
+# PRE-FLIGHT CHECKS
+###############################################################
+for tool in ffprobe ffmpeg; do
+    if ! command -v "$tool" &> /dev/null; then
+        echo "ERROR: $tool not found in PATH"
+        echo "Please install or add to PATH before running this script."
+        exit 1
+    fi
+done
 
-MAX_JOBS=2
+###############################################################
+# CLEANUP TRAP FOR INTERRUPTION
+###############################################################
+temp_files=()
+cleanup() {
+    if [[ ${#temp_files[@]} -gt 0 ]]; then
+        echo -e "\nCleaning up temp files due to interruption..."
+        for file in "${temp_files[@]}"; do
+            rm -f "$file" 2>/dev/null
+        done
+    fi
+}
+trap 'echo "Interrupted -- exiting safely"; cleanup; exit 1' INT TERM EXIT
+
+###############################################################
+# CONFIGURABLE THRESHOLDS
+###############################################################
+MAX_JOBS=2                      # Max parallel encodes
+MIN_BITRATE=2500000            # Bitrate threshold (bps) - skip if > this
+MIN_FILE_SIZE=5                 # Minimum file size (GB)
+MIN_DISK_SPACE=50               # Minimum free disk space (GB)
 
 echo "Starting up..."
 echo "Scanning for files..."
@@ -17,8 +46,8 @@ for f in "${files[@]}"; do
     size_bytes=$(stat -c%s "$f")
     size_gb=$((size_bytes / 1024 / 1024 / 1024))
 
-    # Skip files smaller than 5GB
-    if (( size_gb < 5 )); then
+    # Skip files smaller than minimum size
+    if (( size_gb < MIN_FILE_SIZE )); then
         continue
     fi
 
@@ -35,6 +64,14 @@ for f in "${files[@]}"; do
     echo "Checking $f"
 
     #####################################################
+    # Check disk space before processing
+    #####################################################
+    available_kb=$(df "$dir" | tail -1 | awk '{print $4}')
+    available_gb=$((available_kb / 1024 / 1024))
+    if (( available_gb < MIN_DISK_SPACE )); then
+        echo "Skipping $f -- insufficient disk space (${available_gb}GB free, need ${MIN_DISK_SPACE}GB)" >&2
+        continue
+    fi
     # Unified ffprobe JSON (requires jq)
     #####################################################
 
@@ -45,6 +82,12 @@ for f in "${files[@]}"; do
     acodec=$(jq -r '.streams[] | select(.codec_type=="audio") | .codec_name' <<< "$probe")
     field_order=$(jq -r '.streams[] | select(.codec_type=="video") | .field_order' <<< "$probe")
 
+    # Skip AV1 files entirely
+    if [[ "$vcodec" == "av1" ]]; then
+        echo "Skipping $f -- AV1 detected"
+        continue
+    fi
+
     # Fast checks first, skip expensive detection if already need to convert
     needs_convert=false
     if [[ "$acodec" != "aac" ]]; then
@@ -53,7 +96,7 @@ for f in "${files[@]}"; do
     if ! $needs_convert && [[ "$vcodec" != "hevc" ]]; then
         needs_convert=true
     fi
-    if ! $needs_convert && [[ "$vbitrate" =~ ^[0-9]+$ ]] && (( vbitrate > 2500000 )); then
+    if ! $needs_convert && [[ "$vbitrate" =~ ^[0-9]+$ ]] && (( vbitrate > MIN_BITRATE )); then
         needs_convert=true
     fi
 
@@ -111,7 +154,7 @@ for f in "${files[@]}"; do
         echo "Interlaced/telecine detected: will encode video"
         vf_chain=""
         # Filter chain will be set below based on status
-    elif [[ "$vcodec" == "hevc" ]] && [[ "$vbitrate" =~ ^[0-9]+$ ]] && (( vbitrate <= 2500000 )); then
+    elif [[ "$vcodec" == "hevc" ]] && [[ "$vbitrate" =~ ^[0-9]+$ ]] && (( vbitrate <= MIN_BITRATE )); then
         video_encode="-c:v copy"
         echo "Video codec is x265 and within bitrate limits: copying"
         vf_chain=""
@@ -254,6 +297,7 @@ for f in "${files[@]}"; do
     #####################################################
 
     tmpfile="$dir/${base_no_ext}[Cleaned].tmp"
+    temp_files+=("$tmpfile")
 
     echo "Input         : $f"
     echo "Temp Out      : $tmpfile"

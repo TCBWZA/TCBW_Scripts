@@ -1,17 +1,51 @@
+###############################################################
+# PRE-FLIGHT CHECKS
+###############################################################
+$requiredTools = @('ffprobe', 'ffmpeg')
+foreach ($tool in $requiredTools) {
+    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+        Write-Host "ERROR: $tool not found in PATH" -ForegroundColor Red
+        Write-Host "Please install or add to PATH before running this script."
+        exit 1
+    }
+}
+
+###############################################################
+# CLEANUP TRAP FOR INTERRUPTION
+###############################################################
+$tempFilesToCleanup = @()
+$cleanupTrap = {
+    if ($tempFilesToCleanup.Count -gt 0) {
+        Write-Host "\nCleaning up temp files due to interruption..."
+        foreach ($file in $tempFilesToCleanup) {
+            if (Test-Path -LiteralPath $file) {
+                Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+Register-EngineEvent PowerShell.Exiting -Action $cleanupTrap | Out-Null
+
 Write-Host "Starting up…"
 Write-Host "Scanning for files..."
 
-# Max parallel encodes
-$MaxJobs = 2
+###############################################################
+# CONFIGURABLE THRESHOLDS
+###############################################################
+$MaxJobs = 2                      # Max parallel encodes
+$MinBitrate = 2500000            # Bitrate threshold (bps) - skip if < this
+$MinFileSize = 1                  # Minimum file size (GB)
+$MinDiskSpace = 50                # Minimum free disk space (GB)
 
 # Optional temp directory for intermediate files (use "" to keep alongside source)
-$TempDir = "D:\fasttemp"   # or "" for same folder as source
+$TempDir = ""   # or "D:\fasttemp" for intermediate files
 
 # Gather files
 $AllFiles = Get-ChildItem -Recurse -Include *.mkv,*.ts -File | Where-Object {
     $Base = [System.IO.Path]::GetFileNameWithoutExtension($_.FullName)
+    $FileSizeGB = [math]::Floor($_.Length / 1GB)
     -not ($Base.Contains("[Cleaned]") -or $Base.Contains("[Trans]")) -and
-    $_.Length -ge 1GB
+    $FileSizeGB -ge $MinFileSize
 }
 
 $Total = $AllFiles.Count
@@ -48,9 +82,7 @@ $AllFiles | ForEach-Object -Parallel {
     $Base = [System.IO.Path]::GetFileNameWithoutExtension($File)
     $Dir  = $_.DirectoryName
 
-    # Extract show name (first word) for hierarchical skip markers
-    $show_name = ($Base -split '\s+')[0]
-    $show_skip_file = Join-Path $Dir ".skip_$show_name"
+    $episode_skip_file = Join-Path $Dir ".skip_$Base"
     $parent_skip_file = Join-Path (Split-Path -LiteralPath $Dir) ".skip"
 
     # Check for skip markers
@@ -59,8 +91,8 @@ $AllFiles | ForEach-Object -Parallel {
         $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
         return
     }
-    if (Test-Path -LiteralPath $show_skip_file) {
-        Write-Host "Skipping $File -- show marked as uncompressible"
+    if (Test-Path -LiteralPath $episode_skip_file) {
+        Write-Host "Skipping $File -- episode marked as uncompressible"
         $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
         return
     }
@@ -75,6 +107,22 @@ $AllFiles | ForEach-Object -Parallel {
 
     Write-Host "Checking $File"
 
+    # Check disk space before processing
+    if ([string]::IsNullOrWhiteSpace($TempDir)) {
+        $checkDir = $Dir
+    } else {
+        $checkDir = $TempDir
+    }
+    $drive = $checkDir -replace '(^[a-zA-Z]).*', '$1'
+    $diskInfo = Get-PSDrive -Name $drive[0]
+    $freespaceGB = [math]::Floor($diskInfo.Free / 1GB)
+    
+    if ($freespaceGB -lt $MinDiskSpace) {
+        Write-Host "Skipping $File -- insufficient disk space (${freespaceGB}GB free, need ${MinDiskSpace}GB)" -ForegroundColor Yellow
+        $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
+        return
+    }
+
     # Single ffprobe call (JSON)
     $probeJson = ffprobe -v quiet -print_format json -show_streams "$File"
     $probe     = $probeJson | ConvertFrom-Json
@@ -83,15 +131,22 @@ $AllFiles | ForEach-Object -Parallel {
     $audio = $probe.streams | Where-Object { $_.codec_type -eq "audio" } | Select-Object -First 1
 
     $vcodec   = $video.codec_name
-    $vbitrate = $video.bit_rate
+    $vbitrate = if ($video.bit_rate) { [int]($video.bit_rate[0]) } else { 0 }
     $field    = $video.field_order
     $acodec   = $audio.codec_name
+
+    # Skip AV1 files entirely
+    if ($vcodec -eq "av1") {
+        Write-Host "Skipping $File -- AV1 detected"
+        $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
+        return
+    }
 
     # Fast checks first, skip expensive detection if already need to convert
     $NeedsConvert = $false
     if ($acodec -ne "aac") { $NeedsConvert = $true }
     if (-not $NeedsConvert -and $vcodec -ne "hevc") { $NeedsConvert = $true }
-    if (-not $NeedsConvert -and $vbitrate -match '^\d+$' -and [int]$vbitrate -gt 2500000) { $NeedsConvert = $true }
+    if (-not $NeedsConvert -and $vbitrate -match '^\d+$' -and [int]$vbitrate -gt $MinBitrate) { $NeedsConvert = $true }
     if (-not $NeedsConvert -and $field -ne "progressive") { $NeedsConvert = $true }
 
     if (-not $NeedsConvert) {
@@ -104,6 +159,7 @@ $AllFiles | ForEach-Object -Parallel {
     if (Test-Path -LiteralPath $Tmp) {
         Remove-Item -LiteralPath $Tmp -Force
     }
+    $tempFilesToCleanup += $Tmp
 
     # Interlace detection (optimised) — skip first 5 minutes to avoid credits/intros, analyze next 200 frames
     if ($field -eq "progressive") {
@@ -155,8 +211,8 @@ $AllFiles | ForEach-Object -Parallel {
             else {
                 $origMB = [math]::Round($origSize / 1MB, 2)
                 $newMB = [math]::Round($newSize / 1MB, 2)
-                Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_$show_name"
-                New-Item -Path $show_skip_file -ItemType File -Force | Out-Null
+                Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_$Base"
+                New-Item -Path $episode_skip_file -ItemType File -Force | Out-Null
                 Remove-Item -LiteralPath $Tmp -Force
             }
         }

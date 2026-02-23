@@ -1,12 +1,48 @@
 # Requires PowerShell 7+
 $ErrorActionPreference = "Stop"
 
-Register-EngineEvent PowerShell.Exiting -Action {
+###############################################################
+# PRE-FLIGHT CHECKS
+###############################################################
+$requiredTools = @('HandBrakeCLI', 'ffprobe', 'ffmpeg')
+foreach ($tool in $requiredTools) {
+    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+        Write-Host "ERROR: $tool not found in PATH" -ForegroundColor Red
+        Write-Host "Please install or add to PATH before running this script."
+        exit 1
+    }
+}
+
+###############################################################
+# CLEANUP TRAP FOR INTERRUPTION
+###############################################################
+$tempFilesToCleanup = @()
+$cleanupTrap = {
+    if ($tempFilesToCleanup.Count -gt 0) {
+        Write-Host "Cleaning up temp files due to interruption..."
+        foreach ($file in $tempFilesToCleanup) {
+            if (Test-Path -LiteralPath $file) {
+                Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
     Write-Host "Interrupted -- exiting safely"
-} | Out-Null
+}
+Register-EngineEvent PowerShell.Exiting -Action $cleanupTrap | Out-Null
 
 Write-Host "Starting up..."
 Write-Host "Scanning for files..."
+
+###############################################################
+# CONFIGURABLE THRESHOLDS
+###############################################################
+$HandBrakeQuality = 24            # Video quality (18-28)
+$MinBitrate = 2500000            # Bitrate threshold (bps) - skip if > this
+$MinFileSize = 1                  # Minimum file size (GB)
+$MinDiskSpace = 50                # Minimum free disk space (GB)
+
+# Optional temp directory for intermediate files (use "" to keep alongside source)
+$TempDir = ""   # or "D:\fasttemp" for HandBrake temp outputs
 
 ###############################################################
 # FUNCTION: FAST interlace / telecine detection
@@ -73,15 +109,13 @@ foreach ($f in $files) {
 
     # File size in GB
     $sizeGB = [math]::Floor($f.Length / 1GB)
-    if ($sizeGB -lt 1) { continue }
+    if ($sizeGB -lt $MinFileSize) { continue }
 
     $basename = $f.BaseName
     $dir = $f.DirectoryName
     $baseNoExt = $basename
     
-    # Extract show name (everything before the last space followed by numbers, or up to first number sequence)
-    $show_name = ($basename -split '\s+')[0]
-    $show_skip_file = Join-Path $dir ".skip_$show_name"
+    $episode_skip_file = Join-Path $dir ".skip_$baseNoExt"
     $parent_skip_file = Join-Path (Split-Path $dir) ".skip"
 
     # Skip and delete cleaned/transcoded files
@@ -95,8 +129,8 @@ foreach ($f in $files) {
         Write-Host "Skipping $($f.FullName) -- parent directory marked with .skip"
         continue
     }
-    if (Test-Path -LiteralPath $show_skip_file) {
-        Write-Host "Skipping $($f.FullName) -- show marked with .skip_$show_name"
+    if (Test-Path -LiteralPath $episode_skip_file) {
+        Write-Host "Skipping $($f.FullName) -- episode marked with .skip_$baseNoExt"
         continue
     }
 
@@ -115,13 +149,19 @@ foreach ($f in $files) {
     $vbitrate = if ($videoStream.bit_rate) { [int]($videoStream.bit_rate[0]) } else { 0 }
     $acodec = $audioStream.codec_name
 
+    # Skip AV1 files entirely
+    if ($vcodec -eq "av1") {
+        Write-Host "Skipping $($f.FullName) -- AV1 detected"
+        continue
+    }
+
     #####################################################
     # Fast checks first, only detect interlacing if needed
     #####################################################
     $needs_convert = $false
     if ($acodec -ne "aac") { $needs_convert = $true }
     if (-not $needs_convert -and $vcodec -ne "hevc") { $needs_convert = $true }
-    if (-not $needs_convert -and $vbitrate -gt 2500000) { $needs_convert = $true }
+    if (-not $needs_convert -and $vbitrate -gt $MinBitrate) { $needs_convert = $true }
     
     # Only run expensive interlace detection if other checks pass
     $status = $null
@@ -159,11 +199,29 @@ foreach ($f in $files) {
     }
 
     #####################################################
+    # Check disk space before processing
+    #####################################################
+    if ([string]::IsNullOrWhiteSpace($TempDir)) {
+        $checkDir = $dir
+    } else {
+        $checkDir = $TempDir
+    }
+    $drive = $checkDir -replace '(^[a-zA-Z]).*', '$1'
+    $diskInfo = Get-PSDrive -Name $drive[0]
+    $freespaceGB = [math]::Floor($diskInfo.Free / 1GB)
+    
+    if ($freespaceGB -lt $MinDiskSpace) {
+        Write-Host "Skipping $($f.FullName) -- insufficient disk space (${freespaceGB}GB free, need ${MinDiskSpace}GB)" -ForegroundColor Yellow
+        continue
+    }
+
+    #####################################################
     # Build temp output
     #####################################################
     $tmpfile = Join-Path $dir "$baseNoExt`[Trans].tmp"
 
     if (Test-Path -LiteralPath $tmpfile) { Remove-Item -LiteralPath $tmpfile -Force }
+    $tempFilesToCleanup += $tmpfile
 
     Write-Host "Input    : $($f.FullName)"
     Write-Host "Temp Out : $tmpfile"
@@ -180,7 +238,7 @@ foreach ($f in $files) {
             --format mkv `
             --encoder qsv_h265 `
             --encoder-preset balanced `
-            --quality 24 `
+            --quality $HandBrakeQuality `
             --maxHeight 2160 `
             --aencoder av_aac `
             --ab 160 `
@@ -194,7 +252,7 @@ foreach ($f in $files) {
             --format mkv `
             --encoder qsv_h265 `
             --encoder-preset balanced `
-            --quality 24 `
+            --quality $HandBrakeQuality `
             --maxHeight 2160 `
             --aencoder av_aac `
             --ab 160 `
@@ -225,8 +283,8 @@ foreach ($f in $files) {
         else {
             $origMB = [math]::Round($origSize / 1MB, 2)
             $newMB = [math]::Round($newSize / 1MB, 2)
-            Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_$show_name"
-            New-Item -Path $show_skip_file -ItemType File -Force | Out-Null
+            Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_$baseNoExt"
+            New-Item -Path $episode_skip_file -ItemType File -Force | Out-Null
             Remove-Item -LiteralPath $tmpfile -Force
         }
     }
