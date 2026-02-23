@@ -2,6 +2,11 @@
 # Intel QSV H.265 encoder for 4K UHD content with intelligent audio/subtitle filtering
 # Optimized for file size while maintaining high-quality 4K streaming
 
+param(
+    [int]$MAX_JOBS = 2,
+    [bool]$DEBUG = $false
+)
+
 ###############################################################
 # PRE-FLIGHT CHECKS
 ###############################################################
@@ -36,11 +41,6 @@ Register-EngineEvent PowerShell.Exiting -Action $cleanupTrap | Out-Null
 $MinBitrate = 2500000            # Bitrate threshold (bps) - skip if > this
 $MinFileSize = 8                  # Minimum file size (GB) - 4K content typically larger
 $MinDiskSpace = 100               # Minimum free disk space (GB) - 4K needs more space
-
-param(
-    [int]$MAX_JOBS = 2,
-    [bool]$DEBUG = $false
-)
 
 $ErrorActionPreference = 'Continue'
 
