@@ -9,8 +9,9 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
     # Skip cleaned/transcoded files 
     if ($Base.Contains("[Cleaned]") -or $Base.Contains("[Trans]")) {
         Remove-Item -LiteralPath $File -Force
-	return
+        return
     }
+
     # Skip small files (<5GB)
     if ($_.Length -lt 5GB) {
         return
@@ -48,13 +49,13 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
 
     if (Test-Path $Tmp) { Remove-Item $Tmp -Force }
 
-    # Detect interlacing using idet, skipping first 5 minutes to avoid credits/intros, then check 200 frames, skipping first 5 minutes and checking 200 frames
+    # Detect interlacing using idet
     $idet = ffmpeg -hide_banner -ss 300 -filter:v idet -frames:v 200 -an -f null - "$File" 2>&1
     $interlaceMatch = $idet | Select-String -Pattern "Interlaced:\s*(\d+)" -AllMatches
     $InterlacedCount = if ($interlaceMatch) { [int]$interlaceMatch.Matches.Groups[1].Value } else { 0 }
 
     if ([int]$InterlacedCount -gt 0) {
-        $vf = "deinterlace_qsv"
+        $vf = "yadif"   # AMD has no hardware deinterlacer
     } else {
         $vf = ""
     }
@@ -65,20 +66,20 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
     }
 
     Write-Host "Processing $File"
+
     # Start encoding job
     Start-Job -ScriptBlock {
         param($File, $Tmp, $vf)
          
-        # Clean temp file immediately before ffmpeg runs
         if (Test-Path -LiteralPath $Tmp) {
             Remove-Item -LiteralPath $Tmp -Force -ErrorAction SilentlyContinue
         }
 
         if ([string]::IsNullOrEmpty($vf)) {
             ffmpeg -hide_banner `
-                -hwaccel qsv -hwaccel_output_format qsv `
+                -hwaccel dxva2 `
                 -i "$File" `
-                -c:v hevc_qsv `
+                -c:v hevc_amf `
                 -b:v 1800k -maxrate 2000k -bufsize 4000k `
                 -c:a aac -b:a 160k `
                 -c:s copy `
@@ -86,10 +87,10 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
                 "$Tmp"
         } else {
             ffmpeg -hide_banner `
-                -hwaccel qsv -hwaccel_output_format qsv `
+                -hwaccel dxva2 `
                 -i "$File" `
                 -vf "$vf" `
-                -c:v hevc_qsv `
+                -c:v hevc_amf `
                 -b:v 1800k -maxrate 2000k -bufsize 4000k `
                 -c:a aac -b:a 160k `
                 -c:s copy `

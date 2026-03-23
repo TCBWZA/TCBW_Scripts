@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 
 Register-EngineEvent PowerShell.Exiting -Action {
     Write-Host "Interrupted -- exiting safely"
-} | Out-Null
+}
 
 Write-Host "Starting up..."
 Write-Host "Scanning for files..."
@@ -40,18 +40,16 @@ function Get-VideoInterlaceStatus {
 
     #
     # SLOW PASS — ONLY IF field_order missing or unknown
-    # OPTIMIZED: Limit to first 20 frames to reduce analysis time
     #
     try {
-        $probeJson = ffprobe -v quiet -print_format json -show_frames -select_streams v -count:frames 20 "$Path"
+        $probeJson = ffprobe -v quiet -print_format json -show_frames -select_streams v "$Path"
         $probe = $probeJson | ConvertFrom-Json
     }
     catch {
         return "unknown"
     }
 
-    # Skip first 5 minutes (9000 frames at 30fps) to avoid credits/intros, then check next 20 frames
-    $frames = $probe.frames | Select-Object -Skip 9000 -First 20
+    $frames = $probe.frames | Select-Object -First 200
 
     if ($frames.interlaced_frame -contains 1) {
         return "interlaced"
@@ -70,7 +68,7 @@ Write-Host "Found $($files.Count) files."
 Write-Host "Beginning processing..."
 
 foreach ($f in $files) {
-    Write-Host "$([char]0x1B)]0;$($f.Name)`a"
+
     # File size in GB
     $sizeGB = [math]::Floor($f.Length / 1GB)
     if ($sizeGB -lt 1) { continue }
@@ -105,32 +103,25 @@ foreach ($f in $files) {
     $probeJson = ffprobe -v quiet -print_format json -show_streams $f.FullName
     $probe = $probeJson | ConvertFrom-Json
 
-    $videoStream = $probe.streams | Where-Object { $_.codec_type -eq "video" } | Select-Object -First 1
-    $audioStream = $probe.streams | Where-Object { $_.codec_type -eq "audio" } | Select-Object -First 1
+    $videoStream = $probe.streams | Where-Object { $_.codec_type -eq "video" }
+    $audioStream = $probe.streams | Where-Object { $_.codec_type -eq "audio" }
 
     $vcodec = $videoStream.codec_name
-    $vbitrate = if ($videoStream.bit_rate) { [int]($videoStream.bit_rate[0]) } else { 0 }
+    $vbitrate = [int]$videoStream.bit_rate
     $acodec = $audioStream.codec_name
 
     #####################################################
-    # Fast checks first, only detect interlacing if needed
+    # Detect interlacing BEFORE deciding conversion
     #####################################################
+    $status = Get-VideoInterlaceStatus $f.FullName
+
     $needs_convert = $false
+    if ($vcodec -ne "hevc") { $needs_convert = $true }
+    if ($vbitrate -gt 2500000) { $needs_convert = $true }
     if ($acodec -ne "aac") { $needs_convert = $true }
-    if (-not $needs_convert -and $vcodec -ne "hevc") { $needs_convert = $true }
-    if (-not $needs_convert -and $vbitrate -gt 2500000) { $needs_convert = $true }
-    
-    # Only run expensive interlace detection if other checks pass
-    $status = $null
-    if (-not $needs_convert) {
-        $status = Get-VideoInterlaceStatus $f.FullName
-        # Telecine or interlaced ALWAYS requires conversion
-        if ($status -ne "progressive") { $needs_convert = $true }
-    }
-    else {
-        # If we already need to convert, we still need status for filter choice
-        $status = Get-VideoInterlaceStatus $f.FullName
-    }
+
+    # Telecine or interlaced ALWAYS requires conversion
+    if ($status -ne "progressive") { $needs_convert = $true }
 
     if (-not $needs_convert) {
         Write-Host "Skipping $($f.FullName) -- already in desired format"
@@ -158,9 +149,9 @@ foreach ($f in $files) {
     #####################################################
     # Build temp output
     #####################################################
-    $tmpfile = Join-Path $dir "$baseNoExt`[Trans].tmp"
+    $tmpfile = Join-Path $dir "$baseNoExt`[Trans].mkv"
 
-    if (Test-Path -LiteralPath $tmpfile) { Remove-Item -LiteralPath $tmpfile -Force }
+    if (Test-Path $tmpfile) { Remove-Item $tmpfile -Force }
 
     Write-Host "Input    : $($f.FullName)"
     Write-Host "Temp Out : $tmpfile"
@@ -175,7 +166,7 @@ foreach ($f in $files) {
             --input "$($f.FullName)" `
             --output "$tmpfile" `
             --format mkv `
-            --encoder qsv_h265 `
+            --encoder amd_h265 `
             --encoder-preset balanced `
             --quality 24 `
             --maxHeight 2160 `
@@ -189,7 +180,7 @@ foreach ($f in $files) {
             --input "$($f.FullName)" `
             --output "$tmpfile" `
             --format mkv `
-            --encoder qsv_h265 `
+            --encoder amd_h265 `
             --encoder-preset balanced `
             --quality 24 `
             --maxHeight 2160 `
@@ -206,13 +197,13 @@ foreach ($f in $files) {
     # SAFE EXIT HANDLING
     #####################################################
 
-    if ($exit -eq 0 -and (Test-Path -LiteralPath $tmpfile)) {
+    if ($exit -eq 0 -and (Test-Path $tmpfile)) {
         $orig = Get-Item -LiteralPath $f.FullName
         $origSize = $orig.Length
         $newSize = (Get-Item -LiteralPath $tmpfile).Length
         
         if ($newSize -lt $origSize) {
-            Set-ItemProperty -Path $tmpfile -Name LastWriteTime -Value $orig.LastWriteTime
+            Set-ItemProperty -LiteralPath $tmpfile -Name LastWriteTime -Value $orig.LastWriteTime
             Remove-Item -LiteralPath $f.FullName -Force
             Move-Item -LiteralPath $tmpfile -Destination $f.FullName -Force
             $origMB = [math]::Round($origSize / 1MB, 2)
@@ -223,13 +214,13 @@ foreach ($f in $files) {
             $origMB = [math]::Round($origSize / 1MB, 2)
             $newMB = [math]::Round($newSize / 1MB, 2)
             Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_$baseNoExt"
-            New-Item -Path $file_skip_file -ItemType File -Force | Out-Null
+            New-Item -LiteralPath $file_skip_file -ItemType File -Force | Out-Null
             Remove-Item -LiteralPath $tmpfile -Force
         }
     }
     else {
         Write-Host "HandBrake failed or temp file missing. Exit code: $exit"
-        if (Test-Path -LiteralPath $tmpfile) { Remove-Item -LiteralPath $tmpfile -Force }
+        if (Test-Path $tmpfile) { Remove-Item $tmpfile -Force }
         continue
     }
 }
@@ -242,7 +233,7 @@ Write-Host "Cleaning up leftover [Trans] files..."
 
 Get-ChildItem -Recurse -File |
     Where-Object {
-        $_.Name -match '\[Trans\]\.tmp' -or
+        $_.Name -match '\[Trans\]\.mkv' -or
         $_.Name -match '\[Trans\]\.nfo' -or
         $_.Name -match '\[Trans\]\.jpg'
     } |

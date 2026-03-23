@@ -1,156 +1,202 @@
-# Video Compression Scripts (1GB+ Minimum)
+# Foreign Language Video Scripts
 
-Compression and transcoding scripts optimized for files at least 1GB in size. These scripts convert interlaced video to x265 (HEVC) format with AAC audio.
+Compression and deduplication scripts for foreign-language content. Scripts convert video to x265 (HEVC) with AAC audio and remove duplicate files.
 
-## ⚠️ DISCLAIMER
+## DISCLAIMER
 
-**Use at your own risk!** These scripts perform destructive operations on video files. Always test on non-critical files first and maintain backups of your original content before using these scripts.
+Use at your own risk. These scripts perform destructive operations on video files. Always test on non-critical files first and maintain backups of your original content before running any script.
+
+---
 
 ## Requirements
 
-### Common
+### All Scripts
 
-- **FFmpeg**: v4.0 or later, **must be on system PATH**
-  - Verify installation: `ffmpeg -version`
-  - Windows: `winget install FFmpeg` or `choco install ffmpeg` or download from [ffmpeg.org](https://ffmpeg.org/download.html)
-  - Linux: `apt install ffmpeg` or `yum install ffmpeg`
-- **FFprobe**: Included with FFmpeg, used for video analysis
-- **jq**: JSON query utility (required for stream metadata extraction)
-  - Linux: `apt install jq` or `yum install jq`
+- `ffmpeg` / `ffprobe`: v4.0 or later, must be on system PATH.
+  - Linux: `sudo apt install ffmpeg`
+  - Windows: `winget install FFmpeg` or `choco install ffmpeg`
+  - Verify: `ffmpeg -version`
+- `jq`: JSON query utility (Bash scripts only).
+  - Linux: `sudo apt install jq`
   - Windows: `scoop install jq` or `choco install jq`
 
-### Platform-Specific
+### Bash Scripts (AMD GPU)
 
-- **Bash scripts (AMD)**: Linux/Unix system with bash shell and AMD GPU with VAAPI support (AMD Radeon RX series or newer)
-- **PowerShell scripts (Intel QSV)**: Windows with PowerShell 7.0 or later and Intel processor with Quick Sync Video support
-- **HandBrake-specific scripts**: HandBrakeCLI must be installed and on system PATH
-  - Windows: `choco install handbrake-cli` or `winget install HandBrake.HandBrakeCLI` or download from [handbrake.fr](https://handbrake.fr/)
-  - Linux: `apt install handbrake-cli` or `yum install handbrake-cli`
-  - Verify installation: `HandBrakeCLI --version`
+- Linux/Unix with Bash 5+
+- AMD GPU with VAAPI support (`/dev/dri/renderD128` must be accessible)
 
-## Files
+### PowerShell Scripts
+
+- PowerShell 7.0 or later
+- `HandBrakeCLI` required by `hbcompress_qsv_x265_aac.ps1`:
+  - Windows: `winget install HandBrake.HandBrakeCLI` or `choco install handbrake-cli`
+  - Verify: `HandBrakeCLI --version`
+
+---
+
+## Skip File Behaviour
+
+All compression scripts respect two skip markers:
+
+| Marker | Location | Effect |
+|---|---|---|
+| `.skip` | Parent directory | The entire parent directory is skipped. No files inside are processed. |
+| `.skip_<basename>` | File directory | That specific file is skipped. The basename is the full filename without extension. |
+
+Example: to skip `Film.Title.mkv`, create `.skip_Film.Title` in the same directory.
+
+Scripts automatically create a `.skip_<basename>` marker when a transcode produces a file that is not smaller than the original.
+
+---
+
+## Scripts
 
 ### compress_amd_x265_aac.sh
 
-**Status**: Stable
+Batch video compression script using AMD GPU hardware acceleration (VAAPI) via `ffmpeg`. Targets `.mkv`, `.mp4`, and `.ts` files that are 1 GB or larger.
 
-Bash script for video compression using AMD GPU hardware acceleration (VAAPI).
+**What it does:**
 
-**Features:**
+- Inspects each file with `ffprobe` to determine video codec, audio codec, and video bitrate.
+- Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
+- Performs two-pass interlace/telecine detection:
+  - Fast pass: reads `field_order` from stream metadata.
+  - Deep scan: runs `idet` filter and `repeat_pict` frame analysis only when metadata is inconclusive.
+- Applies the correct deinterlace filter: `bwdif` for interlaced, `fieldmatch+decimate+bwdif` for telecine.
+- Encodes with `hevc_vaapi` at QP 22, VBR 1800k / max 2000k.
+- Replaces original only if the new file is smaller.
+- Runs up to 2 parallel encoding jobs.
 
-- Processes .mkv, .mp4, and .ts files
-- Automatic filtering for already-processed files (marked with [Cleaned] or [Trans])
-- Skip marker handling for content-specific exclusion
-- Interlace/telecine detection with two-pass scanning
-- Deinterlace filters: bwdif (bilateral) for interlaced, fieldmatch+decimate+bwdif for telecine
-- Parallel encoding support (default: 2 concurrent jobs)
-- Minimum file size: 1GB
+No command-line parameters. Run from within the target directory.
 
-**Platform**: Linux/Unix with AMD GPU support
+**Execution:**
 
-### compress_qsv_x265_aac.ps1
+```bash
+cd /mnt/media/Foreign
+./compress_amd_x265_aac.sh
+```
 
-**Status**: Stable
-
-PowerShell script for video compression using Intel Quick Sync Video (QSV) encoding.
-
-**Features:**
-
-- Processes .mkv and .ts files
-- Automatic filtering for already-processed files (marked with [Cleaned] or [Trans])
-- Configurable temporary directory for intermediate files
-- Progress tracking and filtering for already-processed content
-- Parallel encoding support
-- Same interlace/telecine detection as bash variant
-- Minimum file size: 1GB
-
-**Platform**: Windows with Intel Quick Sync support
+---
 
 ### compressmp4_amd_x265_aac.sh
 
-**Status**: Stable (MP4 specialized)
+Bash compression script specialised for MP4 container files, using AMD GPU hardware acceleration. Targets `.mp4` files that are 1 GB or larger.
 
-Bash script specialized for MP4 file compression with AMD GPU acceleration.
+**What it does:**
 
-**Features:**
+- Same codec check and VAAPI encoding as `compress_amd_x265_aac.sh`.
+- Processes only `.mp4` files (not MKV or TS).
+- Encodes with `hevc_vaapi` at QP 22, VBR 1800k / max 2000k.
+- Replaces original only if the new file is smaller.
+- Runs up to 2 parallel encoding jobs.
 
-- Processes MP4 container format specifically
-- Optimized for batch MP4 processing
-- Parallel job support
-- VAAPI hardware acceleration for AMD GPUs
-- Minimum file size: 1GB
+No command-line parameters. Run from within the target directory.
 
-**Platform**: Linux/Unix with AMD GPU support
+**Execution:**
+
+```bash
+cd /mnt/media/Foreign
+./compressmp4_amd_x265_aac.sh
+```
+
+---
+
+### compress_qsv_x265_aac.ps1
+
+PowerShell compression script using Intel Quick Sync Video (QSV) encoding. Targets `.mkv` and `.ts` files that are 1 GB or larger.
+
+**What it does:**
+
+- Inspects each file with `ffprobe` to determine video codec, audio codec, and video bitrate.
+- Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
+- Interlace detection via `ffprobe` stream metadata.
+- Encodes with `hevc_qsv`.
+- Optional temporary directory for intermediate files (set `$TempDir` at the top of the script).
+- Replaces original only if the new file is smaller.
+- Runs up to 2 parallel encoding jobs (configurable via `$MaxJobs` at top of script).
+
+No command-line parameters. Edit the threshold and path constants at the top of the script before running.
+
+**Execution:**
+
+```powershell
+Set-Location "Z:\Media\Foreign"
+.\compress_qsv_x265_aac.ps1
+```
+
+---
 
 ### hbcompress_qsv_x265_aac.ps1
 
-**Status**: Stable (HandBrake-specific variant)
+PowerShell batch compression script using HandBrakeCLI with Intel Quick Sync Video (QSV) encoding. Targets `.mkv`, `.mp4`, and `.ts` files that are 1 GB or larger.
 
-HandBrake-optimized PowerShell script using Intel Quick Sync Video (QSV). Specialized for HandBrake encoding workflows and integration. Optimized for files 1GB or larger.
+**What it does:**
 
-**Features:**
+- Inspects each file with `ffprobe` to determine video codec, audio codec, and video bitrate.
+- Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
+- Performs interlace detection via `ffprobe` frame metadata:
+  - Applies `--deinterlace=slower` for interlaced content.
+  - Applies `--detelecine --deinterlace=slower` for unknown or telecine content.
+- Encodes with HandBrakeCLI using `qsv_h265` encoder at quality 24, stereo AAC at 160 kbps.
+- Transcodes to a temporary file first; replaces the original only if the new file is smaller.
+- Creates a `.skip_<basename>` marker when a new file is not smaller.
+- Configurable HandBrake quality (`$HandBrakeQuality`, default 24) and temp directory (`$TempDir`) at the top of the script.
 
-- HandBrake CLI integration
-- Interlace/telecine detection with frame analysis
-- Always applies decomb filter for interlaced content
-- Parallel job support
-- Automatic filtering for already-processed files (marked with [Cleaned] or [Trans])
+No command-line parameters. Edit the threshold constants at the top of the script before running.
 
-**Platform**: Windows with Intel Quick Sync support
+**Execution:**
 
-## Usage
-
-```bash
-# Bash - standard compression (AMD GPU)
-./compress_amd_x265_aac.sh
-
-# Bash - MP4 specific (AMD GPU)
-./compressmp4_amd_x265_aac.sh
-
-# PowerShell (Intel GPU)
-./compress_qsv_x265_aac.ps1
-
-# PowerShell - alternative variant (Intel GPU)
-./hbcompress_qsv_x265_aac.ps1
+```powershell
+Set-Location "Z:\Media\Foreign"
+.\hbcompress_qsv_x265_aac.ps1
 ```
 
-## Encoding Settings
+---
 
-- **Video Codec**: hevc_vaapi (AMD) or hevc_qsv (Intel)
-- **Quality**: QP 24 (quantizer value, lower = better quality)
-- **Bitrate Target**: 1800kbps with max 2000kbps and 4000kbps buffer
-- **Audio**: AAC at 160kbps (copied if already AAC)
-- **Container**: Matroska (.mkv) or MP4 (.mp4)
+### dedup.ps1
 
-## Notes
+Recursively scans foreign-content directories for duplicate episode files and removes them, keeping the best copy. Also removes associated sidecar files for deleted duplicates.
 
-### Skip Markers
+**What it does:**
 
-The scripts use hierarchical skip markers to prevent reprocessing of unsuitable content:
+- Scans all files recursively for episode codes matching `S##E##`, `S##E###`, `##x##`, `#x##`, or `##x###`.
+- Groups files by episode code within the same directory.
+- When duplicates are found, keeps the best file using this priority:
+  - File type: `MKV > MP4 > TS > AVI`
+  - File size: largest file wins when file types are equal.
+- Deletes duplicate files along with any associated sidecar files (`.nfo`, `.srt`, `.jpg`, `.trickplay`, etc.).
+- Outputs a summary report listing files kept, files deleted, and sidecars removed.
+- Audit mode (`-Audit`) previews all planned deletions without making any changes.
 
-- **`.skip` in parent directory**: Marks the entire parent directory as unsuitable for compression. When present, all scripts in that directory will be skipped.
-- **`.skip_SHOWNAME` in current directory**: Marks a specific show or episode group as unsuitable (based on the first word of the filename). Created automatically when compression doesn't reduce file size.
+**Parameters:**
 
-The scripts check both markers before processing:
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| `-Audit` | No | | Dry-run mode; no files are deleted. Prints what would be removed. |
 
-1. If parent `/.skip` exists → skip all files in current and subdirectories
-2. If `.skip_SHOWNAME` exists → skip files matching that show name
+**Execution:**
 
-To retry compression on skipped files, delete the corresponding `.skip_*` files.
+```powershell
+# Audit mode -- preview what would be deleted (recommended before first real run)
+.\dedup.ps1 -Audit
 
-### File Size Handling
+# Perform actual deduplication
+.\dedup.ps1
+```
 
-- Original file is only replaced if compressed version is smaller
-- If compression produces a file of equal or greater size, the compressed version is discarded and a `.skip_SHOWNAME` marker is created
-- File timestamps are preserved after successful replacement
-- Size comparisons use actual byte count (not disk allocation)
+---
 
-### Cleanup Behavior
+## Encoding Settings (Compression Scripts)
 
-On script shutdown, all files marked with `[Cleaned]` or `[Trans]` in the filename are removed (these indicate incomplete/crashed FFmpeg sessions).
-
-### Other Notes
-
-- Original file timestamps are preserved after successful encoding
-- Original file ownership can be set by uncommenting the `chown` line in scripts (currently disabled for portability)
-- `compressmp4_amd_x265_aac.sh` is optimized for MP4 containers which may have different metadata structure
+| Setting | Value |
+|---|---|
+| Video codec (AMD/VAAPI) | `hevc_vaapi` |
+| Video codec (Intel QSV via HandBrake) | `qsv_h265` |
+| Video codec (Intel QSV direct) | `hevc_qsv` |
+| Quality (ffmpeg) | QP 22 |
+| Quality (HandBrake) | RF 24 |
+| Video bitrate target | 1800 kbps |
+| Video bitrate max | 2000 kbps |
+| Audio codec | AAC |
+| Audio bitrate (stereo) | 160 kbps |
+| Container | Matroska (`.mkv`) |

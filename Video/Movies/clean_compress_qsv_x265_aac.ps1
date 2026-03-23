@@ -1,41 +1,6 @@
 #!/usr/bin/env pwsh
 # Intel QSV H.265 encoder with intelligent audio/subtitle filtering
 
-###############################################################
-# PRE-FLIGHT CHECKS
-###############################################################
-$requiredTools = @('ffprobe', 'ffmpeg')
-foreach ($tool in $requiredTools) {
-    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
-        Write-Host "ERROR: $tool not found in PATH" -ForegroundColor Red
-        Write-Host "Please install or add to PATH before running this script."
-        exit 1
-    }
-}
-
-###############################################################
-# CLEANUP TRAP FOR INTERRUPTION
-###############################################################
-$tempFilesToCleanup = @()
-$cleanupTrap = {
-    if ($tempFilesToCleanup.Count -gt 0) {
-        Write-Host "`nCleaning up temp files due to interruption..."
-        foreach ($file in $tempFilesToCleanup) {
-            if (Test-Path -LiteralPath $file) {
-                Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
-            }
-        }
-    }
-}
-Register-EngineEvent PowerShell.Exiting -Action $cleanupTrap | Out-Null
-
-###############################################################
-# CONFIGURABLE THRESHOLDS
-###############################################################
-$MinBitrate = 2500000            # Bitrate threshold (bps) - skip if > this
-$MinFileSize = 5                  # Minimum file size (GB)
-$MinDiskSpace = 50                # Minimum free disk space (GB)
-
 param(
     [int]$MAX_JOBS = 2,
     [bool]$DEBUG = $false
@@ -57,8 +22,8 @@ $activeJobs = @()
 foreach ($f in $files) {
     $sizeGb = [math]::Floor($f.Length / 1GB)
     
-    # Skip files smaller than minimum size
-    if ($sizeGb -lt $MinFileSize) {
+    # Skip files smaller than 5GB
+    if ($sizeGb -lt 5) {
         continue
     }
     
@@ -72,18 +37,6 @@ foreach ($f in $files) {
     }
     
     Write-Host "Checking $($f.FullName)"
-
-    #####################################################
-    # Check disk space before processing
-    #####################################################
-    $drive = $dir -replace '(^[a-zA-Z]).*', '$1'
-    $diskInfo = Get-PSDrive -Name $drive[0]
-    $freespaceGB = [math]::Floor($diskInfo.Free / 1GB)
-    
-    if ($freespaceGB -lt $MinDiskSpace) {
-        Write-Host "Skipping $($f.FullName) -- insufficient disk space (${freespaceGB}GB free, need ${MinDiskSpace}GB)" -ForegroundColor Yellow
-        continue
-    }
     
     #####################################################
     # Unified ffprobe JSON
@@ -96,12 +49,6 @@ foreach ($f in $files) {
     $acodec = ($probe.streams | Where-Object { $_.codec_type -eq "audio" } | Select-Object -First 1).codec_name
     $fieldOrder = ($probe.streams | Where-Object { $_.codec_type -eq "video" } | Select-Object -First 1).field_order
     
-    # Skip AV1 files entirely
-    if ($vcodec -eq "av1") {
-        Write-Host "Skipping $($f.FullName) -- AV1 detected"
-        continue
-    }
-    
     # Fast checks first, skip expensive detection if already need to convert
     $needsConvert = $false
     if ($acodec -ne "aac") {
@@ -110,7 +57,7 @@ foreach ($f in $files) {
     if (-not $needsConvert -and $vcodec -ne "hevc") {
         $needsConvert = $true
     }
-    if (-not $needsConvert -and $vbitrate -match '^\d+$' -and [int]$vbitrate -gt $MinBitrate) {
+    if (-not $needsConvert -and $vbitrate -match '^\d+$' -and [int]$vbitrate -gt 2500000) {
         $needsConvert = $true
     }
     
@@ -171,7 +118,7 @@ foreach ($f in $files) {
         Write-Host "Interlaced/telecine detected: will encode video"
         $vfChain = ""
     }
-    elseif ($vcodec -eq "hevc" -and $vbitrate -match '^\d+$' -and [int]$vbitrate -le $MinBitrate) {
+    elseif ($vcodec -eq "hevc" -and $vbitrate -match '^\d+$' -and [int]$vbitrate -le 2500000) {
         $videoEncode = "-c:v copy"
         Write-Host "Video codec is x265 and within bitrate limits: copying"
         $vfChain = ""
@@ -357,7 +304,6 @@ foreach ($f in $files) {
     #####################################################
     
     $tmpfile = Join-Path $dir "$baseNoExt[Cleaned].tmp"
-    $tempFilesToCleanup += $tmpfile
     
     Write-Host "Input         : $($f.FullName)"
     Write-Host "Temp Out      : $tmpfile"
@@ -482,25 +428,35 @@ Get-ChildItem -Recurse -File -Include @("*[Cleaned].tmp", "*[Trans].tmp") |
     }
 
 #####################################################
+# Final check: Remove any remaining [Cleaned]/[Trans] files
+#####################################################
+
+Write-Host "Running final check for leftover [Cleaned] and [Trans] video files..."
+
+Get-ChildItem -Recurse -File -Include @("*.mkv", "*.mp4", "*.ts") | Where-Object {
+    $_.BaseName -match '\[Cleaned\]|\[Trans\]'
+} | ForEach-Object {
+    Write-Host "Removing leftover: $($_.FullName)"
+    Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
+}
+
 #####################################################
 # Cleanup section
 #####################################################
 
-Write-Host "Cleaning up all [Cleaned] and [Trans] files and directories..."
+Write-Host "Cleaning up leftover [Cleaned] and [Trans] files..."
 
-# Remove ALL [Cleaned] files (including .mkv, .tmp, .nfo, .jpg, etc.)
-Get-ChildItem -Recurse -Include "*[Cleaned].*" -Force |
+# Remove [Cleaned] files and sidecar files
+Get-ChildItem -Recurse -Include @("*[Cleaned].mkv", "*[Cleaned].tmp", "*[Cleaned].nfo", "*[Cleaned].jpg") -Force |
     Remove-Item -Force -ErrorAction SilentlyContinue
 
-# Remove [Cleaned] trickplay directories
 Get-ChildItem -Recurse -Directory -Include "*[Cleaned].trickplay" |
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-# Remove ALL [Trans] files (including .mkv, .tmp, .nfo, .jpg, etc.)
-Get-ChildItem -Recurse -Include "*[Trans].*" -Force |
+# Remove [Trans] files and sidecar files
+Get-ChildItem -Recurse -Include @("*[Trans].mkv", "*[Trans].tmp", "*[Trans].nfo", "*[Trans].jpg") -Force |
     Remove-Item -Force -ErrorAction SilentlyContinue
 
-# Remove [Trans] trickplay directories
 Get-ChildItem -Recurse -Directory -Include "*[Trans].trickplay" |
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 

@@ -3,37 +3,55 @@
 trap 'echo "Interrupted -- exiting safely"; exit 1' INT
 
 MAX_JOBS=2
+MIN_SIZE_GB=1   # Convert if file is >= this size
 
 echo "Starting up..."
 echo "Scanning for files..."
 
-# Find all video files
 mapfile -t files < <(find . -type f \( -name "*.mkv" -o -name "*.mp4" -o -name "*.ts" \))
 
 echo "Found ${#files[@]} files."
 echo "Beginning processing..."
 
 for f in "${files[@]}"; do
-    size_bytes=$(stat -c%s "$f")
-    size_gb=$((size_bytes / 1024 / 1024 / 1024))
 
-    # Skip files smaller than 5GB
-    (( size_gb < 5 )) && continue
+    #####################################################
+    # Size detection (floating point)
+    #####################################################
+
+    size_bytes=$(stat -c%s "$f")
+    size_gb=$(echo "scale=2; $size_bytes / 1024 / 1024 / 1024" | bc)
+
+    # Skip files smaller than threshold
+    if [[ $(echo "$size_gb < $MIN_SIZE_GB" | bc) -eq 1 ]]; then
+        continue
+    fi
 
     basename=$(basename "$f")
     base_no_ext="${basename%.*}"
     dir=$(dirname "$f")
 
-    # Skip and delete cleaned/transcoded files
+    file_skip_file="${dir}/.skip_${base_no_ext}"
+    parent_skip_file="${dir}/../.skip"
+
     if [[ "$base_no_ext" == *"[Cleaned]"* || "$base_no_ext" == *"[Trans]"* ]]; then
         rm -f "$f"
+        continue
+    fi
+
+    if [[ -f "$parent_skip_file" ]]; then
+        echo "Skipping $f -- parent directory marked with .skip"
+        continue
+    fi
+    if [[ -f "$file_skip_file" ]]; then
+        echo "Skipping $f -- file marked with .skip_${base_no_ext}"
         continue
     fi
 
     echo "Checking $f"
 
     #####################################################
-    # Unified ffprobe JSON (requires jq)
+    # ffprobe metadata
     #####################################################
 
     probe=$(ffprobe -v quiet -print_format json -show_streams "$f")
@@ -41,29 +59,34 @@ for f in "${files[@]}"; do
     vcodec=$(jq -r '.streams[] | select(.codec_type=="video") | .codec_name' <<< "$probe")
     vbitrate=$(jq -r '.streams[] | select(.codec_type=="video") | .bit_rate' <<< "$probe")
     acodec=$(jq -r '.streams[] | select(.codec_type=="audio") | .codec_name' <<< "$probe")
+    achannels=$(jq -r '.streams[] | select(.codec_type=="audio") | .channels' <<< "$probe")
+    alayout=$(jq -r '.streams[] | select(.codec_type=="audio") | .channel_layout' <<< "$probe")
     field_order=$(jq -r '.streams[] | select(.codec_type=="video") | .field_order' <<< "$probe")
 
-    # Skip AV1 files entirely
-    if [[ "$vcodec" == "av1" ]]; then
-        echo "Skipping $f -- AV1 detected"
-        continue
-    fi
+    #####################################################
+    # Conversion decision
+    #####################################################
 
-    # Fast checks first, skip expensive detection if already need to convert
     needs_convert=false
+
     [[ "$acodec" != "aac" ]] && needs_convert=true
     ! $needs_convert && [[ "$vcodec" != "hevc" ]] && needs_convert=true
     ! $needs_convert && (( vbitrate > 2500000 )) && needs_convert=true
 
+    # Force convert if file >= MIN_SIZE_GB
+    if [[ $(echo "$size_gb >= $MIN_SIZE_GB" | bc) -eq 1 ]]; then
+        needs_convert=true
+    fi
+
     #####################################################
-    # TELECINE + INTERLACE DETECTION (only if still needed!)
+    # Interlace / telecine detection
     #####################################################
 
     status="progressive"
 
-    if ! $needs_convert && [[ "$field_order" =~ ^(tt|bb|tb|bt)$ ]]; then
+    if [[ "$field_order" =~ ^(tt|bb|tb|bt)$ ]]; then
         status="interlaced"
-    elif ! $needs_convert && [[ "$field_order" != "progressive" ]]; then
+    elif [[ "$field_order" != "progressive" ]]; then
         echo "Running deep scan for interlace/telecine..."
 
         interlaced_count=$(ffmpeg -nostdin -hide_banner \
@@ -117,25 +140,26 @@ for f in "${files[@]}"; do
     esac
 
     #####################################################
-    # SUBTITLE HANDLING (mov_text → srt ONLY for MP4)
+    # Audio handling (C3‑C)
     #####################################################
 
-    map_args="-map 0"
-    subtitle_args="-c:s copy"
+    # Default: stereo fallback
+    audio_args="-c:a aac -ac 2 -b:a 160k"
 
-    if [[ "$f" == *.mp4 ]]; then
-        if jq -e '.streams[] | select(.codec_type=="subtitle" and .codec_name=="mov_text")' <<< "$probe" >/dev/null; then
-            echo "Subtitle: mov_text detected in MP4 → converting to SRT"
-            subtitle_args="-c:s copy -c:s:m:codec_name=mov_text srt"
+    if [[ "$alayout" != "unknown" && -n "$alayout" ]]; then
+        if (( achannels == 2 )); then
+            audio_args="-c:a aac -ac 2 -b:a 160k"
+        elif (( achannels == 6 )); then
+            audio_args="-c:a aac -ac 6 -channel_layout 5.1 -b:a 384k"
+        elif (( achannels == 8 )); then
+            audio_args="-c:a aac -ac 6 -channel_layout 5.1 -b:a 384k"
         else
-            echo "Subtitle: MP4 but no mov_text → copying all"
+            audio_args="-c:a aac -ac $achannels -channel_layout $alayout -b:a 256k"
         fi
-    else
-        echo "Subtitle: Non‑MP4 file → copying all"
     fi
 
     #####################################################
-    # Transcoding section
+    # Transcoding
     #####################################################
 
     tmpfile="$dir/${base_no_ext}[Trans].tmp"
@@ -143,6 +167,7 @@ for f in "${files[@]}"; do
     echo "Input         : $f"
     echo "Temp Out      : $tmpfile"
     echo "Using filter  : $vf_chain"
+    echo "Audio args    : $audio_args"
 
     [ -f "$tmpfile" ] && rm -f "$tmpfile"
 
@@ -163,9 +188,8 @@ for f in "${files[@]}"; do
             -maxrate 2000k \
             -bufsize 4000k \
             -quality 2 \
-            -c:a aac -b:a 160k \
-            $map_args \
-            $subtitle_args \
+            $audio_args \
+            -c:s copy \
             -f matroska \
             "$tmpfile"
 
@@ -180,8 +204,9 @@ for f in "${files[@]}"; do
                 chmod 666 "$f"
                 echo "Replaced: $(( orig_size / 1024 / 1024 ))MB → $(( new_size / 1024 / 1024 ))MB"
             else
-                echo "Skipped: new file not smaller ($(( orig_size / 1024 / 1024 ))MB → $(( new_size / 1024 / 1024 ))MB) - creating .skip file"
-                touch "${dir}/.skip"
+                file_skip_file="${dir}/.skip_${base_no_ext}"
+                echo "Skipped: new file not smaller ($(( orig_size / 1024 / 1024 ))MB → $(( new_size / 1024 / 1024 ))MB) - creating .skip_${base_no_ext}"
+                touch "$file_skip_file"
                 rm -f "$tmpfile"
             fi
         else
@@ -197,10 +222,6 @@ done
 
 wait
 
-#####################################################
-# Cleanup section
-#####################################################
-
 echo "Cleaning up leftover [Trans] files..."
 
 find . \
@@ -209,6 +230,4 @@ find . \
   -o -type f -name '*[Trans].jpg' \
   -o -type d -name '*[Trans].trickplay' \) \
   -exec rm -rf {} +
-
-echo "All tasks complete."
 

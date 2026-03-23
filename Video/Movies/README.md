@@ -1,372 +1,339 @@
-# Video Compression Scripts (5GB+ Minimum)
+# Movies Video Scripts
 
-Compression and transcoding scripts optimized for files at least 5GB in size. These scripts convert interlaced video to x265 (HEVC) format with AAC audio, with intelligent audio/subtitle track filtering.
+Compression, deduplication, and maintenance scripts for movie content. Scripts convert video to x265 (HEVC) with AAC audio, detect and remove duplicates, and identify corrupt MKV files.
 
-## ⚠️ DISCLAIMER
+## DISCLAIMER
 
-**Use at your own risk!** These scripts perform destructive operations on video files. Always test on non-critical files first and maintain backups of your original content before using these scripts.
+Use at your own risk. These scripts perform destructive operations on video files. Always test on non-critical files first and maintain backups of your original content before running any script.
+
+---
 
 ## Requirements
 
-### Common
+### All Scripts
 
-- **FFmpeg**: v4.0 or later, **must be on system PATH**
-  - Verify installation: `ffmpeg -version`
-  - Windows: `winget install FFmpeg` or `choco install ffmpeg` or download from [ffmpeg.org](https://ffmpeg.org/download.html)
-  - Linux: `apt install ffmpeg` or `yum install ffmpeg`
-- **FFprobe**: Included with FFmpeg, used for video analysis
-- **jq**: JSON query utility (required for advanced track filtering in new scripts)
-  - Linux: `apt install jq` or `yum install jq`
+- `ffmpeg` / `ffprobe`: v4.0 or later, must be on system PATH.
+  - Linux: `sudo apt install ffmpeg`
+  - Windows: `winget install FFmpeg` or `choco install ffmpeg`
+  - Verify: `ffmpeg -version`
+- `jq`: JSON query utility (Bash scripts only).
+  - Linux: `sudo apt install jq`
   - Windows: `scoop install jq` or `choco install jq`
 
-### Platform-Specific
+### Bash Scripts (AMD GPU)
 
-- **Bash scripts (AMD)**: Linux/Unix system with bash shell and AMD GPU with VAAPI support (AMD Radeon RX series or newer)
-- **PowerShell scripts (Intel QSV)**: Windows with PowerShell 7.0 or later and Intel processor with Quick Sync Video support
-- **HandBrake-specific scripts**: HandBrakeCLI must be installed and on system PATH
-  - Windows: `choco install handbrake-cli` or `winget install HandBrake.HandBrakeCLI` or download from [handbrake.fr](https://handbrake.fr/)
-  - Linux: `apt install handbrake-cli` or `yum install handbrake-cli`
-  - Verify installation: `HandBrakeCLI --version`
+- Linux/Unix with Bash 5+
+- AMD GPU with VAAPI support (`/dev/dri/renderD128` must be accessible)
 
-## Files
+### PowerShell Scripts
 
-### clean_compress_amd_x265_aac.sh ⭐ Revised
+- PowerShell 7.0 or later
+- `HandBrakeCLI` is not required by any script in this folder
 
-**Status**: Production-ready with intelligent track filtering
+---
 
-Bash script for video compression with advanced audio/subtitle track management. Automatically selects English-language audio and subtitle tracks while filtering out foreign language variants. Optimized for files 5GB or larger.
+## Skip File Behaviour
 
-**Features:**
+All scripts respect two skip markers:
 
-- Intelligent audio/subtitle filtering (keeps English + unknown/untagged streams)
-- Dynamic stream track discovery (works even if tracks are reordered)
-- Minimum file size: 5GB (configurable)
-- Video codec decision: copies x265 if bitrate ≤ 2.5Mbps, re-encodes otherwise
-- Interlace/telecine detection with bwdif and fieldmatch filters
-- Parallel encoding support (default: 2 concurrent jobs)
+| Marker | Location | Effect |
+|---|---|---|
+| `.skip` | Parent movie directory | The entire movie directory is skipped. No files inside are processed. |
+| `.skip_<basename>` | Movie directory | That specific file is skipped. The basename is the full filename without extension. |
 
-**Platform**: Linux/Unix with AMD GPU support
+Example: to skip `The.Movie.(2020).mkv`, create `.skip_The.Movie.(2020)` in the same directory.
 
-**Audio/Subtitle Filtering**: Enabled
+Scripts automatically create a `.skip_<basename>` marker when a transcode produces a file that is not smaller than the original, preventing repeated failed attempts on that file.
 
-### clean_compress_qsv_x265_aac.ps1 ⭐ Revised
+---
 
-**Status**: Production-ready with intelligent track filtering
-
-PowerShell script for video compression using Intel Quick Sync Video (QSV). Same track filtering intelligence as the AMD bash variant but optimized for Windows/Intel hardware. Best for files 5GB or larger.
-
-**Features:**
-
-- Intelligent audio/subtitle filtering (keeps English + unknown/untagged streams)
-- Dynamic stream track discovery
-- Minimum file size: 5GB
-- Video codec decision logic with bitrate-aware copying
-- Interlace/telecine detection
-- Intel QSV hardware acceleration
-- Supports .mkv, .mp4, .ts container formats
-
-**Platform**: Windows with Intel Quick Sync support
-
-**Audio/Subtitle Filtering**: Enabled
+## Scripts
 
 ### compress_amd_x265_aac.sh
 
-**Status**: Stable
+Batch video compression script using AMD GPU hardware acceleration (VAAPI) via `ffmpeg`. Targets `.mkv`, `.mp4`, and `.ts` files that are 5 GB or larger.
 
-Bash script for video compression using AMD GPU hardware acceleration (VAAPI). Core video re-encoding functionality for interlaced content. Optimized for files 5GB or larger.
+**What it does:**
 
-**Features:**
+- Inspects each file with `ffprobe` to determine video codec, audio codec, and video bitrate.
+- Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
+- Performs two-pass interlace/telecine detection (metadata fast pass, then deep frame scan).
+- Encodes with `hevc_vaapi` at QP 22, VBR 1800k / max 2000k.
+- Replaces original only if the new file is smaller.
+- Runs up to 2 parallel encoding jobs.
 
-- Processes .mkv, .mp4, and .ts files
-- Automatic filtering for already-processed files (marked with [Cleaned] or [Trans])
-- Parallel encoding support (default: 2 concurrent jobs)
-- Minimum file size: 5GB
-- **Note**: Does not perform audio/subtitle filtering; use `clean_compress_amd_x265_aac.sh` for track selection
+No command-line parameters. Run from within the target directory or modify the path constants at the top of the script.
 
-**Platform**: Linux/Unix with AMD GPU support
+**Execution:**
+
+```bash
+cd /mnt/media/Movies
+./compress_amd_x265_aac.sh
+```
+
+---
+
+### compress_amd_x265_aac.ps1
+
+PowerShell wrapper for AMD VAAPI-based compression workflows. Provides the same logic as `compress_amd_x265_aac.sh` for use on systems where PowerShell is preferred.
+
+**What it does:**
+
+- Targets `.mkv` files 5 GB or larger.
+- Checks codec and bitrate; converts files that are not HEVC+AAC or exceed 2.5 Mbps.
+- Interlace detection via `ffprobe` stream metadata.
+- Encodes with `hevc_vaapi`.
+- Replaces original only if the new file is smaller.
+- Runs up to 2 parallel encoding jobs (configurable via `$MaxJobs` at top of script).
+
+No command-line parameters. Edit the threshold constants at the top of the script before running.
+
+**Execution:**
+
+```powershell
+Set-Location "Z:\Media\Movies"
+.\compress_amd_x265_aac.ps1
+```
+
+---
 
 ### compress_qsv_x265_aac.ps1
 
-**Status**: Stable
+PowerShell compression script using Intel Quick Sync Video (QSV) encoding. Targets `.mkv` and `.ts` files 5 GB or larger.
 
-PowerShell script for video compression using Intel Quick Sync Video (QSV). Optimized for files 5GB or larger.
+**What it does:**
 
-**Features:**
+- Checks codec, audio codec, and bitrate; converts files that are not HEVC+AAC or exceed 2.5 Mbps.
+- Interlace detection via `ffprobe`.
+- Encodes with `hevc_qsv`.
+- Configurable optional temporary directory (`$TempDir`) for intermediate files.
+- Replaces original only if the new file is smaller.
+- Runs up to 2 parallel encoding jobs (configurable via `$MaxJobs` at top of script).
 
-- Processes .mkv and .ts files
-- Configurable temporary directory for intermediate files
-- Progress tracking and filtering for already-processed content
-- Parallel encoding support
-- Minimum file size: 5GB
-- **Note**: Does not perform audio/subtitle filtering; use `clean_compress_qsv_x265_aac.ps1` for track selection
+No command-line parameters. Edit the threshold and path constants at the top of the script before running.
 
-**Platform**: Windows with Intel Quick Sync support
+**Execution:**
 
-### hbcompress_x265_aac.ps1
+```powershell
+Set-Location "Z:\Media\Movies"
+.\compress_qsv_x265_aac.ps1
+```
 
-**Status**: Stable
+---
 
-PowerShell script using HandBrake CLI for video compression with Intel Quick Sync Video (QSV) support. Specialized for HandBrake encoding workflows. Optimized for files 5GB or larger.
+### clean_compress_amd_x265_aac.sh
 
-**Features:**
+Bash compression script with intelligent audio and subtitle track filtering. Targets `.mkv`, `.mp4`, and `.ts` files 5 GB or larger.
 
-- Integration with HandBrakeCLI for advanced encoding options
-- Intel QSV hardware acceleration
-- Parallel job support
+**What it does:**
 
-**Platform**: Windows  with Intel Quick Sync support
+- All the same compression logic as `compress_amd_x265_aac.sh`.
+- Adds intelligent track filtering: keeps only English-language (`eng`) and untagged (`und`) audio and subtitle streams; removes foreign-language variants.
+- Dynamic stream discovery works correctly even when tracks are not in standard order.
+- Encodes with `hevc_vaapi` at QP 22, VBR 1800k / max 2000k.
 
-### clean_compressUHD_qsv_x265_aac.ps1 ⭐ 4K Specialized
+No command-line parameters.
 
-**Status**: Production-ready
+**Execution:**
 
-PowerShell script specialized for 4K/UHD content compression using Intel Quick Sync Video (QSV) with profile 6.2 encoding. Optimized for files 8GB or larger.
+```bash
+cd /mnt/media/Movies
+./clean_compress_amd_x265_aac.sh
+```
 
-**Features:**
+---
 
-- QP 24 constant quality encoding with profile 6.2 support
-- 4K/UHD content detection (≥3840px width)
-- Bitrate threshold: 20 Mbps (Profile 6.2 standard)
-- Intelligent audio/subtitle track filtering
-- Skip marker handling (`.skip` files prevent reprocessing)
-- Directory skip functionality (files in directories with `.skip` file are skipped)
-- Comprehensive cleanup that removes all intermediate files in case of crashes
+### clean_compress_qsv_x265_aac.ps1
 
-**Platform**: Windows with Intel Quick Sync support
+PowerShell compression script with intelligent audio and subtitle track filtering, using Intel Quick Sync Video. Targets `.mkv`, `.mp4`, and `.ts` files 5 GB or larger.
 
-**Audio/Subtitle Filtering**: Enabled
+**What it does:**
 
-**Special Features:**
+- All the same compression logic as `compress_qsv_x265_aac.ps1`.
+- Adds intelligent track filtering: keeps only English (`eng`) and untagged (`und`) audio and subtitle streams.
+- Dynamic stream discovery.
+- Encodes with `hevc_qsv`.
 
-- Detects and removes incomplete jobs (files marked `[Cleaned]` indicate crashed sessions)
-- Automatically removes files that don't compress efficiently
+**Parameters:**
+
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| `-MAX_JOBS` | No | `2` | Maximum number of parallel encoding jobs |
+| `-DEBUG` | No | `$false` | Enable verbose debug output |
+
+**Execution:**
+
+```powershell
+# Run with defaults (2 parallel jobs)
+Set-Location "Z:\Media\Movies"
+.\clean_compress_qsv_x265_aac.ps1
+
+# Override parallel job count
+.\clean_compress_qsv_x265_aac.ps1 -MAX_JOBS 4
+
+# Run with debug output
+.\clean_compress_qsv_x265_aac.ps1 -DEBUG $true
+```
+
+---
+
+### clean_compressUHD_qsv_x265_aac.ps1
+
+PowerShell compression script specialised for 4K / UHD content using Intel Quick Sync Video. Targets `.mkv`, `.mp4`, and `.ts` files 8 GB or larger (4K content threshold).
+
+**What it does:**
+
+- Same track filtering and compression logic as `clean_compress_qsv_x265_aac.ps1` but with a 4K-specific bitrate threshold of 20 Mbps and H.265 profile 6.2.
+- Only processes files where the video stream is 3840 pixels wide or wider.
+- Encodes with `hevc_qsv` at QP 24, profile 6.2.
+- Replaces original only if the new file is smaller.
+- Runs parallel jobs (configurable).
+
+**Parameters:**
+
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| `-MAX_JOBS` | No | `2` | Maximum number of parallel encoding jobs |
+| `-DEBUG` | No | `$false` | Enable verbose debug output |
+
+**Execution:**
+
+```powershell
+# Run with defaults
+Set-Location "Z:\Media\Movies"
+.\clean_compressUHD_qsv_x265_aac.ps1
+
+# Limit to 1 job (lower resource usage)
+.\clean_compressUHD_qsv_x265_aac.ps1 -MAX_JOBS 1
+
+# Run with debug output
+.\clean_compressUHD_qsv_x265_aac.ps1 -DEBUG $true
+```
+
+---
 
 ### dedup.ps1
 
-**Status**: Stable
+Recursively scans movie directories for duplicate video files and removes them, keeping the best copy. Also removes associated sidecar files for deleted duplicates.
 
-PowerShell script for identifying and removing duplicate video files within movie directories. Uses file size and quality heuristics to determine which duplicates to keep.
+**What it does:**
 
-**Features:**
+- Scans each movie folder for multiple video files (`.mkv`, `.mp4`, `.avi`, `.ts`).
+- When duplicates are found, keeps the best file using this priority:
+  - File type: `MKV > MP4 > AVI > TS`
+  - File size: largest file wins when file types are equal.
+- Deletes duplicate files along with any associated sidecar files (`.nfo`, `.srt`, `.jpg`, `.trickplay`, etc.) and orphaned `trickplay` folders.
+- Outputs a summary report listing files kept, files deleted, and sidecars removed.
+- Audit mode (`-Audit`) previews all planned deletions without making any changes.
 
-- Priority-based selection: MKV > MP4 > AVI > TS
-- Keeps largest file when priority is equal
-- Removes associated sidecar files (.nfo, .srt, .jpg, .trickplay, etc.)
-- Audit mode support (preview deletions without applying)
-- Comprehensive summary reporting
+**Parameters:**
 
-**Platform**: Windows
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| `-Audit` | No | | Dry-run mode; no files are deleted. Prints what would be removed. |
 
-**Usage:**
+**Execution:**
 
 ```powershell
-# Normal mode (performs deletions)
-.\dedup.ps1
-
-# Audit mode (preview only)
+# Audit mode -- preview what would be deleted (recommended before first real run)
 .\dedup.ps1 -Audit
-```
 
-## Usage
-
-For files with multiple audio/subtitle tracks requiring intelligent filtering:
-
-```bash
-# Bash (AMD GPU)
-./clean_compress_amd_x265_aac.sh
-
-# PowerShell (Intel GPU)
-./clean_compress_qsv_x265_aac.ps1
-```
-
-For basic compression without track filtering:
-
-```bash
-# Bash (AMD GPU)
-./compress_amd_x265_aac.sh
-
-# PowerShell (Intel GPU)  
-./compress_qsv_x265_aac.ps1
-```
-
-For 4K/UHD content:
-
-```powershell
-# PowerShell (Intel GPU)
-./clean_compressUHD_qsv_x265_aac.ps1
-```
-
-## Notes
-
-- Require `jq` for JSON parsing (especially important for track filtering scripts)
-- Temporary files use `.tmp` extension and are automatically cleaned up on success
-- **Skip Files**: When compression does not result in a smaller file, a `.skip` file is created in the directory. This hidden file marks the directory as having files unsuitable for compression (already optimized). Delete the `.skip` file if you want to retry compression on that directory.
-- **Cleanup on Shutdown**: Any files marked with `[Cleaned]` or `[Trans]` in the filename after script completion indicate crashed FFmpeg sessions and should be manually reviewed
-- **Audio/Subtitle Filtering**: `clean_*` and UHD scripts intelligently filter audio/subtitle tracks, keeping only English language and unknown/untagged streams
-- **Original Files**: Intermediate `.tmp` files are removed after successful compression; only `.mkv` output and original files (if unchanged size) are retained
-
-- Dynamic stream track discovery (works even if tracks are reordered)
-- Minimum file size: 5GB (configurable)
-- Video codec decision: copies x265 if bitrate ≤ 2.5Mbps, re-encodes otherwise
-- Interlace/telecine detection with bwdif and fieldmatch filters
-- Parallel encoding support (default: 2 concurrent jobs)
-
-**Platform**: Linux/Unix with AMD GPU support
-
-**Audio/Subtitle Filtering**: Enabled
-
-### clean_compress_qsv_x265_aac.ps1 ⭐ Revised
-
-**Status**: Production-ready with intelligent track filtering
-
-PowerShell script for video compression using Intel Quick Sync Video (QSV). Same track filtering intelligence as the AMD bash variant but optimized for Windows/Intel hardware. Best for files 5GB or larger.
-
-Features:
-
-- Intelligent audio/subtitle filtering (keeps English + unknown/untagged streams)
-- Dynamic stream track discovery
-- Minimum file size: 5GB
-- Video codec decision logic with bitrate-aware copying
-- Interlace/telecine detection
-- Intel QSV hardware acceleration
-- Supports .mkv, .mp4, .ts container formats
-
-**Platform**: Windows with Intel Quick Sync support
-
-**Audio/Subtitle Filtering**: Enabled
-
-### compress_amd_x265_aac.sh
-
-**Status**: Stable
-
-Bash script for video compression using AMD GPU hardware acceleration (VAAPI). Core video re-encoding functionality for interlaced content. Optimized for files 5GB or larger.
-
-Features:
-
-- Processes .mkv, .mp4, and .ts files
-- Automatic filtering for already-processed files (marked with [Cleaned] or [Trans])
-- Parallel encoding support (default: 2 concurrent jobs)
-- Minimum file size: 5GB
-- **Note**: Does not perform audio/subtitle filtering; use `clean_compress_amd_x265_aac.sh` for track selection
-
-**Platform**: Linux/Unix with AMD GPU support
-
-### compress_qsv_x265_aac.ps1
-
-**Status**: Stable
-
-PowerShell script for video compression using Intel Quick Sync Video (QSV). Optimized for files 5GB or larger.
-
-Features:
-
-- Processes .mkv and .ts files
-- Configurable temporary directory for intermediate files
-- Progress tracking and filtering for already-processed content
-- Parallel encoding support
-- Minimum file size: 5GB
-- **Note**: Does not perform audio/subtitle filtering; use `clean_compress_qsv_x265_aac.ps1` for track selection
-
-**Platform**: Windows with Intel Quick Sync support
-
-### hbcompress_x265_aac.ps1
-
-**Status**: Stable
-
-PowerShell script using HandBrake CLI for video compression with Intel Quick Sync Video (QSV) support. Specialized for HandBrake encoding workflows. Optimized for files 5GB or larger.
-
-Features:
-
-- Integration with HandBrakeCLI for advanced encoding options
-- Intel QSV hardware acceleration
-- Parallel job support
-
-**Platform**: Windows  with Intel Quick Sync support
-
-### clean_compressUHD_qsv_x265_aac.ps1 ⭐ 4K Specialized
-
-**Status**: Production-ready
-
-PowerShell script specialized for 4K/UHD content compression using Intel Quick Sync Video (QSV) with profile 6.2 encoding. Optimized for files 8GB or larger.
-
-Features:
-
-- QP 24 constant quality encoding with profile 6.2 support
-- 4K/UHD content detection (≥3840px width)
-- Bitrate threshold: 20 Mbps (Profile 6.2 standard)
-- Intelligent audio/subtitle track filtering
-- Skip marker handling (`.skip` files prevent reprocessing)
-- Directory skip functionality (files in directories with `.skip` file are skipped)
-- Comprehensive cleanup that removes all intermediate files in case of crashes
-
-**Platform**: Windows with Intel Quick Sync support
-
-**Audio/Subtitle Filtering**: Enabled
-
-**Special Features**:
-
-- Detects and removes incomplete jobs (files marked `[Cleaned]` indicate crashed sessions)
-- Automatically removes files that don't compress efficiently
-
-### dedup.ps1
-
-**Status**: Stable
-
-PowerShell script for identifying and removing duplicate video files within movie directories. Uses file size and quality heuristics to determine which duplicates to keep.
-
-Features:
-
-- Priority-based selection: MKV > MP4 > AVI > TS
-- Keeps largest file when priority is equal
-- Removes associated sidecar files (.nfo, .srt, .jpg, .trickplay, etc.)
-- Audit mode support (preview deletions without applying)
-- Comprehensive summary reporting
-
-**Platform**: Windows
-
-**Usage**
-
-```powershell
-# Normal mode (performs deletions)
+# Perform actual deduplication
 .\dedup.ps1
-
-# Audit mode (preview only)
-.\dedup.ps1 -Audit
 ```
 
-**Usage**
+---
 
-For files with multiple audio/subtitle tracks requiring intelligent filtering:
+### findcorrupt.ps1
 
-```bash
-# Bash (AMD GPU)
-./clean_compress_amd_x265_aac.sh
+PowerShell utility that recursively scans a directory for corrupt MKV files using `ffprobe`. Logs results to an optional CSV file and uses Radarr to delete and re-download flagged movies.
 
-# PowerShell (Intel GPU)
-./clean_compress_qsv_x265_aac.ps1
-```
+**What it does:**
 
-For basic compression without track filtering:
+- Runs `ffprobe` on each MKV file to detect corruption (non-zero exit code, or output containing `Invalid`, `error`, or `failed`).
+- Parses the movie title and year from the filename (expects `Title (Year).mkv` format) to match against Radarr.
+- Prints the path of each corrupt file to the console.
+- Optionally writes corrupt file paths to a CSV log.
+- Calls the Radarr API to delete the movie file, re-monitor the movie, and trigger a `MovieSearch` command.
+- Logs movies that cannot be matched in Radarr to a separate missing-movies log.
+- Audit mode (`-Audit`) performs no destructive actions; prints what would have happened instead.
+- Radarr integration is always active. The script verifies Radarr connectivity at startup and exits with error code 3 if Radarr is unreachable. Use `-Audit` to scan without triggering replacements.
+- Exits with a structured exit code:
+  - `0`: Completed, no corrupt files found.
+  - `1`: One or more corrupt files detected.
+  - `2`: `ffprobe` missing or inaccessible.
+  - `3`: Radarr API error or unreachable.
+  - `4`: Unexpected exception.
 
-```bash
-# Bash (AMD GPU)
-./compress_amd_x265_aac.sh
+**Parameters:**
 
-# PowerShell (Intel GPU)  
-./compress_qsv_x265_aac.ps1
-```
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| `-Root` | No | `.\` | Root directory to scan for MKV files |
+| `-CsvFile` | No | | CSV log file path (leave empty to disable CSV logging) |
+| `-Append` | No | | Append to CSV instead of overwriting |
+| `-Audit` | No | | Dry-run mode; no deletions or Radarr API calls (connectivity check still runs) |
+| `-RadarrUrl` | No | `http://docker:7878` | Radarr base URL |
+| `-RadarrLogFile` | No | `D:\Work\RadarrLog.txt` | Log file for Radarr actions |
+| `-MissingMovieLog` | No | `D:\Work\MissingMovies.txt` | Log file for unmatched movies |
+| `-Help` / `-ShowHelp` / `-?` | No | | Show built-in help |
 
-For 4K/UHD content:
+**Configuration:**
+
+Set `$RadarrApiKey` inside the script before running:
 
 ```powershell
-# PowerShell (Intel GPU)
-./clean_compressUHD_qsv_x265_aac.ps1
+$RadarrApiKey = "YOUR_API_KEY_HERE"
 ```
 
-**Notes**
+**Execution:**
 
-- Require `jq` for JSON parsing (especially important for track filtering scripts)
-- Temporary files use `.tmp` extension and are automatically cleaned up on success
-- **Skip Files**: When compression does not result in a smaller file, a `.skip` file is created in the directory. This hidden file marks the directory as having files unsuitable for compression (already optimized). Delete the `.skip` file if you want to retry compression on that directory.
-- **Cleanup on Shutdown**: Any files marked with `[Cleaned]` or `[Trans]` in the filename after script completion indicate crashed FFmpeg sessions and should be manually reviewed
-- **Audio/Subtitle Filtering**: `clean_*` and UHD scripts intelligently filter audio/subtitle tracks, keeping only English language and unknown/untagged streams
-- **Original Files**: Intermediate `.tmp` files are removed after successful compression; only `.mkv` output and original files (if unchanged size) are retained
+```powershell
+# Show built-in help
+.\findcorrupt.ps1 -Help
+
+# Audit mode -- detect corrupt files, make no changes
+.\findcorrupt.ps1 -Root "Z:\Media\Movies" -Audit
+
+# Scan and log corrupt files to CSV (Radarr replacement also runs)
+.\findcorrupt.ps1 -Root "Z:\Media\Movies" -CsvFile ".\corrupt.csv"
+
+# Full production run with all logs and custom Radarr URL
+.\findcorrupt.ps1 `
+    -Root "Z:\Media\Movies" `
+    -CsvFile "D:\Logs\corrupt.csv" `
+    -RadarrUrl "http://192.168.1.100:7878" `
+    -RadarrLogFile "D:\Logs\RadarrLog.txt" `
+    -MissingMovieLog "D:\Logs\MissingMovies.txt"
+```
+
+**Radarr integration:**
+
+Set `$RadarrApiKey` and configure `-RadarrUrl`. The script always verifies Radarr connectivity before scanning. When a corrupt file is found (and not in `-Audit` mode), the script:
+
+1. Parses the movie title and year from the filename.
+2. Looks up the movie in Radarr by title and year.
+3. Deletes the movie file record from Radarr.
+4. Re-monitors the movie.
+5. Dispatches a `MovieSearch` command so Radarr queues a replacement download.
+
+Movies that cannot be matched in Radarr are written to the missing-movies log for manual review.
+
+Use `-Audit` first to verify which files are flagged as corrupt before running a live replacement pass.
+
+---
+
+## Encoding Settings (Compression Scripts)
+
+| Setting | Value |
+|---|---|
+| Video codec (AMD/VAAPI) | `hevc_vaapi` |
+| Video codec (Intel QSV) | `hevc_qsv` |
+| Quality (ffmpeg) | QP 22 |
+| Quality (UHD) | QP 24, profile 6.2 |
+| Video bitrate target | 1800 kbps |
+| Video bitrate max | 2000 kbps |
+| UHD bitrate threshold | 20 Mbps |
+| Audio codec | AAC |
+| Audio bitrate (stereo) | 160 kbps |
+| Container | Matroska (`.mkv`) |

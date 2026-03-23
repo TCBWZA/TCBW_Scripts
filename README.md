@@ -40,7 +40,7 @@ See [Linux/README.md](Linux/README.md) for detailed descriptions of Linux utilit
 
 ## Video Processing Scripts
 
-**⚠️ USE AT YOUR OWN RISK**
+**USE AT YOUR OWN RISK**
 
 The settings in use work for me. You need to make sure things like bitrate meet your quality requirements. **THESE WILL NOT WORK FOR UHD.** (except `clean_compressUHD_qsv_x265_aac.ps1`)
 
@@ -196,7 +196,7 @@ For detailed usage instructions and script options, see the README files in each
 ### Compression Scripts
 
 1. **File Scanning**: Recursively scans for `.mkv`, `.mp4`, and `.ts` files in the script directory
-2. **Smart Filtering**: Skips files smaller than 1GB and previously processed files (marked [Cleaned] or [Trans])
+2. **Smart Filtering**: Skips files smaller than 1GB and previously processed files.
 3. **Format Analysis**: Uses ffprobe to detect:
    - Video codec and bitrate
    - Audio codec
