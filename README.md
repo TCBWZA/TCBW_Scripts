@@ -316,5 +316,5 @@ For questions, issues, or feature requests, please open an issue on the project 
 ---
 
 **Author**: TCBW  
-**Last Updated**: February 2026  
+**Last Updated**: March 2026  
 **Version**: 2.0
