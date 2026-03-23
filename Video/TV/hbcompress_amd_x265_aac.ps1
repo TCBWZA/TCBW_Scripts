@@ -1,4 +1,4 @@
-# Requires PowerShell 7+
+﻿# Requires PowerShell 7+
 $ErrorActionPreference = "Stop"
 
 Register-EngineEvent PowerShell.Exiting -Action {
@@ -15,7 +15,7 @@ function Get-VideoInterlaceStatus {
     param([string]$Path)
 
     #
-    # FAST PASS — STREAM METADATA ONLY
+    # FAST PASS - STREAM METADATA ONLY
     #
     try {
         $probeJson = ffprobe -v quiet -print_format json -show_streams -select_streams v "$Path"
@@ -28,7 +28,7 @@ function Get-VideoInterlaceStatus {
 
     $stream = $probe.streams | Where-Object { $_.codec_type -eq "video" }
 
-    # Explicit interlace flags (tt, bb, tb, bt) — ALWAYS interlaced
+    # Explicit interlace flags (tt, bb, tb, bt) - ALWAYS interlaced
     if ($stream.field_order -and $stream.field_order -match "^(tt|bb|tb|bt)$") {
         return "interlaced"
     }
@@ -39,7 +39,7 @@ function Get-VideoInterlaceStatus {
     }
 
     #
-    # SLOW PASS — ONLY IF field_order missing or unknown
+    # SLOW PASS - ONLY IF field_order missing or unknown
     #
     try {
         $probeJson = ffprobe -v quiet -print_format json -show_frames -select_streams v "$Path"

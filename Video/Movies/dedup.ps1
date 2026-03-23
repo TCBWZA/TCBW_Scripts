@@ -1,4 +1,4 @@
-<#
+﻿<#
     Movie Folder Cleaner & Dedupe Script
     ------------------------------------
 
@@ -60,7 +60,7 @@ function Remove-ItemSafe {
 }
 
 # ============================================================
-# PROGRESS BAR #1 — SCAN MOVIE FOLDERS
+# PROGRESS BAR #1 - SCAN MOVIE FOLDERS
 # ============================================================
 
 Write-Host "Scanning movie folders..."
@@ -89,7 +89,7 @@ foreach ($folder in $movieFolders) {
 Write-Progress -Id 1 -Activity "Scanning movie folders..." -Completed
 
 # ============================================================
-# PROGRESS BAR #2 — PROCESS MOVIE FOLDERS
+# PROGRESS BAR #2 - PROCESS MOVIE FOLDERS
 # ============================================================
 
 $totalFolders = $movieFolders.Count
@@ -159,7 +159,7 @@ foreach ($folder in $movieFolders) {
 
     # If only one or zero video files remain, nothing to dedupe
     if ($videoFiles.Count -le 1) {
-        Write-Host "  Only one or zero video files — nothing to dedupe"
+        Write-Host "  Only one or zero video files - nothing to dedupe"
         continue
     }
 
@@ -264,7 +264,7 @@ Write-Host ""
 Write-Host "==================== SUMMARY REPORT ====================" -ForegroundColor Cyan
 
 if ($Audit) {
-    Write-Host "AUDIT MODE — No files were actually deleted." -ForegroundColor Yellow
+    Write-Host "AUDIT MODE - No files were actually deleted." -ForegroundColor Yellow
     Write-Host ""
 }
 

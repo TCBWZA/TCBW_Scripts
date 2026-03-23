@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Scans for corrupt MKV files, deletes them, and requests replacements from Sonarr.
 
@@ -60,10 +60,10 @@
     PS> .\script.ps1 -Root "Z:\media" -CsvFile "corrupt.csv"
 
 .NOTES
-    � Requires ffprobe to be available in PATH.
-    � Sonarr API key must be configured inside the script.
-    � All file operations use literal-path-safe PowerShell calls.
-    � Audit mode is strongly recommended before first real run.
+    - Requires ffprobe to be available in PATH.
+    - Sonarr API key must be configured inside the script.
+    - All file operations use literal-path-safe PowerShell calls.
+    - Audit mode is strongly recommended before first real run.
 
 .EXITCODES
     0   Script completed successfully.

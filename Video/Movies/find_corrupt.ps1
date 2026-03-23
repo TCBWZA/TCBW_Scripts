@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Scans for corrupt movie MKV files, deletes them, and requests replacements from Radarr.
 
@@ -6,12 +6,12 @@
     This script recursively scans a root directory for MKV files and uses ffprobe
     to detect corruption. When a corrupt file is found, the script can:
 
-      � Delete the corrupt file
-      � Remove the movie file entry from Radarr
-      � Re-monitor the movie
-      � Trigger a Radarr MovieSearch command
-      � Log missing movies to a dedicated log file
-      � Optionally log file paths to a CSV file
+      - Delete the corrupt file
+      - Remove the movie file entry from Radarr
+      - Re-monitor the movie
+      - Trigger a Radarr MovieSearch command
+      - Log missing movies to a dedicated log file
+      - Optionally log file paths to a CSV file
 
     When -Audit is enabled, the script performs NO destructive actions and instead
     prints what WOULD have happened. This ensures deterministic, safe dry-runs.
@@ -48,16 +48,16 @@
     Alias for -? to show help.
 
 .EXAMPLE
-    PS> .\findcorrupt-movies.ps1 -Root "Z:\media\Movies" -Audit
+    PS> .\find_corrupt.ps1 -Root "Z:\media\Movies" -Audit
 
 .EXAMPLE
-    PS> .\findcorrupt-movies.ps1 -Root "Z:\media\Movies" -CsvFile corrupt.csv
+    PS> .\find_corrupt.ps1 -Root "Z:\media\Movies" -CsvFile corrupt.csv
 
 .NOTES
-    � Requires ffprobe to be available in PATH.
-    � Radarr API key must be configured inside the script.
-    � All file operations use literal-path-safe PowerShell calls.
-    � Audit mode is strongly recommended before first real run.
+    - Requires ffprobe to be available in PATH.
+    - Radarr API key must be configured inside the script.
+    - All file operations use literal-path-safe PowerShell calls.
+    - Audit mode is strongly recommended before first real run.
 
 .EXITCODES
     0   Script completed successfully.
@@ -92,9 +92,9 @@ if ($Help -or $ShowHelp -or $HelpShort) {
     Write-Host "MKV Movie Corruption Scanner + Radarr Replacement" -ForegroundColor Cyan
     Write-Host "------------------------------------------------------------"
     Write-Host "Usage:"
-    Write-Host "  findcorrupt-movies.ps1 -Root <path> [-CsvFile <file>] [-Append]"
-    Write-Host "                         [-Audit] [-RadarrUrl <url>] [-RadarrLogFile <file>]"
-    Write-Host "                         [-MissingMovieLog <file>]"
+    Write-Host "  find_corrupt.ps1 -Root <path> [-CsvFile <file>] [-Append]"
+    Write-Host "                   [-Audit] [-RadarrUrl <url>] [-RadarrLogFile <file>]"
+    Write-Host "                   [-MissingMovieLog <file>]"
     Write-Host ""
     Write-Host "Parameters:"
     Write-Host "  -Root <path>              Root folder to scan for MKVs"
@@ -107,8 +107,8 @@ if ($Help -or $ShowHelp -or $HelpShort) {
     Write-Host "  -Help / -ShowHelp / -?    Show this help message"
     Write-Host ""
     Write-Host "Examples:"
-    Write-Host "  findcorrupt-movies.ps1 -Root Z:\media\Movies -Audit"
-    Write-Host "  findcorrupt-movies.ps1 -Root Z:\media\Movies -CsvFile corrupt.csv"
+    Write-Host "  find_corrupt.ps1 -Root Z:\media\Movies -Audit"
+    Write-Host "  find_corrupt.ps1 -Root Z:\media\Movies -CsvFile corrupt.csv"
     Write-Host ""
     exit 0
 }
@@ -176,7 +176,7 @@ function Test-MkvCorrupt {
 # -------------------------------
 # Parse movie title + year
 # -------------------------------
-function Parse-MovieInfo {
+function Get-MovieInfo {
     param([string]$Path)
 
     $file = Split-Path $Path -Leaf
@@ -222,15 +222,15 @@ function Invoke-RadarrReplaceFromPath {
 
     $Headers = @{ "X-Api-Key" = $ApiKey }
 
-    function Log-RadarrAction {
+    function Write-RadarrLog {
         param([string]$File, [string]$Status)
         $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         Add-Content -LiteralPath $LogFile -Value "$timestamp,""$File"",$Status"
     }
 
-    $info = Parse-MovieInfo -Path $FilePath
+    $info = Get-MovieInfo -Path $FilePath
     if (-not $info) {
-        Log-RadarrAction -File $FilePath -Status "ERROR: Could not parse movie title/year"
+        Write-RadarrLog -File $FilePath -Status "ERROR: Could not parse movie title/year"
         return
     }
 
@@ -249,7 +249,7 @@ function Invoke-RadarrReplaceFromPath {
         if (-not $movie) {
             $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
             Add-Content -LiteralPath $MissingMovieLog -Value "$timestamp,$($info.Title),$FilePath"
-            Log-RadarrAction -File $FilePath -Status "404 (movie not found)"
+            Write-RadarrLog -File $FilePath -Status "404 (movie not found)"
             return
         }
 
@@ -260,7 +260,7 @@ function Invoke-RadarrReplaceFromPath {
 
         if ($movieFileId) {
             $deleteResponse = Invoke-WebRequest -Method Delete -Uri "$RadarrUrl/api/v3/moviefile/$movieFileId" -Headers $Headers -ErrorAction Stop
-            Log-RadarrAction -File $FilePath -Status $deleteResponse.StatusCode
+            Write-RadarrLog -File $FilePath -Status $deleteResponse.StatusCode
         }
 
         $movie.monitored = $true
@@ -273,7 +273,7 @@ function Invoke-RadarrReplaceFromPath {
             -ContentType "application/json" `
             -ErrorAction Stop
 
-        Log-RadarrAction -File $FilePath -Status $monitorResponse.StatusCode
+        Write-RadarrLog -File $FilePath -Status $monitorResponse.StatusCode
 
         $body = @{
             name     = "MoviesSearch"
@@ -288,10 +288,10 @@ function Invoke-RadarrReplaceFromPath {
             -ContentType "application/json" `
             -ErrorAction Stop
 
-        Log-RadarrAction -File $FilePath -Status $searchResponse.StatusCode
+        Write-RadarrLog -File $FilePath -Status $searchResponse.StatusCode
     }
     catch {
-        Log-RadarrAction -File $FilePath -Status "ERROR: $($_.Exception.Message)"
+        Write-RadarrLog -File $FilePath -Status "ERROR: $($_.Exception.Message)"
         exit 3
     }
 }
@@ -330,7 +330,7 @@ Get-ChildItem -LiteralPath $Root -Recurse -File -Filter "*.mkv" | ForEach-Object
 
     if (Test-MkvCorrupt -Path $File) {
 
-        $corruptFound = $true
+        $script:corruptFound = $true
         Write-Host "CORRUPT MKV: $File" -ForegroundColor Red
 
         if ($Audit) {

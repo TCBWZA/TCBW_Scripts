@@ -1,4 +1,4 @@
-###############################################################
+﻿###############################################################
 # PRE-FLIGHT CHECKS
 ###############################################################
 $requiredTools = @('ffprobe', 'ffmpeg')
@@ -161,7 +161,7 @@ $AllFiles | ForEach-Object -Parallel {
     }
     $tempFilesToCleanup += $Tmp
 
-    # Interlace detection (optimised) — skip first 5 minutes to avoid credits/intros, analyze next 200 frames
+    # Interlace detection (optimised) - skip first 5 minutes to avoid credits/intros, analyze next 200 frames
     if ($field -eq "progressive") {
         $vf = "format=qsv"
     }

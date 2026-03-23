@@ -1,4 +1,4 @@
-<#
+﻿<#
     TV Show Folder Cleaner & Dedupe Script
     ---------------------------------------
 
@@ -278,7 +278,7 @@ foreach ($dir in $allDirs) {
 Write-Host "==================== SUMMARY REPORT ====================" -ForegroundColor Cyan
 
 if ($Audit) {
-    Write-Host "AUDIT MODE — No files were actually deleted." -ForegroundColor Yellow
+    Write-Host "AUDIT MODE - No files were actually deleted." -ForegroundColor Yellow
     Write-Host ""
 }
 

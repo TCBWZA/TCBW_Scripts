@@ -244,7 +244,7 @@ Recursively scans movie directories for duplicate video files and removes them, 
 
 ---
 
-### findcorrupt.ps1
+### find_corrupt.ps1
 
 PowerShell utility that recursively scans a directory for corrupt MKV files using `ffprobe`. Logs results to an optional CSV file and uses Radarr to delete and re-download flagged movies.
 
@@ -290,16 +290,16 @@ $RadarrApiKey = "YOUR_API_KEY_HERE"
 
 ```powershell
 # Show built-in help
-.\findcorrupt.ps1 -Help
+.\find_corrupt.ps1 -Help
 
 # Audit mode -- detect corrupt files, make no changes
-.\findcorrupt.ps1 -Root "Z:\Media\Movies" -Audit
+.\find_corrupt.ps1 -Root "Z:\Media\Movies" -Audit
 
 # Scan and log corrupt files to CSV (Radarr replacement also runs)
-.\findcorrupt.ps1 -Root "Z:\Media\Movies" -CsvFile ".\corrupt.csv"
+.\find_corrupt.ps1 -Root "Z:\Media\Movies" -CsvFile ".\corrupt.csv"
 
 # Full production run with all logs and custom Radarr URL
-.\findcorrupt.ps1 `
+.\find_corrupt.ps1 `
     -Root "Z:\Media\Movies" `
     -CsvFile "D:\Logs\corrupt.csv" `
     -RadarrUrl "http://192.168.1.100:7878" `
