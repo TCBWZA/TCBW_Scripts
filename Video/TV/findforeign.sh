@@ -3,55 +3,18 @@
 # ============================================================
 #  Foreign-Only Audio Scanner (Bash Version)
 #
-#  Requirements (Debian/Ubuntu/WSL):
+#  Behaviour:
+#      • Sonarr enabled by default
+#      • --no-sonarr disables Sonarr
+#      • CSV logging only when --csv is provided
+#      • --append requires --csv
+#      • Full audit-safe parameter validation
+#      • .skip file support to ignore entire shows
+#      • Colourised terminal output
 #
+#  Requirements (Debian/Ubuntu/WSL):
 #      sudo apt update
 #      sudo apt install ffmpeg jq curl -y
-#
-#  Dependencies checked automatically at runtime:
-#      • ffprobe  – required for audio language detection
-#      • jq       – required for Sonarr JSON parsing
-#      • curl     – required for Sonarr API calls
-#
-#  Usage Examples:
-#
-#  1) Scan current directory, NO logging (default)
-#       ./find_foreign.sh
-#
-#  2) Scan a specific root directory, NO logging
-#       ./find_foreign.sh --root /mnt/media/TV
-#
-#  3) Enable CSV logging (CSV file created only when specified)
-#       ./find_foreign.sh --csv foreign.csv
-#
-#  4) Enable Sonarr replacement + Sonarr log
-#       ./find_foreign.sh --sonarr
-#
-#  5) CSV logging + Sonarr replacement
-#       ./find_foreign.sh --csv foreign.csv --sonarr
-#
-#  6) Full explicit example
-#       ./find_foreign.sh --root /mnt/media/TV \
-#                          --csv /tmp/foreign.csv \
-#                          --sonarr
-#
-#  .skip Behaviour:
-#
-#    • If a ShowName directory contains a file named `.skip`,
-#      the scanner will completely ignore that show.
-#
-#    • Example:
-#          /series/Breaking Bad/.skip
-#          /series/Breaking Bad/Season01/E01.mkv
-#
-#      Result:
-#          The entire "Breaking Bad" directory is skipped.
-#          No MKVs inside it are scanned.
-#          No CSV entries are created.
-#          No Sonarr actions are triggered.
-#
-#    • The `.skip` file must be placed directly inside the show directory:
-#          /series/ShowName/.skip
 #
 # ============================================================
 
@@ -77,32 +40,106 @@ if [[ $missing -eq 1 ]]; then
     exit 1
 fi
 
+# -------- Colour Definitions --------
+RED="\033[31m"
+GREEN="\033[32m"
+YELLOW="\033[33m"
+CYAN="\033[36m"
+RESET="\033[0m"
+
+print_info()  { echo -e "${CYAN}$1${RESET}"; }
+print_warn()  { echo -e "${YELLOW}$1${RESET}"; }
+print_error() { echo -e "${RED}$1${RESET}"; }
+print_ok()    { echo -e "${GREEN}$1${RESET}"; }
+
 # -------- Defaults --------
 ROOT="."
 CSV_FILE=""
-ENABLE_SONARR=0
+APPEND=0
+ENABLE_SONARR=1        # Sonarr enabled by default
 SONARR_URL="http://docker:8989"
-SONARR_API_KEY="YOUR_API_KEY_HERE"
+SONARR_API_KEY="65ab94c047a941a5b9f0dcfc7677a125"
 SONARR_LOG=""
 ALLOWED_LANGS=("eng" "und")
 
 # -------- Argument Parsing --------
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -r|--root)   ROOT="$2"; shift 2 ;;
-        -c|--csv)    CSV_FILE="$2"; shift 2 ;;
-        -s|--sonarr) ENABLE_SONARR=1; SONARR_LOG="sonarr_log.csv"; shift ;;
-        *) echo "Unknown argument: $1"; exit 1 ;;
+        -r|--root)
+            ROOT="$2"
+            shift 2
+            ;;
+        -c|--csv)
+            CSV_FILE="$2"
+            shift 2
+            ;;
+        -a|--append)
+            APPEND=1
+            shift
+            ;;
+        --no-sonarr)
+            ENABLE_SONARR=0
+            shift
+            ;;
+        -s|--sonarr)
+            ENABLE_SONARR=1
+            shift
+            ;;
+        *)
+            print_error "Unknown argument: $1"
+            exit 1
+            ;;
     esac
 done
 
+# -------- Audit-Safe Parameter Validation --------
+
+# Validate: Root must exist and be a directory
+if [[ ! -d "$ROOT" ]]; then
+    print_error "ERROR: Root path does not exist or is not a directory: $ROOT"
+    exit 1
+fi
+
+# Validate: Append requires CSV
+if [[ $APPEND -eq 1 && -z "$CSV_FILE" ]]; then
+    print_error "ERROR: --append requires --csv <file>"
+    exit 1
+fi
+
+# Validate: CSV parent directory must exist
+if [[ -n "$CSV_FILE" ]]; then
+    CSV_DIR=$(dirname "$CSV_FILE")
+    if [[ ! -d "$CSV_DIR" ]]; then
+        print_error "ERROR: CSV directory does not exist: $CSV_DIR"
+        exit 1
+    fi
+fi
+
+# Validate: Sonarr log directory must exist (if enabled)
+if [[ $ENABLE_SONARR -eq 1 ]]; then
+    SONARR_LOG="sonarr_log.csv"
+    SONARR_LOG_DIR=$(dirname "$SONARR_LOG")
+
+    if [[ ! -d "$SONARR_LOG_DIR" ]]; then
+        print_error "ERROR: Sonarr log directory does not exist: $SONARR_LOG_DIR"
+        exit 1
+    fi
+
+    if [[ -z "$SONARR_API_KEY" ]]; then
+        print_error "ERROR: Sonarr enabled but API key missing"
+        exit 1
+    fi
+fi
+
 # -------- CSV init (only if user asked) --------
 if [[ -n "$CSV_FILE" ]]; then
-    echo "FilePath,Languages" > "$CSV_FILE"
+    if [[ $APPEND -eq 0 ]]; then
+        echo "FilePath,Languages" > "$CSV_FILE"
+    fi
 fi
 
 # -------- Sonarr log init (only if enabled) --------
-if [[ "$ENABLE_SONARR" -eq 1 && -n "$SONARR_LOG" ]]; then
+if [[ $ENABLE_SONARR -eq 1 ]]; then
     echo "DateTime,FilePath,Status" > "$SONARR_LOG"
 fi
 
@@ -122,11 +159,10 @@ get_audio_languages() {
     echo "$langs" | tr '[:upper:]' '[:lower:]'
 }
 
-# -------- Sonarr logging (only if enabled) --------
+# -------- Sonarr logging --------
 log_sonarr() {
     local file="$1" status="$2"
-    [[ "$ENABLE_SONARR" -ne 1 ]] && return
-    [[ -z "$SONARR_LOG" ]] && return
+    [[ $ENABLE_SONARR -ne 1 ]] && return
     local ts
     ts=$(date +"%Y-%m-%d %H:%M:%S")
     echo "$ts,\"$file\",$status" >> "$SONARR_LOG"
@@ -134,7 +170,7 @@ log_sonarr() {
 
 # -------- Sonarr replacement --------
 sonarr_replace() {
-    [[ "$ENABLE_SONARR" -ne 1 ]] && return
+    [[ $ENABLE_SONARR -ne 1 ]] && return
     local file="$1"
 
     local series_name season episode
@@ -144,6 +180,7 @@ sonarr_replace() {
         season="${BASH_REMATCH[1]}"
         episode="${BASH_REMATCH[2]}"
     else
+        print_error "Sonarr: Could not parse SxxEyy for $file"
         log_sonarr "$file" "ERROR: Could not parse SxxEyy"
         return
     fi
@@ -153,7 +190,11 @@ sonarr_replace() {
         "$SONARR_URL/api/v3/series?term=$series_name")
     series_id=$(echo "$series_json" | jq '.[0].id // empty')
 
-    [[ -z "$series_id" ]] && { log_sonarr "$file" "404 (series not found)"; return; }
+    [[ -z "$series_id" ]] && {
+        print_error "Sonarr: Series not found for $file"
+        log_sonarr "$file" "404 (series not found)"
+        return
+    }
 
     local episodes_json episode_json episode_id episode_file_id
     episodes_json=$(curl -s -H "X-Api-Key: $SONARR_API_KEY" \
@@ -163,13 +204,23 @@ sonarr_replace() {
     episode_id=$(echo "$episode_json" | jq '.id // empty')
     episode_file_id=$(echo "$episode_json" | jq '.episodeFileId // empty')
 
-    [[ -z "$episode_id" ]] && { log_sonarr "$file" "404 (episode not found)"; return; }
-    [[ -z "$episode_file_id" ]] && { log_sonarr "$file" "404 (episodeFileId missing)"; return; }
+    [[ -z "$episode_id" ]] && {
+        print_error "Sonarr: Episode not found for $file"
+        log_sonarr "$file" "404 (episode not found)"
+        return
+    }
+
+    [[ -z "$episode_file_id" ]] && {
+        print_error "Sonarr: EpisodeFileId missing for $file"
+        log_sonarr "$file" "404 (episodeFileId missing)"
+        return
+    }
 
     local delete_status
     delete_status=$(curl -s -o /dev/null -w "%{http_code}" \
         -X DELETE -H "X-Api-Key: $SONARR_API_KEY" \
         "$SONARR_URL/api/v3/episodefile/$episode_file_id")
+    print_ok "Sonarr: Deleted episode file for $file (HTTP $delete_status)"
     log_sonarr "$file" "$delete_status"
 
     local updated_json monitor_status
@@ -179,6 +230,7 @@ sonarr_replace() {
         -H "Content-Type: application/json" \
         -d "$updated_json" \
         "$SONARR_URL/api/v3/episode/$episode_id")
+    print_ok "Sonarr: Re-monitored episode for $file (HTTP $monitor_status)"
     log_sonarr "$file" "$monitor_status"
 
     local search_body search_status
@@ -188,11 +240,12 @@ sonarr_replace() {
         -H "Content-Type: application/json" \
         -d "$search_body" \
         "$SONARR_URL/api/v3/command")
+    print_ok "Sonarr: Triggered search for $file (HTTP $search_status)"
     log_sonarr "$file" "$search_status"
 }
 
 # -------- Main scan with .skip support --------
-echo "Scanning for MKVs with foreign-only audio..."
+print_info "Scanning for MKVs with foreign-only audio..."
 
 find "$ROOT" \
     -type d -exec test -e "{}/.skip" \; -prune -o \
@@ -208,7 +261,7 @@ find "$ROOT" \
     done
 
     if [[ "$has_allowed" -eq 0 ]]; then
-        echo "Foreign-only: $file"
+        print_warn "Foreign-only: $file"
 
         if [[ -n "$CSV_FILE" ]]; then
             lang_string=$(echo "$langs" | paste -sd ";" -)
@@ -218,3 +271,4 @@ find "$ROOT" \
         sonarr_replace "$file"
     fi
 done
+

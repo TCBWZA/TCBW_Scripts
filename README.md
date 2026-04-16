@@ -24,12 +24,19 @@ TCBW_Scripts/
 │   │   ├── clean_compress_qsv_x265_aac.ps1 - Intel QSV w/ metadata handling (PowerShell)
 │   │   ├── clean_compressUHD_qsv_x265_aac.ps1 - Intel QSV 4K compression (PowerShell)
 │   │   └── dedup.ps1                 - Duplicate removal (PowerShell)
-│   └── TV/                             - Compression & deduplication scripts for TV shows
-│       ├── README.md
-│       ├── compress_amd_x265_aac.sh   - AMD GPU compression (bash)
-│       ├── compress_qsv_x265_aac.ps1  - Intel QSV compression (PowerShell)
-│       ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV compression
-│       └── dedup.ps1                 - Duplicate episode removal & priority-based selection
+   └── TV/                             - Compression, deduplication, and maintenance scripts for TV shows
+       ├── README.md
+       ├── compress_amd_x265_aac.sh    - AMD VAAPI compression (bash)
+       ├── fscompress_amd_x265_aac.sh  - AMD VAAPI force-compress (bash)
+       ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE compression (PowerShell)
+       ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV compression (PowerShell)
+       ├── remux.ps1                   - Container-repair remux without re-encoding (PowerShell)
+       ├── dedup.ps1                   - Duplicate episode removal and priority-based selection (PowerShell)
+       ├── findforeign.sh              - Foreign-audio detection (bash)
+       ├── findforeign.ps1             - Foreign-audio detection with Sonarr integration (PowerShell)
+       ├── findcorrupt.ps1             - Corrupt MKV detection with Sonarr integration (PowerShell)
+       ├── apply-episode-metadata.sh   - NFO metadata writer to MKV tags (bash)
+       └── Apply-EpisodeMetadata.ps1   - NFO metadata writer to MKV tags (PowerShell)
 └── Files/
     └── (legacy or additional files)
 ```
@@ -72,13 +79,25 @@ This dual-machine approach ensures reliable batch processing despite the Debian 
 
 ### Compression Scripts
 
-- **Hardware-Accelerated Encoding**: Support for both AMD VAAPI and Intel Quick Sync Video (QSV) encoders
-- **Batch Processing**: Parallel encoding with configurable concurrent jobs
+- **Hardware-Accelerated Encoding**: Support for AMD VAAPI and Intel Quick Sync Video (QSV) encoders
+- **Batch Processing**: Parallel encoding with configurable concurrent jobs (bash scripts)
 - **Smart Format Detection**: Automatically detects interlacing and decides whether conversion is needed
 - **Optimized Frame Analysis**: Skips first 5 minutes of video (intros/credits) when analyzing for interlacing
 - **Output Format**: x265 (HEVC) video codec with AAC audio
 - **Metadata Handling**: Optional metadata and sidecar file management
-- **Skip Markers**: Support for `.skip` files to mark directories and shows as ineligible for compression
+- **Skip Markers**: Support for `.skip` directory markers and `.skip_<basename>` per-file markers
+- **Container Repair**: Automatic MKV container health check; broken containers are remuxed before transcoding
+- **File Lock Detection**: Skips files currently open by other processes (media players, Plex, etc.)
+- **Atomic Replacement**: Writes to a temp file and swaps atomically; originals are only replaced when output is smaller and valid
+- **Format Guards**: Automatically skips 4K (UHD) and AV1-encoded files
+- **Subtitle Filtering**: Retains only English and undefined-language subtitle tracks; other languages are dropped
+
+### Maintenance & Quality Assurance Scripts
+
+- **Corrupt File Detection**: `findcorrupt.ps1` scans for unreadable MKV files and optionally triggers Sonarr replacement
+- **Foreign Audio Detection**: `findforeign.ps1` / `findforeign.sh` flag episodes with no English or undetermined audio tracks
+- **Container Repair**: `remux.ps1` fixes MKV structural anomalies without re-encoding
+- **Metadata Sync**: `Apply-EpisodeMetadata.ps1` / `apply-episode-metadata.sh` write episode metadata from NFO sidecar files into MKV container tags
 
 ### Deduplication Scripts
 
@@ -141,8 +160,11 @@ This dual-machine approach ensures reliable batch processing despite the Debian 
 **Compression:**
 
 ```powershell
-# TV Content - Intel QSV compression
-.\Video\TV\compress_qsv_x265_aac.ps1
+# TV Content - AMD VCE compression (HandBrake)
+.\Video\TV\hbcompress_amd_x265_aac.ps1
+
+# TV Content - Intel QSV compression (HandBrake)
+.\Video\TV\hbcompress_qsv_x265_aac.ps1
 
 # Movies - Intel QSV compression
 .\Video\Movies\compress_qsv_x265_aac.ps1
@@ -259,16 +281,16 @@ MAX_JOBS=2                      # Number of parallel encoding jobs
 
 ### AMD VAAPI
 
-- **Files**: `compress_amd_x265_aac.sh`, `compressmp4_amd_x265_aac.sh`
-- **Best For**: AMD GPUs (Radeon RX series)
-- **Performance**: High throughput for batch processing
-- **Compatibility**: Requires compatible AMD hardware
+- **Files**: `compress_amd_x265_aac.sh`, `fscompress_amd_x265_aac.sh`, `compressmp4_amd_x265_aac.sh`
+- **Best For**: AMD GPUs (Radeon RX series) on Linux
+- **Performance**: High throughput with parallel encoding
+- **Compatibility**: Requires compatible AMD hardware with VAAPI support (`/dev/dri/renderD128`)
 
 ### HandBrake Integration
 
-- **Files**: `hbcompress_qsv_x265_aac.ps1` (Windows with Intel QSV)
-- **Best For**: HandBrake encoding workflows
-- **Features**: Specialized handling for HandBrake CLI integration
+- **Files**: `hbcompress_amd_x265_aac.ps1` (Windows with AMD VCE), `hbcompress_qsv_x265_aac.ps1` (Windows with Intel QSV)
+- **Best For**: HandBrake encoding workflows with hardware acceleration
+- **Features**: Container repair, file lock detection, atomic replacement, deferred interlace detection, 4K/AV1 guards, subtitle language filtering
 
 ## Performance Tips
 
@@ -316,5 +338,5 @@ For questions, issues, or feature requests, please open an issue on the project 
 ---
 
 **Author**: TCBW  
-**Last Updated**: March 2026  
+**Last Updated**: April 2026  
 **Version**: 2.0

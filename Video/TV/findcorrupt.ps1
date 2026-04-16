@@ -6,12 +6,12 @@
     This script recursively scans a root directory for MKV files and uses ffprobe
     to detect corruption. When a corrupt file is found, the script can:
 
-        Delete the corrupt file
-        Remove the episode file entry from Sonarr
-        Re-monitor the episode
-        Trigger a Sonarr EpisodeSearch command
-        Log missing series to a dedicated log file
-        Optionally log file paths to a CSV file
+      - Delete the corrupt file
+      - Remove the episode file entry from Sonarr
+      - Re-monitor the episode
+      - Trigger a Sonarr EpisodeSearch command
+      - Log missing series to a dedicated log file
+      - Optionally log file paths to a CSV file
 
     When -Audit is enabled, the script performs NO destructive actions and instead
     prints what WOULD have happened. This ensures deterministic, safe dry-runs.
@@ -127,9 +127,7 @@ if ($Help -or $ShowHelp -or $HelpShort) {
 # -------------------------------
 # Sonarr API Key
 # -------------------------------
-# Replace the placeholder below with your Sonarr API key, or modify the
-# script to read the key from an environment variable or external config.
-$SonarrApiKey = "YOUR_API_KEY_HERE"
+$SonarrApiKey = "65ab94c047a941a5b9f0dcfc7677a125"
 
 # -------------------------------
 # Sonarr connectivity test
@@ -201,7 +199,7 @@ function Invoke-SonarrReplaceFromPath {
 
     $Headers = @{ "X-Api-Key" = $ApiKey }
 
-    function Write-SonarrLog {
+    function Log-SonarrAction {
         param([string]$File, [string]$Status)
         $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         Add-Content -LiteralPath $LogFile -Value "$timestamp,""$File"",$Status"
@@ -219,7 +217,7 @@ function Invoke-SonarrReplaceFromPath {
             $season = [int]$matches[1]
             $episode = [int]$matches[2]
         } else {
-            Write-SonarrLog -File $FilePath -Status "ERROR: Could not parse SxxEyy"
+            Log-SonarrAction -File $FilePath -Status "ERROR: Could not parse SxxEyy"
             return
         }
 
@@ -235,7 +233,7 @@ function Invoke-SonarrReplaceFromPath {
         if (-not $series) {
             $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
             Add-Content -LiteralPath $MissingSeriesLog -Value "$timestamp,$seriesName,$FilePath"
-            Write-SonarrLog -File $FilePath -Status "404 (series not found)"
+            Log-SonarrAction -File $FilePath -Status "404 (series not found)"
             return
         }
 
@@ -245,7 +243,7 @@ function Invoke-SonarrReplaceFromPath {
             Where-Object { $_.seasonNumber -eq $season -and $_.episodeNumber -eq $episode }
 
         if (-not $episodeObj) {
-            Write-SonarrLog -File $FilePath -Status "404 (episode not found)"
+            Log-SonarrAction -File $FilePath -Status "404 (episode not found)"
             return
         }
 
@@ -256,7 +254,7 @@ function Invoke-SonarrReplaceFromPath {
 
         if ($episodeFileId) {
             $deleteResponse = Invoke-WebRequest -Method Delete -Uri "$SonarrUrl/api/v3/episodefile/$episodeFileId" -Headers $Headers -ErrorAction Stop
-            Write-SonarrLog -File $FilePath -Status $deleteResponse.StatusCode
+            Log-SonarrAction -File $FilePath -Status $deleteResponse.StatusCode
         }
 
         $episodeObj.monitored = $true
@@ -269,7 +267,7 @@ function Invoke-SonarrReplaceFromPath {
             -ContentType "application/json" `
             -ErrorAction Stop
 
-        Write-SonarrLog -File $FilePath -Status $monitorResponse.StatusCode
+        Log-SonarrAction -File $FilePath -Status $monitorResponse.StatusCode
 
         $body = @{
             name       = "EpisodeSearch"
@@ -284,10 +282,10 @@ function Invoke-SonarrReplaceFromPath {
             -ContentType "application/json" `
             -ErrorAction Stop
 
-        Write-SonarrLog -File $FilePath -Status $searchResponse.StatusCode
+        Log-SonarrAction -File $FilePath -Status $searchResponse.StatusCode
     }
     catch {
-        Write-SonarrLog -File $FilePath -Status "ERROR: $($_.Exception.Message)"
+        Log-SonarrAction -File $FilePath -Status "ERROR: $($_.Exception.Message)"
         exit 3
     }
 }
@@ -328,7 +326,7 @@ Get-ChildItem -LiteralPath $Root -Recurse -File -Filter "*.mkv" | ForEach-Object
 
     if (Test-MkvCorrupt -Path $File) {
 
-        $script:corruptFound = $true
+        $corruptFound = $true
         Write-Host "CORRUPT MKV: $File" -ForegroundColor Red
 
         if ($Audit) {
