@@ -61,7 +61,7 @@ Batch video compression script using AMD GPU hardware acceleration (VAAPI) via `
 - Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
 - Performs two-pass interlace/telecine detection:
   - Fast pass: reads `field_order` from stream metadata.
-  - Deep scan: runs `idet` filter and `repeat_pict` frame analysis only when metadata is inconclusive.
+  - Deep scan: runs `idet` filter and `repeat_pict` frame analysis (skips first 5 minutes of content, analyzes 200 frames) only when metadata is inconclusive.
 - Applies the correct deinterlace filter: `bwdif` for interlaced, `fieldmatch+decimate+bwdif` for telecine.
 - Encodes with `hevc_vaapi` at QP 22, VBR 1800k / max 2000k.
 - Replaces original only if the new file is smaller.
@@ -134,13 +134,14 @@ PowerShell batch compression script using HandBrakeCLI with Intel Quick Sync Vid
 
 - Inspects each file with `ffprobe` to determine video codec, audio codec, and video bitrate.
 - Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
-- Performs interlace detection via `ffprobe` frame metadata:
-  - Applies `--deinterlace=slower` for interlaced content.
-  - Applies `--detelecine --deinterlace=slower` for unknown or telecine content.
-- Encodes with HandBrakeCLI using `qsv_h265` encoder at quality 24, stereo AAC at 160 kbps.
+- Performs two-pass interlace detection:
+  - Fast pass: reads `field_order` from stream metadata.
+  - Frame scan: checks up to 20 frames when metadata is inconclusive; applies `--deinterlace=slower` for interlaced content, `--detelecine --deinterlace=slower` for unknown content.
+- Encodes with HandBrakeCLI using `qsv_h265` encoder at quality 24, `--encoder-preset balanced`, stereo AAC at 160 kbps.
 - Transcodes to a temporary file first; replaces the original only if the new file is smaller.
-- Creates a `.skip_<basename>` marker when a new file is not smaller.
-- Configurable HandBrake quality (`$HandBrakeQuality`, default 24) and temp directory (`$TempDir`) at the top of the script.
+- Creates a `.skip_<basename>` marker when a new file is not smaller, preventing repeated re-encode attempts.
+- Supports `.skip` directory markers and per-file `.skip_<basename>` markers.
+- Updates the terminal title during encoding to show the current file name.
 
 No command-line parameters. Edit the threshold constants at the top of the script before running.
 
