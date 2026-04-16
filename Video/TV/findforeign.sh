@@ -58,7 +58,7 @@ CSV_FILE=""
 APPEND=0
 ENABLE_SONARR=1        # Sonarr enabled by default
 SONARR_URL="http://docker:8989"
-SONARR_API_KEY="65ab94c047a941a5b9f0dcfc7677a125"
+SONARR_API_KEY="YOUR_API_KEY_HERE"
 SONARR_LOG=""
 ALLOWED_LANGS=("eng" "und")
 

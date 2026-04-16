@@ -82,7 +82,7 @@ param(
 # -------------------------------
 # Sonarr API Key
 # -------------------------------
-$SonarrApiKey = "65ab94c047a941a5b9f0dcfc7677a125"
+$SonarrApiKey = "YOUR_API_KEY_HERE"
 
 # -------------------------------
 # Compute effective Sonarr state
