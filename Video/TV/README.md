@@ -64,6 +64,7 @@ Batch video compression script using AMD GPU hardware acceleration (VAAPI) via `
   - Deep scan: runs `idet` filter and `repeat_pict` frame analysis (skips first 5 minutes of content, analyzes 200 frames) only when metadata is inconclusive.
 - Applies the correct deinterlace filter: `bwdif` for interlaced, `fieldmatch+decimate+bwdif` for telecine.
 - Encodes with `hevc_vaapi` at QP 22, VBR 1800k / max 2000k.
+- Filters subtitle streams to English (`eng`) and undefined (`und`) language tracks; other subtitle languages are dropped.
 - Transcodes to a `.tmp` file first; replaces the original only if the new file is smaller.
 - Runs up to 2 parallel encoding jobs.
 - Cleans up temporary files on success, failure, or interruption.
@@ -107,17 +108,30 @@ cd /mnt/media/TV
 
 ### hbcompress_amd_x265_aac.ps1
 
-PowerShell batch compression script using HandBrakeCLI with AMD GPU encoding. Targets `.mkv`, `.mp4`, and `.ts` files that are 1 GB or larger.
+PowerShell batch compression script using HandBrakeCLI with AMD VCE hardware encoding. Targets `.mkv`, `.mp4`, and `.ts` files that are 1 GB or larger.
 
 **What it does:**
 
-- Inspects each file with `ffprobe` to determine its video codec, audio codec, and video bitrate.
-- Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
-- Performs interlace detection via `ffprobe` frame metadata.
-- Applies `--deinterlace=slower` for interlaced content; `--detelecine --deinterlace=slower` for unknown/telecine content.
-- Encodes with HandBrakeCLI using `amd_h265` encoder at quality 24, stereo AAC at 160 kbps.
-- Transcodes to a temporary file first; replaces the original only if the new file is smaller.
-- Creates a `.skip_<basename>` marker when a new file is not smaller.
+- Inspects each file with `ffprobe` to determine video codec, audio codec, resolution, and video bitrate.
+- Skips files already encoded as HEVC+AAC that are under 2.5 Mbps.
+- Skips 4K (UHD) and AV1-encoded files.
+- Skips files with no video stream or no audio stream.
+- Checks MKV containers for structural anomalies (bad `start_time`, corrupt duration, problematic subtitle codecs); automatically remuxes broken containers before transcoding.
+- Detects file locks before and after encoding; skips files currently open by other processes.
+- Performs deferred interlace detection (only when transcoding is required): skips the first 5 minutes to avoid credits, analyzes 200 frames for interlace or telecine patterns. HEVC input skips this step.
+- Applies `--deinterlace=slower` for interlaced content; `--detelecine --deinterlace=slower` for suspected telecine.
+- Encodes with HandBrakeCLI using `vce_h265` encoder at quality RF 24, stereo AAC at 160 kbps.
+- Filters subtitle streams to English (`eng`) and undefined (`und`) language tracks; other subtitle languages are dropped.
+- Writes to a temporary file; atomically replaces the original only if the output is smaller and non-empty.
+- Creates a `.skip_<basename>` marker when output is not smaller, preventing repeated re-encode attempts.
+- Supports recursive `.skip` directory markers and per-file `.skip_<basename>` markers.
+- Updates the terminal title during encoding to show the current file name.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-Debug` / `-d` | Enables verbose debug output with timestamps. |
 
 **Execution:**
 
@@ -125,22 +139,33 @@ PowerShell batch compression script using HandBrakeCLI with AMD GPU encoding. Ta
 # Run from within the TV directory
 Set-Location "Z:\Media\TV"
 .\hbcompress_amd_x265_aac.ps1
+
+# Enable debug output
+.\hbcompress_amd_x265_aac.ps1 -Debug
 ```
 
 ---
 
 ### hbcompress_qsv_x265_aac.ps1
 
-PowerShell batch compression script using HandBrakeCLI with Intel Quick Sync Video (QSV) encoding. Functionally identical to `hbcompress_amd_x265_aac.ps1` but targets Intel QSV hardware.
+PowerShell batch compression script using HandBrakeCLI with Intel Quick Sync Video (QSV) hardware encoding. Functionally identical to `hbcompress_amd_x265_aac.ps1` but targets Intel QSV hardware.
 
 **What it does:**
 
-- Same logic as `hbcompress_amd_x265_aac.ps1` but uses `qsv_h265` as the encoder.
-- Optimized interlace detection: skips the first 5 minutes (9000 frames at ~30 fps) to avoid credits and intros, then analyzes 20 frames.
-- Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
-- Applies `--deinterlace=slower` for interlaced; `--detelecine --deinterlace=slower` for unknown/telecine.
-- Encodes at HandBrake quality 24, stereo AAC at 160 kbps.
-- Replaces original only if the new file is smaller; otherwise creates a `.skip_<basename>` marker.
+- Same logic and feature set as `hbcompress_amd_x265_aac.ps1`.
+- Uses `qsv_h265` as the HandBrake encoder with `--encoder-preset medium`.
+- Skips 4K (UHD) and AV1-encoded files.
+- Checks MKV containers for structural anomalies and remuxes broken containers before transcoding.
+- Detects file locks before and after encoding.
+- Performs deferred interlace detection with the same frame-skip logic.
+- Filters subtitle streams to English and undefined language tracks.
+- Atomically replaces originals; creates `.skip_<basename>` markers when output is not smaller.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-Debug` / `-d` | Enables verbose debug output with timestamps. |
 
 **Execution:**
 
@@ -148,6 +173,9 @@ PowerShell batch compression script using HandBrakeCLI with Intel Quick Sync Vid
 # Run from within the TV directory
 Set-Location "Z:\Media\TV"
 .\hbcompress_qsv_x265_aac.ps1
+
+# Enable debug output
+.\hbcompress_qsv_x265_aac.ps1 -Debug
 ```
 
 ---
@@ -363,13 +391,126 @@ Use `-Audit` first to verify matched series and episodes before running a live r
 
 ---
 
+### remux.ps1
+
+PowerShell container-repair script that remuxes MKV files with detected structural anomalies, without re-encoding. Targets `.mkv` files only.
+
+**What it does:**
+
+- Checks each MKV for container problems using `ffprobe`: invalid `start_time` values, corrupt duration fields, or problematic subtitle codecs.
+- Remuxes only files with detected anomalies; clean files are left untouched.
+- Uses `ffmpeg` stream copy (no re-encode) to write a new, clean MKV container.
+- Detects file locks before and after the remux operation.
+- Atomically replaces the original when the new file is non-empty and successfully written.
+- Supports recursive `.skip` directory markers and per-file `.skip_<basename>` markers.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-Root` | Root directory to scan. Defaults to the current working directory. |
+| `-EnableDebug` | Enables verbose debug output with timestamps. |
+
+**Execution:**
+
+```powershell
+# Run from within the TV directory
+.\remux.ps1
+
+# Run on a specific directory with debug output
+.\remux.ps1 -Root "Z:\Media\TV" -EnableDebug
+```
+
+---
+
+### apply-episode-metadata.sh
+
+Bash utility that reads episode metadata from `.nfo` sidecar files and writes it into MKV container tags using `mkvpropedit`.
+
+**What it does:**
+
+- Reads title, plot, episode number, and other fields from `<basename>.nfo` files.
+- Falls back to `movie.nfo` in the same directory if the episode NFO is missing a show title.
+- Falls back to the parent directory name as the series title if NFO files are unavailable.
+- Preserves file modification timestamps (`mtime`) after writing tags.
+- Dry-run mode (`--dry-run`) previews all changes without modifying any files.
+- Optional audit log (`--audit-log <path>`) records all changes made.
+
+**Requirements:**
+
+- `mkvtoolnix` (`mkvpropedit`, `mkvinfo`)
+- `xmlstarlet`
+- Bash 4+
+
+**Execution:**
+
+```bash
+# Apply metadata (current directory)
+./apply-episode-metadata.sh
+
+# Dry-run preview
+./apply-episode-metadata.sh --dry-run
+
+# With debug output
+./apply-episode-metadata.sh --debug
+
+# Write audit log
+./apply-episode-metadata.sh --audit-log "./audit.log"
+```
+
+---
+
+### Apply-EpisodeMetadata.ps1
+
+PowerShell equivalent of `apply-episode-metadata.sh`. Reads episode metadata from `.nfo` sidecar files and writes it into MKV container tags using `mkvpropedit`.
+
+**What it does:**
+
+- Reads title, plot, episode number, and other fields from `<basename>.nfo` files.
+- Supports multi-episode NFOs by merging titles, plots, and episode number ranges.
+- Falls back to `movie.nfo` or the parent directory name when the show title is missing from NFO.
+- Preserves file creation time and last-write time after each tag-write operation.
+- Dry-run mode (`-DryRun`) performs all processing steps but does not modify any MKV files.
+- Optional audit log records all changes and, when `-Debug` is active, debug messages too.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-DryRun` | Preview mode; no MKV files are modified. |
+| `-Debug` | Enables verbose debug output to the console (and audit log if enabled). |
+| `-AuditLogPath` | Path to the audit log file. Logging is disabled when empty or omitted. |
+
+**Requirements:**
+
+- `mkvtoolnix` (`mkvpropedit`)
+- PowerShell 7+
+
+**Execution:**
+
+```powershell
+# Apply metadata (current directory)
+.\Apply-EpisodeMetadata.ps1
+
+# Dry-run preview
+.\Apply-EpisodeMetadata.ps1 -DryRun
+
+# With debug output
+.\Apply-EpisodeMetadata.ps1 -Debug
+
+# Write audit log
+.\Apply-EpisodeMetadata.ps1 -AuditLogPath ".\audit.log"
+```
+
+---
+
 ## Encoding Settings (Compression Scripts)
 
 | Setting | Value |
 |---|---|
 | Video codec (AMD/VAAPI) | `hevc_vaapi` |
 | Video codec (Intel QSV via HandBrake) | `qsv_h265` |
-| Video codec (AMD via HandBrake) | `amd_h265` |
+| Video codec (AMD via HandBrake) | `vce_h265` |
 | Quality (ffmpeg) | QP 22 |
 | Quality (HandBrake) | RF 24 |
 | Video bitrate target | 1800 kbps |

@@ -1,32 +1,30 @@
 ﻿<#
-    TV Show Folder Cleaner & Dedupe Script
-    ---------------------------------------
+.SYNOPSIS
+    Removes duplicate TV episodes and associated sidecar files.
 
-    This script recursively scans TV show folders, removes duplicate episodes,
-    and deletes associated sidecar files based on S##E## or ##x## pattern matching.
+.DESCRIPTION
+    Recursively scans TV show folders for duplicate episodes using S##E## or
+    ##x## pattern matching. When duplicates exist in the same directory, the
+    script keeps the highest-priority/largest file and deletes the rest, along
+    with any associated sidecar files (.nfo, .srt, etc.).
 
-    How it works:
-        1. Scans all files recursively for S##E##, S##E###, ##x##, #x##, or ##x### patterns
-           (e.g., S01E05, S18E012, 01x05, 1x05, 01x012)
-        2. Groups files by their episode code within the same directory
-        3. When duplicates exist (same episode, different extensions/names),
-           keeps the largest file and deletes others
-        4. Removes associated sidecar files (.nfo, .srt, etc.)
+    Supported video extensions: .mkv, .mp4, .avi, .ts
 
-    Supported video extensions:
-        .mkv, .mp4, .avi, .ts
+    Dedupe priority (highest to lowest): MKV -> MP4 -> TS -> AVI
 
-    Dedupe priority (highest to lowest):
-        MKV → MP4 → TS → AVI
+.PARAMETER Audit
+    Dry-run mode. No files are deleted. Prints what would be removed.
 
-    AUDIT MODE:
-        Use -Audit to run the script in "safe mode" where NOTHING is deleted.
-        Instead, the script will show what *would* be removed.
+.EXAMPLE
+    PS> .\dedup.ps1 -Audit
 
-        Example:
-            .\dedup.ps1 -Audit
+.EXAMPLE
+    PS> .\dedup.ps1
 
-        Without -Audit, the script performs real deletions.
+.NOTES
+    - Matches S##E##, S##E###, ##x##, #x##, and ##x### episode patterns.
+    - Uses ffprobe to read video resolution and bitrate for reporting.
+    - Run with -Audit first to preview changes before committing.
 #>
 
 param(
