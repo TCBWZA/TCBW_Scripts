@@ -1,3 +1,27 @@
+<#
+.SYNOPSIS
+    Batch compresses movie MKV files using Intel Quick Sync Video (QSV).
+
+.DESCRIPTION
+    Recursively scans the current directory for MKV and TS files 5 GB or larger
+    and re-encodes files that are not already HEVC+AAC or exceed 2.5 Mbps video
+    bitrate. Encoding uses hevc_qsv via Intel Quick Sync hardware acceleration.
+    Interlace detection is performed with ffprobe/idet. The original file is
+    replaced only when the new file is smaller. Up to $MaxJobs parallel encoding
+    jobs run at once.
+
+.NOTES
+    - No command-line parameters. Edit $MaxJobs and $TempDir at the top of the script.
+    - Requires ffmpeg and ffprobe on PATH.
+    - Requires an Intel CPU or GPU with Quick Sync Video support.
+    - Files tagged [Cleaned] or [Trans] are deleted automatically.
+    - A .skip_<basename> marker is created when output is not smaller.
+
+.EXAMPLE
+    Set-Location "Z:\Media\Movies"
+    .\compress_qsv_x265_aac.ps1
+#>
+
 $MaxJobs = 2
 
 Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
