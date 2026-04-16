@@ -1,3 +1,27 @@
+<#
+.SYNOPSIS
+    Batch compresses movie MKV files using AMD GPU hardware acceleration.
+
+.DESCRIPTION
+    Recursively scans the current directory for MKV files 5 GB or larger and
+    re-encodes files that are not already HEVC+AAC or exceed 2.5 Mbps video
+    bitrate. Encoding uses AMD hevc_amf via dxva2 hardware acceleration.
+    Interlace detection is performed with ffprobe/idet. The original file is
+    replaced only when the new file is smaller. Up to $MaxJobs parallel encoding
+    jobs run at once.
+
+.NOTES
+    - No command-line parameters. Edit $MaxJobs at the top of the script.
+    - Requires ffmpeg and ffprobe on PATH.
+    - Requires an AMD GPU with AMF/VCE support.
+    - Files tagged [Cleaned] or [Trans] are deleted automatically.
+    - A .skip_<basename> marker is created when output is not smaller.
+
+.EXAMPLE
+    Set-Location "Z:\Media\Movies"
+    .\compress_amd_x265_aac.ps1
+#>
+
 $MaxJobs = 2
 
 Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {

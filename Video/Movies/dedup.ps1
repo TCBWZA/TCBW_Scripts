@@ -1,24 +1,22 @@
-﻿<#
-    Movie Folder Cleaner & Dedupe Script
-    ------------------------------------
+<#
+.SYNOPSIS
+    Removes duplicate video files from movie folders and cleans up associated sidecar files.
 
-    This script scans movie folders, removes duplicate video files,
-    deletes associated sidecar files, and cleans up trickplay folders.
+.DESCRIPTION
+    Recursively scans movie directories for duplicate video files (MKV, MP4, AVI, TS).
+    When duplicates exist in the same folder, the best copy is kept using the following
+    priority: MKV > MP4 > AVI > TS, then largest file size. All associated sidecar files
+    (.nfo, .srt, .jpg, .trickplay, etc.) and orphaned trickplay folders for deleted files
+    are also removed. A summary report is printed at the end.
 
-    Supported video extensions:
-        .mkv, .mp4, .avi, .ts
+.PARAMETER Audit
+    Dry-run mode. No files are deleted. Prints what would be removed.
 
-    Dedupe priority (highest to lowest):
-        MKV → MP4 → AVI → TS
+.EXAMPLE
+    .\dedup.ps1 -Audit
 
-    AUDIT MODE:
-        Use -Audit to run the script in "safe mode" where NOTHING is deleted.
-        Instead, the script will show what *would* be removed.
-
-        Example:
-            .\CleanMovies.ps1 -Audit
-
-        Without -Audit, the script performs real deletions.
+.EXAMPLE
+    .\dedup.ps1
 #>
 
 param(
@@ -60,7 +58,7 @@ function Remove-ItemSafe {
 }
 
 # ============================================================
-# PROGRESS BAR #1 - SCAN MOVIE FOLDERS
+# PROGRESS BAR #1 — SCAN MOVIE FOLDERS
 # ============================================================
 
 Write-Host "Scanning movie folders..."
@@ -89,7 +87,7 @@ foreach ($folder in $movieFolders) {
 Write-Progress -Id 1 -Activity "Scanning movie folders..." -Completed
 
 # ============================================================
-# PROGRESS BAR #2 - PROCESS MOVIE FOLDERS
+# PROGRESS BAR #2 — PROCESS MOVIE FOLDERS
 # ============================================================
 
 $totalFolders = $movieFolders.Count
@@ -159,7 +157,7 @@ foreach ($folder in $movieFolders) {
 
     # If only one or zero video files remain, nothing to dedupe
     if ($videoFiles.Count -le 1) {
-        Write-Host "  Only one or zero video files - nothing to dedupe"
+        Write-Host "  Only one or zero video files — nothing to dedupe"
         continue
     }
 
@@ -264,7 +262,7 @@ Write-Host ""
 Write-Host "==================== SUMMARY REPORT ====================" -ForegroundColor Cyan
 
 if ($Audit) {
-    Write-Host "AUDIT MODE - No files were actually deleted." -ForegroundColor Yellow
+    Write-Host "AUDIT MODE — No files were actually deleted." -ForegroundColor Yellow
     Write-Host ""
 }
 

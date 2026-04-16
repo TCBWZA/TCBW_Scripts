@@ -1,5 +1,32 @@
-#!/usr/bin/env pwsh
-# Intel QSV H.265 encoder with intelligent audio/subtitle filtering
+<#
+.SYNOPSIS
+    Batch compresses movie files using Intel QSV with audio and subtitle track filtering.
+
+.DESCRIPTION
+    Recursively scans the current directory for MKV, MP4, and TS files 5 GB or larger
+    and re-encodes files that are not already HEVC+AAC or exceed 2.5 Mbps video bitrate.
+    Encoding uses hevc_qsv. Only English (eng) and untagged (und) audio and subtitle
+    tracks are retained; all other language tracks are dropped.
+
+.PARAMETER MAX_JOBS
+    Maximum number of parallel encoding jobs. Default: 2.
+
+.PARAMETER DEBUG
+    Enable verbose debug output. Default: $false.
+
+.NOTES
+    - Requires ffmpeg and ffprobe on PATH.
+    - Requires an Intel CPU or GPU with Quick Sync Video support.
+    - Files tagged [Cleaned] or [Trans] are deleted automatically.
+    - A .skip_<basename> marker is created when output is not smaller.
+
+.EXAMPLE
+    Set-Location "Z:\Media\Movies"
+    .\clean_compress_qsv_x265_aac.ps1
+
+.EXAMPLE
+    .\clean_compress_qsv_x265_aac.ps1 -MAX_JOBS 4 -DEBUG $true
+#>
 
 param(
     [int]$MAX_JOBS = 2,
