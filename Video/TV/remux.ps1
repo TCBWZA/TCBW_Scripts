@@ -153,7 +153,7 @@ foreach ($f in $files) {
 
     $cur = $f.Directory
     $skipDir = $false
-    while ($cur -ne $null -and $cur.FullName -ne $Root) {
+    while ($null -ne $cur -and $cur.FullName -ne $Root) {
         $skipFile = Join-Path $cur.FullName ".skip"
         if (Test-Path -LiteralPath $skipFile) { Debug "Dir skip: $skipFile"; $skipDir = $true; break }
         $cur = $cur.Parent

@@ -57,7 +57,7 @@ function DebugLog {
 # Safe XML accessor
 function Get-XmlValue {
     param($Node, [string]$Name)
-    if ($Node -eq $null) { return $null }
+    if ($null -eq $Node) { return $null }
     $prop = $Node.PSObject.Properties.Match($Name)
     if ($prop.Count -gt 0) { return $prop.Value }
     return $null
@@ -154,7 +154,7 @@ foreach ($mkv in $mkvs) {
 
     if (-not $series) {
         $seriesRoot = $mkv.Directory.Parent
-        if ($seriesRoot -ne $null) {
+        if ($null -ne $seriesRoot) {
             $series = Split-Path $seriesRoot.FullName -Leaf
             DebugLog "Fallback to series root folder name: $series"
         }
