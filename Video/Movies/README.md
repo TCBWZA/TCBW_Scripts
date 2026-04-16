@@ -82,7 +82,7 @@ PowerShell wrapper for AMD VAAPI-based compression workflows. Provides the same 
 - Targets `.mkv` files 5 GB or larger.
 - Checks codec and bitrate; converts files that are not HEVC+AAC or exceed 2.5 Mbps.
 - Interlace detection via `ffprobe` stream metadata.
-- Encodes with `hevc_vaapi`.
+- Encodes with `hevc_amf` via AMD VCE (`-hwaccel dxva2`).
 - Replaces original only if the new file is smaller.
 - Runs up to 2 parallel encoding jobs (configurable via `$MaxJobs` at top of script).
 
@@ -177,37 +177,35 @@ Set-Location "Z:\Media\Movies"
 
 ---
 
-### clean_compressUHD_qsv_x265_aac.ps1
+### hbcompress_amd_x265_aac.ps1
 
-PowerShell compression script specialised for 4K / UHD content using Intel Quick Sync Video. Targets `.mkv`, `.mp4`, and `.ts` files 8 GB or larger (4K content threshold).
+PowerShell compression script using AMD GPU (AMF/VCE) hardware acceleration with MKV container repair, file-lock detection, and atomic replacement. Targets `.mkv`, `.mp4`, and `.ts` files 1 GB or larger.
 
 **What it does:**
 
-- Same track filtering and compression logic as `clean_compress_qsv_x265_aac.ps1` but with a 4K-specific bitrate threshold of 20 Mbps and H.265 profile 6.2.
-- Only processes files where the video stream is 3840 pixels wide or wider.
-- Encodes with `hevc_qsv` at QP 24, profile 6.2.
-- Replaces original only if the new file is smaller.
-- Runs parallel jobs (configurable).
+- Checks video codec, audio codec, and bitrate; converts files not already HEVC+AAC or exceeding 2.5 Mbps.
+- Two-pass interlace detection: fast metadata check first, then idet frame scan skipping the first 5 minutes to avoid intros/credits.
+- MKV container health check: broken containers (bad timestamps, problematic subtitle codecs, corrupt duration) are remuxed before transcoding.
+- File-lock detection: files currently open by other processes are skipped.
+- Atomic replacement: writes to a temp file and swaps in place only when the result is smaller and valid.
+- 4K (UHD) and AV1 guards: those files are skipped automatically.
+- `.skip` directory marker and `.skip_<basename>` per-file marker support.
+- Encodes with `hevc_amf` via AMD VCE.
 
 **Parameters:**
 
 | Parameter | Required | Default | Description |
 |---|---|---|---|
-| `-MAX_JOBS` | No | `2` | Maximum number of parallel encoding jobs |
-| `-DEBUG` | No | `$false` | Enable verbose debug output |
+| `-Debug` | No | | Enable verbose debug output |
 
 **Execution:**
 
 ```powershell
-# Run with defaults
 Set-Location "Z:\Media\Movies"
-.\clean_compressUHD_qsv_x265_aac.ps1
-
-# Limit to 1 job (lower resource usage)
-.\clean_compressUHD_qsv_x265_aac.ps1 -MAX_JOBS 1
+.\hbcompress_amd_x265_aac.ps1
 
 # Run with debug output
-.\clean_compressUHD_qsv_x265_aac.ps1 -DEBUG $true
+.\hbcompress_amd_x265_aac.ps1 -Debug
 ```
 
 ---
@@ -244,7 +242,7 @@ Recursively scans movie directories for duplicate video files and removes them, 
 
 ---
 
-### find_corrupt.ps1
+### findcorrupt.ps1
 
 PowerShell utility that recursively scans a directory for corrupt MKV files using `ffprobe`. Logs results to an optional CSV file and uses Radarr to delete and re-download flagged movies.
 
@@ -290,16 +288,16 @@ $RadarrApiKey = "YOUR_API_KEY_HERE"
 
 ```powershell
 # Show built-in help
-.\find_corrupt.ps1 -Help
+.\findcorrupt.ps1 -Help
 
 # Audit mode -- detect corrupt files, make no changes
-.\find_corrupt.ps1 -Root "Z:\Media\Movies" -Audit
+.\findcorrupt.ps1 -Root "Z:\Media\Movies" -Audit
 
 # Scan and log corrupt files to CSV (Radarr replacement also runs)
-.\find_corrupt.ps1 -Root "Z:\Media\Movies" -CsvFile ".\corrupt.csv"
+.\findcorrupt.ps1 -Root "Z:\Media\Movies" -CsvFile ".\corrupt.csv"
 
 # Full production run with all logs and custom Radarr URL
-.\find_corrupt.ps1 `
+.\findcorrupt.ps1 `
     -Root "Z:\Media\Movies" `
     -CsvFile "D:\Logs\corrupt.csv" `
     -RadarrUrl "http://192.168.1.100:7878" `
@@ -323,6 +321,69 @@ Use `-Audit` first to verify which files are flagged as corrupt before running a
 
 ---
 
+### apply-movie-metadata.sh
+
+Bash script that applies movie metadata from NFO sidecar files into MKV container tags using `mkvpropedit`.
+
+**What it does:**
+
+- Reads metadata from `<basename>.nfo` (preferred) or `movie.nfo` (fallback) for each MKV.
+- Falls back to the directory name when no `<title>` element is found in the NFO.
+- Writes title and year tags into the MKV container using `mkvpropedit`.
+- Preserves the original file modification time after writing.
+- Supports dry-run mode (`--dry-run`) and optional audit log output.
+- Proxmox-safe: no process substitution, compatible with strict shell environments.
+
+**Execution:**
+
+```bash
+cd /mnt/media/Movies
+./apply-movie-metadata.sh
+
+# Dry-run mode
+./apply-movie-metadata.sh --dry-run
+```
+
+---
+
+### Apply-MovieMetadata.ps1
+
+PowerShell equivalent of `apply-movie-metadata.sh`. Applies movie metadata from NFO sidecar files into MKV container tags using `mkvpropedit`.
+
+**What it does:**
+
+- Reads metadata from `<basename>.nfo` (preferred) or `movie.nfo` (fallback) for each MKV.
+- Falls back to the directory name when no `<title>` element is found.
+- Writes title and year tags into the MKV container using `mkvpropedit`.
+- Preserves the original `CreationTime` and `LastWriteTime` after writing.
+- Supports dry-run mode (`-DryRun`) and optional audit log output (`-AuditLogPath`).
+- Literal-path safe and deterministic.
+
+**Requirements:** `mkvtoolnix` (`mkvpropedit`, `mkvinfo`) - install with `choco install mkvtoolnix`.
+
+**Parameters:**
+
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| `-DryRun` | No | | Process files but do not write any changes to disk |
+| `-Debug` | No | | Enable verbose debug output |
+| `-AuditLogPath` | No | `""` | Path to audit log file; logging is disabled when empty |
+
+**Execution:**
+
+```powershell
+Set-Location "Z:\Media\Movies"
+.\Apply-MovieMetadata.ps1
+
+# Dry-run mode
+.\Apply-MovieMetadata.ps1 -DryRun
+
+# With audit log
+.\Apply-MovieMetadata.ps1 -AuditLogPath ".\movie_audit.log"
+```
+
+---
+
 ## Encoding Settings (Compression Scripts)
 
 | Setting | Value |
@@ -330,10 +391,8 @@ Use `-Audit` first to verify which files are flagged as corrupt before running a
 | Video codec (AMD/VAAPI) | `hevc_vaapi` |
 | Video codec (Intel QSV) | `hevc_qsv` |
 | Quality (ffmpeg) | QP 22 |
-| Quality (UHD) | QP 24, profile 6.2 |
 | Video bitrate target | 1800 kbps |
 | Video bitrate max | 2000 kbps |
-| UHD bitrate threshold | 20 Mbps |
 | Audio codec | AAC |
 | Audio bitrate (stereo) | 160 kbps |
 | Container | Matroska (`.mkv`) |
