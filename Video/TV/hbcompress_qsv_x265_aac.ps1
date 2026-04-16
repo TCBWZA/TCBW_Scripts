@@ -379,7 +379,7 @@ foreach ($f in $files) {
     $cur     = $f.Directory
     $skipDir = $false
 
-    while ($cur -ne $null -and $cur.FullName -ne $root) {
+    while ($null -ne $cur -and $cur.FullName -ne $root) {
         $skipFile = Join-Path $cur.FullName ".skip"
         if (Test-Path -LiteralPath $skipFile) {
             Write-Host "Skipping $($f.FullName) -- .skip found in $($cur.FullName)"
