@@ -7,7 +7,18 @@ TCBW_Scripts/
 ├── README.md (this file)
 ├── LICENSE
 ├── Linux/
+│   ├── general/
+│   │   ├── backup_docker.sh           - Stops LXC container, backs up Docker data volume, restarts container
+│   │   ├── backup_etc.sh              - Archives /etc to a network mount
+│   │   ├── backup_root.sh             - Archives /root to a network mount
+│   │   ├── sync.sh                    - Orchestrator that invokes all sync scripts
+│   │   ├── sync_backups.sh            - Rsyncs backup data to a network mount
+│   │   ├── sync_books.sh              - Rsyncs book library to a network mount
+│   │   ├── sync_docker.sh             - Stops LXC container, syncs Docker data to network mount, restarts container
+│   │   ├── sync_movies.sh             - Rsyncs movie library to a network mount
+│   │   └── sync_tv.sh                 - Rsyncs TV library to a network mount
 │   └── lxc/
+│       ├── lxc-upgrade.sh             - Updates Proxmox host and all LXC containers in parallel (with autoremove)
 │       └── pve-lxc-upgrade.sh         - Automated LXC container updater for Proxmox
 ├── Video/
 │   ├── Foreign/                        - Compression scripts for foreign language content
@@ -15,19 +26,21 @@ TCBW_Scripts/
 │   │   ├── compress_amd_x265_aac.sh   - AMD GPU compression (bash)
 │   │   ├── compress_qsv_x265_aac.ps1  - Intel QSV compression (PowerShell)
 │   │   ├── compressmp4_amd_x265_aac.sh - MP4-specific AMD compression
-│   │   └── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV compression
-│   ├── Movies/                         - Compression & deduplication scripts for movies
+│   │   ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV compression
+│   │   └── dedup.ps1                  - Duplicate removal (PowerShell)
+│   ├── Movies/                         - Compression, deduplication, and maintenance scripts for movies
 │   │   ├── README.md
 │   │   ├── compress_amd_x265_aac.sh   - AMD GPU compression (bash)
+│   │   ├── compress_amd_x265_aac.ps1  - AMD GPU compression (PowerShell)
 │   │   ├── compress_qsv_x265_aac.ps1  - Intel QSV compression (PowerShell)
 │   │   ├── clean_compress_amd_x265_aac.sh - AMD GPU w/ metadata handling (bash)
 │   │   ├── clean_compress_qsv_x265_aac.ps1 - Intel QSV w/ metadata handling (PowerShell)
 │   │   ├── clean_compressUHD_qsv_x265_aac.ps1 - Intel QSV 4K compression (PowerShell)
-│   │   └── dedup.ps1                 - Duplicate removal (PowerShell)
+│   │   ├── dedup.ps1                  - Duplicate removal (PowerShell)
+│   │   └── find_corrupt.ps1           - Corrupt MKV detection with Radarr integration (PowerShell)
    └── TV/                             - Compression, deduplication, and maintenance scripts for TV shows
        ├── README.md
        ├── compress_amd_x265_aac.sh    - AMD VAAPI compression (bash)
-       ├── fscompress_amd_x265_aac.sh  - AMD VAAPI force-compress (bash)
        ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE compression (PowerShell)
        ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV compression (PowerShell)
        ├── remux.ps1                   - Container-repair remux without re-encoding (PowerShell)
@@ -94,7 +107,7 @@ This dual-machine approach ensures reliable batch processing despite the Debian 
 
 ### Maintenance & Quality Assurance Scripts
 
-- **Corrupt File Detection**: `findcorrupt.ps1` scans for unreadable MKV files and optionally triggers Sonarr replacement
+- **Corrupt File Detection**: `findcorrupt.ps1` scans for unreadable MKV files and optionally triggers Sonarr replacement; `find_corrupt.ps1` does the same for movies with Radarr integration
 - **Foreign Audio Detection**: `findforeign.ps1` / `findforeign.sh` flag episodes with no English or undetermined audio tracks
 - **Container Repair**: `remux.ps1` fixes MKV structural anomalies without re-encoding
 - **Metadata Sync**: `Apply-EpisodeMetadata.ps1` / `apply-episode-metadata.sh` write episode metadata from NFO sidecar files into MKV container tags
@@ -281,8 +294,8 @@ MAX_JOBS=2                      # Number of parallel encoding jobs
 
 ### AMD VAAPI
 
-- **Files**: `compress_amd_x265_aac.sh`, `fscompress_amd_x265_aac.sh`, `compressmp4_amd_x265_aac.sh`
-- **Best For**: AMD GPUs (Radeon RX series) on Linux
+- **Files**: `compress_amd_x265_aac.sh`, `compressmp4_amd_x265_aac.sh`; `compress_amd_x265_aac.ps1` for Windows
+- **Best For**: AMD GPUs (Radeon RX series)
 - **Performance**: High throughput with parallel encoding
 - **Compatibility**: Requires compatible AMD hardware with VAAPI support (`/dev/dri/renderD128`)
 
