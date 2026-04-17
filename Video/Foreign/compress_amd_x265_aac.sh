@@ -106,12 +106,12 @@ for f in "${files[@]}"; do
     # Extract video/audio metadata
     #####################################################
 
-    read vcodec vbitrate field_order acodec < <(
+    { IFS=$'\t' read -r vcodec vbitrate field_order; read -r acodec; } < <(
         jq -r '
           (.streams[] | select(.codec_type=="video") |
             [.codec_name, (.bit_rate // 0), (.field_order // "unknown")] | @tsv),
           (.streams[] | select(.codec_type=="audio") |
-            [.codec_name] | @tsv)
+            .codec_name)
         ' <<< "$probe"
     )
 
@@ -220,10 +220,10 @@ for f in "${files[@]}"; do
 
     case "$status" in
         interlaced)
-            vf_chain="hwdownload,format=yuv420p,bwdif=mode=send_frame,format=nv12,hwupload"
+            vf_chain="bwdif=mode=send_frame,format=nv12,hwupload"
             ;;
         progressive)
-            vf_chain="hwdownload,format=yuv420p,format=nv12,hwupload"
+            vf_chain="format=nv12,hwupload"
             ;;
     esac
 
@@ -238,8 +238,6 @@ for f in "${files[@]}"; do
     (
         ffmpeg -nostdin -hide_banner \
             -vaapi_device /dev/dri/renderD128 \
-            -hwaccel vaapi \
-            -hwaccel_output_format vaapi \
             -i "$f" \
             -vf "$vf_chain" \
             -map 0 \

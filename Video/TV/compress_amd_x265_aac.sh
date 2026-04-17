@@ -106,12 +106,12 @@ for f in "${files[@]}"; do
     # Extract video/audio metadata
     #####################################################
 
-    read vcodec vbitrate field_order acodec < <(
+    { IFS=$'\t' read -r vcodec vbitrate field_order; read -r acodec; } < <(
         jq -r '
           (.streams[] | select(.codec_type=="video") |
             [.codec_name, (.bit_rate // 0), (.field_order // "unknown")] | @tsv),
           (.streams[] | select(.codec_type=="audio") |
-            [.codec_name] | @tsv)
+            .codec_name)
         ' <<< "$probe"
     )
 
