@@ -57,46 +57,34 @@ Batch video compression script using AMD GPU hardware acceleration (VAAPI) via `
 
 **What it does:**
 
-- Inspects each file with `ffprobe` to determine video codec, audio codec, and video bitrate.
-- Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
-- Performs two-pass interlace/telecine detection:
+- Inspects each file with `ffprobe` (single JSON call via `jq`) to determine video codec, audio codec, and video bitrate.
+- Skips AV1-encoded files entirely.
+- Fast remux path: files already HEVC+AAC under 2.5 Mbps are remuxed (stream copy, no re-encode) rather than transcoded.
+- Converts remaining files that are not HEVC or that exceed 2.5 Mbps video bitrate.
+- Interlace detection:
   - Fast pass: reads `field_order` from stream metadata.
-  - Deep scan: runs `idet` filter and `repeat_pict` frame analysis (skips first 5 minutes of content, analyzes 200 frames) only when metadata is inconclusive.
-- Applies the correct deinterlace filter: `bwdif` for interlaced, `fieldmatch+decimate+bwdif` for telecine.
-- Encodes with `hevc_vaapi` at QP 22, VBR 1800k / max 2000k.
-- Replaces original only if the new file is smaller.
+  - Deep scan: runs `idet` filter (200 frames) only when metadata is inconclusive.
+- Uses software decode with VAAPI encode only (`hevc_vaapi`); avoids hardware decode to support any input codec.
+- Encodes at QP 20 with audio stream-copied (original audio preserved).
+- Replaces original only if the new file is smaller; otherwise creates a `.skip_<basename>` marker.
+- Sets ownership to `1000:1000` and permissions to `666` after each replacement.
+- Supports recursive `.skip` directory markers and per-file `.skip_<basename>` markers.
 - Runs up to 2 parallel encoding jobs.
 
-No command-line parameters. Run from within the target directory.
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-d` / `--debug` | Enable verbose debug output |
 
 **Execution:**
 
 ```bash
 cd /mnt/media/Foreign
 ./compress_amd_x265_aac.sh
-```
 
----
-
-### compressmp4_amd_x265_aac.sh
-
-Bash compression script specialised for MP4 container files, using AMD GPU hardware acceleration. Targets `.mp4` files that are 1 GB or larger.
-
-**What it does:**
-
-- Same codec check and VAAPI encoding as `compress_amd_x265_aac.sh`.
-- Processes only `.mp4` files (not MKV or TS).
-- Encodes with `hevc_vaapi` at QP 22, VBR 1800k / max 2000k.
-- Replaces original only if the new file is smaller.
-- Runs up to 2 parallel encoding jobs.
-
-No command-line parameters. Run from within the target directory.
-
-**Execution:**
-
-```bash
-cd /mnt/media/Foreign
-./compressmp4_amd_x265_aac.sh
+# With debug output
+./compress_amd_x265_aac.sh --debug
 ```
 
 ---
@@ -154,6 +142,92 @@ Set-Location "Z:\Media\Foreign"
 
 ---
 
+### hbcompress_amd_x265_aac.ps1
+
+PowerShell batch compression script using HandBrakeCLI with AMD VCE hardware encoding. Targets `.mkv`, `.mp4`, and `.ts` files that are 1 GB or larger.
+
+**What it does:**
+
+- Inspects each file with `ffprobe` to determine video codec, audio codec, and video bitrate.
+- Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
+- Interlace detection:
+  - Fast pass: reads `field_order` from stream metadata.
+  - Deep scan: reads frame-level interlace flags from `ffprobe` (first 200 frames) when metadata is inconclusive.
+- Applies `--deinterlace=slower` for interlaced content; `--detelecine --deinterlace=slower` for unknown/telecine.
+- Encodes with HandBrakeCLI using `vce_h265` encoder at quality RF 24, stereo AAC at 160 kbps.
+- Transcodes to a temporary file; replaces the original only if the new file is smaller.
+- Creates a `.skip_<basename>` marker when output is not smaller.
+- Supports `.skip` directory markers and per-file `.skip_<basename>` markers.
+
+No command-line parameters.
+
+**Execution:**
+
+```powershell
+Set-Location "Z:\Media\Foreign"
+.\hbcompress_amd_x265_aac.ps1
+```
+
+---
+
+### deinterlace_qsv_x265_aac.ps1
+
+PowerShell compression script using Intel Quick Sync Video (QSV) encoding via direct `ffmpeg`. Targets `.mkv` files that are 1 GB or larger.
+
+**What it does:**
+
+- Inspects each file with `ffprobe` to determine video codec, audio codec, and field order.
+- Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
+- Interlace detection: reads `field_order` metadata; falls back to a 500-frame `idet` filter scan.
+- Applies `deinterlace_qsv` filter for interlaced content; `format=qsv` passthrough for progressive.
+- Encodes with `hevc_qsv` at 1800k target / 2000k max, audio AAC at 160 kbps.
+- Transcodes to a temporary file; replaces the original only if transcoding succeeds.
+- Runs up to `$MaxJobs` (default 2) parallel encoding jobs via `Start-Job`.
+
+No command-line parameters. Edit `$MaxJobs` at the top of the script to change parallelism.
+
+**Execution:**
+
+```powershell
+Set-Location "Z:\Media\Foreign"
+.\deinterlace_qsv_x265_aac.ps1
+```
+
+---
+
+### fixSpecials.ps1
+
+PowerShell utility that normalises `Specials` folders in a show library by renaming them to `Season 00` (the standard Jellyfin/Plex naming). Runs recursively from the current directory.
+
+**What it does:**
+
+- Walks all subdirectories looking for folders named exactly `Specials`.
+- If no `Season 00` sibling exists: renames `Specials` to `Season 00`.
+- If `Season 00` already exists: moves all files and subdirectories from `Specials` into `Season 00`, merging contents.
+- Removes `Specials` after a successful merge (only if it is empty after moving).
+- Writes a timestamped audit log (`specials_audit_<timestamp>.log`) in the working directory.
+- Dry-run mode (`-DryRun`) previews all planned operations without making any changes.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-DryRun` | Preview mode; no files or directories are modified |
+
+**Execution:**
+
+```powershell
+Set-Location "Z:\Media\Foreign"
+
+# Dry-run preview
+.\fixSpecials.ps1 -DryRun
+
+# Apply changes
+.\fixSpecials.ps1
+```
+
+---
+
 ### dedup.ps1
 
 Recursively scans foreign-content directories for duplicate episode files and removes them, keeping the best copy. Also removes associated sidecar files for deleted duplicates.
@@ -191,13 +265,15 @@ Recursively scans foreign-content directories for duplicate episode files and re
 
 | Setting | Value |
 |---|---|
-| Video codec (AMD/VAAPI) | `hevc_vaapi` |
+| Video codec (AMD/VAAPI - bash) | `hevc_vaapi` |
+| Video codec (AMD VCE - HandBrake) | `vce_h265` |
 | Video codec (Intel QSV via HandBrake) | `qsv_h265` |
 | Video codec (Intel QSV direct) | `hevc_qsv` |
-| Quality (ffmpeg) | QP 22 |
+| Quality (ffmpeg AMD) | QP 20 |
 | Quality (HandBrake) | RF 24 |
-| Video bitrate target | 1800 kbps |
-| Video bitrate max | 2000 kbps |
-| Audio codec | AAC |
+| Video bitrate target (ffmpeg) | 1800 kbps |
+| Video bitrate max (ffmpeg) | 2000 kbps |
+| Audio codec (HandBrake / QSV scripts) | AAC |
+| Audio (bash compress script) | Stream copy (original preserved) |
 | Audio bitrate (stereo) | 160 kbps |
 | Container | Matroska (`.mkv`) |
