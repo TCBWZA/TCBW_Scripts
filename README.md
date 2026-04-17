@@ -23,21 +23,25 @@ TCBW_Scripts/
 ├── Video/
 │   ├── Foreign/                        - Compression scripts for foreign language content
 │   │   ├── README.md
-│   │   ├── compress_amd_x265_aac.sh   - AMD GPU compression (bash)
+│   │   ├── compress_amd_x265_aac.sh   - AMD GPU VAAPI compression (bash)
 │   │   ├── compress_qsv_x265_aac.ps1  - Intel QSV compression (PowerShell)
-│   │   ├── compressmp4_amd_x265_aac.sh - MP4-specific AMD compression
-│   │   ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV compression
+│   │   ├── deinterlace_qsv_x265_aac.ps1 - Intel QSV deinterlace/compression (PowerShell)
+│   │   ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE compression (PowerShell)
+│   │   ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV compression (PowerShell)
+│   │   ├── fixSpecials.ps1            - Renames Specials folders to Season 00 (PowerShell)
 │   │   └── dedup.ps1                  - Duplicate removal (PowerShell)
 │   ├── Movies/                         - Compression, deduplication, and maintenance scripts for movies
 │   │   ├── README.md
-│   │   ├── compress_amd_x265_aac.sh   - AMD GPU compression (bash)
+│   │   ├── compress_amd_x265_aac.sh   - AMD GPU VAAPI compression (bash)
 │   │   ├── compress_amd_x265_aac.ps1  - AMD GPU compression (PowerShell)
 │   │   ├── compress_qsv_x265_aac.ps1  - Intel QSV compression (PowerShell)
-│   │   ├── clean_compress_amd_x265_aac.sh - AMD GPU w/ metadata handling (bash)
-│   │   ├── clean_compress_qsv_x265_aac.ps1 - Intel QSV w/ metadata handling (PowerShell)
-│   │   ├── clean_compressUHD_qsv_x265_aac.ps1 - Intel QSV 4K compression (PowerShell)
+│   │   ├── clean_compress_amd_x265_aac.sh - AMD GPU w/ track filtering (bash)
+│   │   ├── clean_compress_qsv_x265_aac.ps1 - Intel QSV w/ track filtering (PowerShell)
+│   │   ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE compression (PowerShell)
+│   │   ├── apply-movie-metadata.sh    - NFO metadata writer to MKV tags (bash)
+│   │   ├── Apply-MovieMetadata.ps1    - NFO metadata writer to MKV tags (PowerShell)
 │   │   ├── dedup.ps1                  - Duplicate removal (PowerShell)
-│   │   └── find_corrupt.ps1           - Corrupt MKV detection with Radarr integration (PowerShell)
+│   │   └── findcorrupt.ps1            - Corrupt MKV detection with Radarr integration (PowerShell)
    └── TV/                             - Compression, deduplication, and maintenance scripts for TV shows
        ├── README.md
        ├── compress_amd_x265_aac.sh    - AMD VAAPI compression (bash)
@@ -94,8 +98,8 @@ This dual-machine approach ensures reliable batch processing despite the Debian 
 
 - **Hardware-Accelerated Encoding**: Support for AMD VAAPI and Intel Quick Sync Video (QSV) encoders
 - **Batch Processing**: Parallel encoding with configurable concurrent jobs (bash scripts)
-- **Smart Format Detection**: Automatically detects interlacing and decides whether conversion is needed
-- **Optimized Frame Analysis**: Skips first 5 minutes of video (intros/credits) when analyzing for interlacing
+- **Smart Format Detection**: Automatically detects interlacing, telecine (NTSC 3:2 pulldown), and PAL broadcast content; decides whether conversion is needed
+- **Optimized Frame Analysis**: Skips first 5 minutes of video (intros/credits) when analyzing for interlacing; falls back to start of file for shorter content
 - **Output Format**: x265 (HEVC) video codec with AAC audio
 - **Metadata Handling**: Optional metadata and sidecar file management
 - **Skip Markers**: Support for `.skip` directory markers and `.skip_<basename>` per-file markers
@@ -241,10 +245,11 @@ For detailed usage instructions and script options, see the README files in each
    - Bitrate exceeds 2.5 Mbps
    - Audio is not already AAC
    - Video is interlaced (not progressive)
-5. **Interlace Detection**: Two-stage analysis:
-   - Quick metadata check first (field_order)
-   - Deep frame analysis on actual content (skips first 5 minutes to avoid intros/credits)
-6. **Deinterlacing**: Automatically applies appropriate filter based on detection (bwdif for interlaced, fieldmatch+decimate+bwdif for telecine)
+5. **Interlace Detection**: Three-stage analysis:
+   - Fast pass: `field_order` metadata (hard interlace flags resolve immediately)
+   - Slow pass: `ffprobe -show_frames` frame-level scan at the 5-minute mark; classifies as `interlaced`, `telecine` (NTSC 3:2 pulldown at ~29.97 fps), or `unknown`
+   - PAL idet fallback: for ~25 fps content that reports no interlace flags, runs `ffmpeg -vf idet` pixel-level analysis to catch BBC and other European broadcast 50i content
+6. **Deinterlacing**: Applies appropriate filter per detection result - `bwdif` for interlaced/unknown, `fieldmatch+yadif+decimate` (IVTC) for telecine, no filter for progressive
 7. **Parallel Processing**: Encodes multiple files simultaneously (configurable via `$MaxJobs`)
 8. **Output**: Creates new files with quality preservation while reducing file size
 
