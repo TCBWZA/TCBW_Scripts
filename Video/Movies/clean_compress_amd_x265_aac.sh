@@ -303,7 +303,7 @@ for f in "${files[@]}"; do
                 touch -r "$f" "$tmpfile"
                 rm -f "$f"
                 mv "$tmpfile" "$final_file"
-                # chown <USER>:<GROUP> "$final_file"  # Uncomment and set to desired owner if needed
+                chown 1000:1000 "$final_file"
                 chmod 666 "$final_file"
                 echo "Replaced: $(( orig_size / 1024 / 1024 ))MB → $(( new_size / 1024 / 1024 ))MB"
             else
