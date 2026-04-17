@@ -158,6 +158,8 @@ for f in "${files[@]}"; do
                 touch -r "$f" "$tmpfile"
                 rm -f -- "$f"
                 mv -- "$tmpfile" "$f"
+                chown 1000:1000 "$f"
+                chmod 666 "$f"
                 echo "Replaced (remux): $((orig_size/1024/1024))MB → $((new_size/1024/1024))MB"
             else
                 echo "Skipped (remux): new file not smaller"
@@ -260,6 +262,8 @@ for f in "${files[@]}"; do
                 touch -r "$f" "$tmpfile"
                 rm -f -- "$f"
                 mv -- "$tmpfile" "$f"
+                chown 1000:1000 "$f"
+                chmod 666 "$f"
                 echo "Replaced: $((orig_size/1024/1024))MB → $((new_size/1024/1024))MB"
             else
                 echo "Skipped: new file not smaller"
