@@ -126,7 +126,7 @@ done < <(find . -type f -name "*.mkv")
 wait
 
 echo "Cleaning Up"
-find . -type f -name '*[Trans].tmp' -delete
-find . -type f -name '*[Trans].nfo' -delete
-find . -type f -name '*[Trans].jpg' -delete
-find . -type d -name '*[Trans].trickplay' -exec rm -rf {} +
+find . -type f -name '*\[Trans\].tmp' -delete
+find . -type f -name '*\[Trans\].nfo' -delete
+find . -type f -name '*\[Trans\].jpg' -delete
+find . -type d -name '*\[Trans\].trickplay' -exec rm -rf {} +

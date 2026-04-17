@@ -335,10 +335,10 @@ wait
 echo "Cleaning up leftover [Cleaned] files..."
 
 find . \
-  \( -type f -name '*[Cleaned].tmp' \
-  -o -type f -name '*[Cleaned].nfo' \
-  -o -type f -name '*[Cleaned].jpg' \
-  -o -type d -name '*[Cleaned].trickplay' \) \
+  \( -type f -name '*\[Cleaned\].tmp' \
+  -o -type f -name '*\[Cleaned\].nfo' \
+  -o -type f -name '*\[Cleaned\].jpg' \
+  -o -type d -name '*\[Cleaned\].trickplay' \) \
   -exec rm -rf {} +
 
 echo "All tasks complete."
