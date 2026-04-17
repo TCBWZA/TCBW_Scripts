@@ -204,10 +204,10 @@ wait
 echo "Cleaning up leftover [Trans] files..."
 
 find . \
-  \( -type f -name '*[Trans].tmp' \
-  -o -type f -name '*[Trans].nfo' \
-  -o -type f -name '*[Trans].jpg' \
-  -o -type d -name '*[Trans].trickplay' \) \
+  \( -type f -name '*\[Trans\].tmp' \
+  -o -type f -name '*\[Trans\].nfo' \
+  -o -type f -name '*\[Trans\].jpg' \
+  -o -type d -name '*\[Trans\].trickplay' \) \
   -exec rm -rf {} +
 
 echo "All tasks complete."
