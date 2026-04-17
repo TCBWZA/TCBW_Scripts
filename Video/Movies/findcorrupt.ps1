@@ -6,12 +6,12 @@
     This script recursively scans a root directory for MKV files and uses ffprobe
     to detect corruption. When a corrupt file is found, the script can:
 
-      � Delete the corrupt file
-      � Remove the movie file entry from Radarr
-      � Re-monitor the movie
-      � Trigger a Radarr MovieSearch command
-      � Log missing movies to a dedicated log file
-      � Optionally log file paths to a CSV file
+      - Delete the corrupt file
+      - Remove the movie file entry from Radarr
+      - Re-monitor the movie
+      - Trigger a Radarr MovieSearch command
+      - Log missing movies to a dedicated log file
+      - Optionally log file paths to a CSV file
 
     When -Audit is enabled, the script performs NO destructive actions and instead
     prints what WOULD have happened. This ensures deterministic, safe dry-runs.
@@ -54,10 +54,10 @@
     PS> .\findcorrupt-movies.ps1 -Root "Z:\media\Movies" -CsvFile corrupt.csv
 
 .NOTES
-    � Requires ffprobe to be available in PATH.
-    � Radarr API key must be configured inside the script.
-    � All file operations use literal-path-safe PowerShell calls.
-    � Audit mode is strongly recommended before first real run.
+    - Requires ffprobe to be available in PATH.
+    - Radarr API key must be configured inside the script.
+    - All file operations use literal-path-safe PowerShell calls.
+    - Audit mode is strongly recommended before first real run.
 
 .EXITCODES
     0   Script completed successfully.
