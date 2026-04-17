@@ -109,7 +109,7 @@ for f in "${files[@]}"; do
     { IFS=$'\t' read -r vcodec vbitrate field_order; read -r acodec; } < <(
         jq -r '
           (.streams[] | select(.codec_type=="video") |
-            [.codec_name, (.bit_rate // 0), (.field_order // "unknown")] | @tsv),
+            [.codec_name, (.bit_rate // .tags.BPS // 0), (.field_order // "unknown")] | @tsv),
           (.streams[] | select(.codec_type=="audio") |
             .codec_name)
         ' <<< "$probe"
@@ -129,15 +129,20 @@ for f in "${files[@]}"; do
     fi
 
     #####################################################
-    # Fast remux path (HEVC + AAC + low bitrate)
+    # Fast remux path (HEVC + progressive + low bitrate + wrong container)
     #####################################################
+
+    ext_lc="${f##*.}"
+    ext_lc=$(echo "$ext_lc" | tr '[:upper:]' '[:lower:]')
 
     can_remux=true
     [[ "$vcodec_lc" != "hevc" ]] && can_remux=false
     (( vbitrate > 2500000 )) && can_remux=false
+    [[ "$field_order" != "progressive" ]] && can_remux=false
+    [[ "$ext_lc" == "mkv" ]] && can_remux=false
 
     if $can_remux; then
-        echo "Remuxing $f → HEVC/AAC under threshold"
+        echo "Remuxing $f → MKV (container change, streams copied)"
         tmpfile="$dir/${base_no_ext}[Trans].mkv"
 
         rm -f -- "$tmpfile"
@@ -242,7 +247,7 @@ for f in "${files[@]}"; do
             -vf "$vf_chain" \
             -map 0 \
             -c:v hevc_vaapi \
-            -qp 20 \
+            -qp 22 \
             -c:a copy \
             -c:s copy \
             -f matroska \
