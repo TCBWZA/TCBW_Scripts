@@ -135,7 +135,6 @@ for f in "${files[@]}"; do
     can_remux=true
     [[ "$vcodec_lc" != "hevc" ]] && can_remux=false
     (( vbitrate > 2500000 )) && can_remux=false
-    [[ "$acodec" != "aac" ]] && can_remux=false
 
     if $can_remux; then
         echo "Remuxing $f → HEVC/AAC under threshold"
@@ -206,7 +205,6 @@ for f in "${files[@]}"; do
     #####################################################
 
     needs_convert=false
-    [[ "$acodec" != "aac" ]] && needs_convert=true
     [[ "$vcodec_lc" != "hevc" ]] && needs_convert=true
     (( vbitrate > 2500000 )) && needs_convert=true
     [[ "$status" != "progressive" ]] && needs_convert=true
