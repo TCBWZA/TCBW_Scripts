@@ -7,6 +7,18 @@
         "--stdio"
     ],
     "cSpell.words": [
-        "copyts"
+        "apikey",
+        "choco",
+        "copyts",
+        "EXITCODES",
+        "findcorrupt",
+        "LASTEXITCODE",
+        "mkvinfo",
+        "mkvpropedit",
+        "mkvs",
+        "mkvtoolnix",
+        "moviefile",
+        "nokey",
+        "noprint"
     ]
 }
