@@ -60,7 +60,7 @@ function Write-Audit {
     "$timestamp  $Message" | Out-File -LiteralPath $AuditLogPath -Append -Encoding UTF8
 }
 
-function DebugLog {
+function Write-DebugLog {
     param([string]$Message)
     if ($Debug) {
         Write-Host "[DEBUG] $Message"
@@ -80,7 +80,7 @@ function Get-XmlValue {
 # Safe MKV title reader
 function Get-MkvTitle {
     param([string]$MkvPath)
-    DebugLog "Reading MKV title via mkvinfo: $MkvPath"
+    Write-DebugLog "Reading MKV title via mkvinfo: $MkvPath"
     $mkvinfo = & mkvinfo $MkvPath 2>$null
     $match = [regex]::Match($mkvinfo, "Title:\s*(.+)")
     if ($match.Success) { return $match.Groups[1].Value.Trim() }
@@ -167,7 +167,7 @@ foreach ($mkv in $mkvs) {
     $origCreation = $file.CreationTime
     $origModified = $file.LastWriteTime
 
-    DebugLog "Preserving timestamps."
+    Write-DebugLog "Preserving timestamps."
 
     # Apply metadata
     $tagsXml = Build-TagsXml -Tags $tags

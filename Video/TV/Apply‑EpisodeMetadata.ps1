@@ -46,7 +46,7 @@ function Write-Audit {
     "$timestamp  $Message" | Out-File -LiteralPath $AuditLogPath -Append -Encoding UTF8
 }
 
-function DebugLog {
+function Write-DebugLog {
     param([string]$Message)
     if ($Debug) {
         Write-Host "[DEBUG] $Message"
@@ -64,7 +64,7 @@ function Get-XmlValue {
 }
 
 # Normalize titles for comparison
-function Normalize-Title {
+function Format-Title {
     param([string]$s)
     if (-not $s) { return "" }
     return ($s.Trim() -replace "\s+", " ")
@@ -73,7 +73,7 @@ function Normalize-Title {
 # Safe MKV title reader
 function Get-MkvTitle {
     param([string]$MkvPath)
-    DebugLog "Reading MKV title via mkvinfo: $MkvPath"
+    Write-DebugLog "Reading MKV title via mkvinfo: $MkvPath"
     $mkvinfo = & mkvinfo $MkvPath 2>$null
     $match = [regex]::Match($mkvinfo, "Title:\s*(.+)")
     if ($match.Success) { return $match.Groups[1].Value.Trim() }
@@ -146,7 +146,7 @@ foreach ($mkv in $mkvs) {
     if (-not $series) {
         $movieNfo = Join-Path $mkv.DirectoryName "movie.nfo"
         if (Test-Path -LiteralPath $movieNfo) {
-            DebugLog "Loading title from movie.nfo"
+            Write-DebugLog "Loading title from movie.nfo"
             [xml]$movieXml = Get-Content -LiteralPath $movieNfo -Raw
             $series = Get-XmlValue -Node $movieXml.movie -Name "title"
         }
@@ -156,7 +156,7 @@ foreach ($mkv in $mkvs) {
         $seriesRoot = $mkv.Directory.Parent
         if ($null -ne $seriesRoot) {
             $series = Split-Path $seriesRoot.FullName -Leaf
-            DebugLog "Fallback to series root folder name: $series"
+            Write-DebugLog "Fallback to series root folder name: $series"
         }
     }
 
@@ -225,11 +225,11 @@ foreach ($mkv in $mkvs) {
     $existingTitle = Get-MkvTitle -MkvPath $mkv.FullName
     $newGlobalTitle = "$series - $title"
 
-    $existingNorm = Normalize-Title $existingTitle
-    $newNorm      = Normalize-Title $newGlobalTitle
+    $existingNorm = Format-Title $existingTitle
+    $newNorm      = Format-Title $newGlobalTitle
 
-    DebugLog "Existing MKV title: '$existingTitle'"
-    DebugLog "Expected MKV title: '$newGlobalTitle'"
+    Write-DebugLog "Existing MKV title: '$existingTitle'"
+    Write-DebugLog "Expected MKV title: '$newGlobalTitle'"
 
     if ($existingNorm -eq $newNorm) {
         Write-Host "Skipping: Already processed."
@@ -244,7 +244,7 @@ foreach ($mkv in $mkvs) {
     $origCreation = $file.CreationTime
     $origModified = $file.LastWriteTime
 
-    DebugLog "Preserving timestamps."
+    Write-DebugLog "Preserving timestamps."
 
     #
     # APPLY METADATA

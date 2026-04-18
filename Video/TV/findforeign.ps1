@@ -185,7 +185,7 @@ function Invoke-SonarrReplaceFromPath {
 
     $Headers = @{ "X-Api-Key" = $ApiKey }
 
-    function Log-SonarrAction {
+    function Write-SonarrLog {
         param([string]$File, [string]$Status)
         $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         Add-Content -LiteralPath $LogFile -Value "$timestamp,""$File"",$Status"
@@ -200,7 +200,7 @@ function Invoke-SonarrReplaceFromPath {
             $season = [int]$matches[1]
             $episode = [int]$matches[2]
         } else {
-            Log-SonarrAction -File $FilePath -Status "ERROR: Could not parse SxxEyy"
+            Write-SonarrLog -File $FilePath -Status "ERROR: Could not parse SxxEyy"
             return
         }
 
@@ -215,7 +215,7 @@ function Invoke-SonarrReplaceFromPath {
             Select-Object -First 1
 
         if (-not $series) {
-            Log-SonarrAction -File $FilePath -Status "404 (series not found)"
+            Write-SonarrLog -File $FilePath -Status "404 (series not found)"
             return
         }
 
@@ -226,7 +226,7 @@ function Invoke-SonarrReplaceFromPath {
             Where-Object { $_.seasonNumber -eq $season -and $_.episodeNumber -eq $episode }
 
         if (-not $episodeObj) {
-            Log-SonarrAction -File $FilePath -Status "404 (episode not found)"
+            Write-SonarrLog -File $FilePath -Status "404 (episode not found)"
             return
         }
 
@@ -234,13 +234,13 @@ function Invoke-SonarrReplaceFromPath {
         $episodeFileId = $episodeObj.episodeFileId
 
         if (-not $episodeFileId) {
-            Log-SonarrAction -File $FilePath -Status "404 (episodeFileId missing)"
+            Write-SonarrLog -File $FilePath -Status "404 (episodeFileId missing)"
             return
         }
 
         # 4. DELETE the file
         $deleteResponse = Invoke-WebRequest -Method Delete -Uri "$SonarrUrl/api/v3/episodefile/$episodeFileId" -Headers $Headers -ErrorAction Stop
-        Log-SonarrAction -File $FilePath -Status $deleteResponse.StatusCode
+        Write-SonarrLog -File $FilePath -Status $deleteResponse.StatusCode
 
         # 5. Re-monitor
         $episodeObj.monitored = $true
@@ -253,7 +253,7 @@ function Invoke-SonarrReplaceFromPath {
             -ContentType "application/json" `
             -ErrorAction Stop
 
-        Log-SonarrAction -File $FilePath -Status $monitorResponse.StatusCode
+        Write-SonarrLog -File $FilePath -Status $monitorResponse.StatusCode
 
         # 6. Trigger search
         $body = @{
@@ -269,11 +269,11 @@ function Invoke-SonarrReplaceFromPath {
             -ContentType "application/json" `
             -ErrorAction Stop
 
-        Log-SonarrAction -File $FilePath -Status $searchResponse.StatusCode
+        Write-SonarrLog -File $FilePath -Status $searchResponse.StatusCode
 
     }
     catch {
-        Log-SonarrAction -File $FilePath -Status "ERROR: $($_.Exception.Message)"
+        Write-SonarrLog -File $FilePath -Status "ERROR: $($_.Exception.Message)"
     }
 }
 
