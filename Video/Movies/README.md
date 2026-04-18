@@ -248,7 +248,9 @@ PowerShell utility that recursively scans a directory for corrupt MKV files usin
 
 **What it does:**
 
-- Runs `ffprobe` on each MKV file to detect corruption (non-zero exit code, or output containing `Invalid`, `error`, or `failed`).
+- Runs `ffprobe` on each MKV file to detect two categories of problem:
+  - **Corruption** - non-zero `ffprobe` exit code, or output containing `Invalid`, `error`, or `failed`.
+  - **No audio** - file has zero audio streams (treated as corrupt for replacement purposes).
 - Parses the movie title and year from the filename (expects `Title (Year).mkv` format) to match against Radarr.
 - Prints the path of each corrupt file to the console.
 - Optionally writes corrupt file paths to a CSV log.
@@ -318,6 +320,48 @@ Set `$RadarrApiKey` and configure `-RadarrUrl`. The script always verifies Radar
 Movies that cannot be matched in Radarr are written to the missing-movies log for manual review.
 
 Use `-Audit` first to verify which files are flagged as corrupt before running a live replacement pass.
+
+---
+
+### remuxmp4.sh
+
+Bash script that remuxes MP4 files into MKV containers without re-encoding. Intended for files that are correctly encoded but in the wrong container.
+
+**What it does:**
+
+- Targets `.mp4` files between 500 MB and 5 GB. Files outside this range are skipped - files below 500 MB are too small to be movies, and files above 5 GB are left for the compress scripts to handle with a full transcode.
+- Skips files where an MKV with the same base name already exists.
+- Detects `mov_text` subtitles (an MP4-only format not valid in MKV) and automatically transcodes them to SRT; all other subtitle streams are stream-copied.
+- Maps only English (`eng`) and undefined (`und`) language audio and subtitle streams. Falls back to all audio streams if none are tagged.
+- Copies all video, audio, subtitle, and attachment streams (e.g. embedded TTF/OTF fonts) into a Matroska container.
+- Writes to a `[Trans].tmp` temp file; on success, renames to `.mkv` and deletes the original `.mp4`.
+- Preserves the original file modification time.
+- After a successful remux, runs `apply-movie-metadata.sh` from the same directory to apply NFO metadata to the new MKV.
+- Files with no audio streams are treated as corrupt: the file is deleted and a Radarr replacement search is triggered (same Radarr flow as `findcorrupt.ps1`).
+- Respects `.skip` directory markers.
+
+**Configuration:**
+
+Edit the following constants near the top of the script before running:
+
+```bash
+RADARR_URL="http://docker:7878"
+RADARR_API_KEY="YOUR_API_KEY_HERE"
+RADARR_LOG="/tmp/remux_radarr.log"
+MISSING_LOG="/tmp/remux_missing.log"
+```
+
+**Requirements:** `ffmpeg`, `ffprobe`, `jq`, `curl`, `python3` (for URL encoding; falls back to `sed` if unavailable).
+
+**Execution:**
+
+```bash
+cd /mnt/media/Movies
+./remuxmp4.sh
+
+# Debug mode
+./remuxmp4.sh --debug
+```
 
 ---
 

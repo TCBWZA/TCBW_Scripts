@@ -524,7 +524,7 @@ foreach ($f in $files) {
         Write-Host "Remuxing $($f.FullName) → container repair"
         Debug "Container-repair remux triggered"
 
-        $tmpfile = Join-Path $dir ($baseNoExt + '[Trans].mkv')
+        $tmpfile = Join-Path $dir ($baseNoExt + '[Trans].tmp')
 
         if (Test-Path -LiteralPath $tmpfile) {
             Debug "Removing existing temp file"
@@ -537,7 +537,7 @@ foreach ($f in $files) {
             continue
         }
 
-        ffmpeg -y -i "$($f.FullName)" -c copy "$tmpfile"
+        ffmpeg -y -i "$($f.FullName)" -c copy -f matroska "$tmpfile"
         $exit = $LASTEXITCODE
         Debug "ffmpeg remux exit code: $exit"
 
@@ -584,7 +584,7 @@ foreach ($f in $files) {
     ###############################################################
     # TEMP OUTPUT
     ###############################################################
-    $tmpfile = Join-Path $dir ($baseNoExt + '[Trans].mkv')
+    $tmpfile = Join-Path $dir ($baseNoExt + '[Trans].tmp')
     Debug "Temp output file: $tmpfile"
 
     if (Test-Path -LiteralPath $tmpfile) {
@@ -661,7 +661,7 @@ Debug "Running cleanup..."
 
 Get-ChildItem -Recurse -File |
     Where-Object {
-        $_.Name -match '\[Trans\]\.mkv' -or
+        $_.Name -match '\[Trans\]\.tmp' -or
         $_.Name -match '\[Trans\]\.nfo' -or
         $_.Name -match '\[Trans\]\.jpg'
     } |

@@ -194,13 +194,13 @@ foreach ($f in $files) {
     if (-not $structural) { Debug "Skipping remux (no anomaly)"; continue }
 
     # Prepare tmp file
-    $tmpfile = Join-Path $f.DirectoryName ($f.BaseName + "[Trans].mkv")
+    $tmpfile = Join-Path $f.DirectoryName ($f.BaseName + "[Trans].tmp")
     if (Test-Path -LiteralPath $tmpfile) { Remove-Item -LiteralPath $tmpfile -Force }
 
     if (Test-FileLocked -Path $f.FullName) { Write-Host "Locked, skipping: $($f.FullName)"; continue }
 
     Write-Host "Remuxing: $($f.FullName)"
-    ffmpeg -y -i "$($f.FullName)" -c copy "$tmpfile"
+    ffmpeg -y -i "$($f.FullName)" -c copy -f matroska "$tmpfile"
     $exit = $LASTEXITCODE
 
     if (Test-FileLocked -Path $tmpfile) { Write-Host "Tmp locked after remux, deleting: $tmpfile"; Remove-Item -LiteralPath $tmpfile -Force; continue }
