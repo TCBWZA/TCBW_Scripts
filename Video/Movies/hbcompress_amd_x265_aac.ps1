@@ -619,7 +619,7 @@ foreach ($f in $files) {
             --encoder-preset balance `
             --maxHeight 2160 `
             --all-audio `
-            --aencoder copy:all `
+            --aencoder aac `
             --ab 160 `
             --subtitle-lang-list eng,und --subtitle-default=1 `
     }
@@ -633,7 +633,7 @@ foreach ($f in $files) {
             --encoder-preset balance `
             --maxHeight 2160 `
             --all-audio `
-            --aencoder copy:all `
+            --aencoder aac `
             --ab 160 `
             --subtitle-lang-list eng,und --subtitle-default=1 `
             $hb_filter
