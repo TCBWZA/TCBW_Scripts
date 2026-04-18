@@ -357,9 +357,9 @@ foreach ($f in $files) {
     Debug "---------------------------------------------"
     Debug "Processing file: $($f.FullName)"
 
-    # SKIP: SIZE < 1GB
-    if ($f.Length -lt 1GB) {
-        Debug "Skipping (size < 1GB): $($f.Length)"
+    # SKIP: SIZE < 5GB
+    if ($f.Length -lt 5GB) {
+        Debug "Skipping (size < 5GB): $($f.Length)"
         continue
     }
 
