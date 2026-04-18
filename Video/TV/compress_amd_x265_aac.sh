@@ -139,7 +139,7 @@ for f in "${files[@]}"; do
 
     if $can_remux; then
         echo "Remuxing $f → HEVC/AAC under threshold"
-        tmpfile="$dir/${base_no_ext}[Trans].mkv"
+        tmpfile="$dir/${base_no_ext}[Trans].tmp"
 
         rm -f -- "$tmpfile"
 
@@ -148,6 +148,7 @@ for f in "${files[@]}"; do
             -map 0:v -map 0:a \
             -map "0:s:m:language:eng?" -map "0:s:m:language:und?" \
             -c copy \
+            -f matroska \
             "$tmpfile"
 
         if [[ $? -eq 0 ]]; then

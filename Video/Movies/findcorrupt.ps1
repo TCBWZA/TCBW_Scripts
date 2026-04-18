@@ -172,21 +172,31 @@ function Test-MkvCorrupt {
 }
 
 # -------------------------------
+# Detect missing audio streams
+# -------------------------------
+function Test-MkvNoAudio {
+    param([string]$Path)
+
+    $probeJson = ffprobe -v quiet -print_format json -show_streams -select_streams a "$Path" 2>/dev/null
+    try {
+        $probe = $probeJson | ConvertFrom-Json
+        return ($probe.streams.Count -eq 0)
+    }
+    catch {
+        return $false   # if probe fails entirely, let Test-MkvCorrupt handle it
+    }
+}
+
+# -------------------------------
 # Parse movie title + year
 # -------------------------------
-function Parse-MovieInfo {
+function Get-MovieInfo {
     param([string]$Path)
 
     $file = Split-Path $Path -Leaf
 
     # Remove quality tags
-    $clean = $file -replace '
-
-\[[^\]
-
-]+\]
-
-', ''
+    $clean = $file -replace '\[[^\]]+\]', ''
 
     # Extract year
     if ($clean -match '\((\d{4})\)') {
@@ -220,15 +230,15 @@ function Invoke-RadarrReplaceFromPath {
 
     $Headers = @{ "X-Api-Key" = $ApiKey }
 
-    function Log-RadarrAction {
+    function Write-RadarrLog {
         param([string]$File, [string]$Status)
         $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         Add-Content -LiteralPath $LogFile -Value "$timestamp,""$File"",$Status"
     }
 
-    $info = Parse-MovieInfo -Path $FilePath
+    $info = Get-MovieInfo -Path $FilePath
     if (-not $info) {
-        Log-RadarrAction -File $FilePath -Status "ERROR: Could not parse movie title/year"
+        Write-RadarrLog -File $FilePath -Status "ERROR: Could not parse movie title/year"
         return
     }
 
@@ -247,7 +257,7 @@ function Invoke-RadarrReplaceFromPath {
         if (-not $movie) {
             $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
             Add-Content -LiteralPath $MissingMovieLog -Value "$timestamp,$($info.Title),$FilePath"
-            Log-RadarrAction -File $FilePath -Status "404 (movie not found)"
+            Write-RadarrLog -File $FilePath -Status "404 (movie not found)"
             return
         }
 
@@ -258,7 +268,7 @@ function Invoke-RadarrReplaceFromPath {
 
         if ($movieFileId) {
             $deleteResponse = Invoke-WebRequest -Method Delete -Uri "$RadarrUrl/api/v3/moviefile/$movieFileId" -Headers $Headers -ErrorAction Stop
-            Log-RadarrAction -File $FilePath -Status $deleteResponse.StatusCode
+            Write-RadarrLog -File $FilePath -Status $deleteResponse.StatusCode
         }
 
         $movie.monitored = $true
@@ -271,7 +281,7 @@ function Invoke-RadarrReplaceFromPath {
             -ContentType "application/json" `
             -ErrorAction Stop
 
-        Log-RadarrAction -File $FilePath -Status $monitorResponse.StatusCode
+        Write-RadarrLog -File $FilePath -Status $monitorResponse.StatusCode
 
         $body = @{
             name     = "MoviesSearch"
@@ -286,10 +296,10 @@ function Invoke-RadarrReplaceFromPath {
             -ContentType "application/json" `
             -ErrorAction Stop
 
-        Log-RadarrAction -File $FilePath -Status $searchResponse.StatusCode
+        Write-RadarrLog -File $FilePath -Status $searchResponse.StatusCode
     }
     catch {
-        Log-RadarrAction -File $FilePath -Status "ERROR: $($_.Exception.Message)"
+        Write-RadarrLog -File $FilePath -Status "ERROR: $($_.Exception.Message)"
         exit 3
     }
 }
@@ -326,14 +336,18 @@ Get-ChildItem -LiteralPath $Root -Recurse -File -Filter "*.mkv" | ForEach-Object
 
     $File = $_.FullName
 
-    if (Test-MkvCorrupt -Path $File) {
+    $isCorrupt  = Test-MkvCorrupt -Path $File
+    $isNoAudio  = -not $isCorrupt -and (Test-MkvNoAudio -Path $File)
+
+    if ($isCorrupt -or $isNoAudio) {
 
         $corruptFound = $true
-        Write-Host "CORRUPT MKV: $File" -ForegroundColor Red
+        $reason = if ($isNoAudio) { "NO AUDIO" } else { "CORRUPT" }
+        Write-Host "${reason} MKV: $File" -ForegroundColor Red
 
         if ($Audit) {
             Write-Audit "Would delete: $File"
-            Write-Audit "Would request replacement from Radarr for: $File"
+            Write-Audit "Would request replacement from Radarr for: $File ($reason)"
         }
         else {
             if ($CsvEnabled) {

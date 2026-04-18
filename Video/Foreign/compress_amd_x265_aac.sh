@@ -143,7 +143,7 @@ for f in "${files[@]}"; do
 
     if $can_remux; then
         echo "Remuxing $f → MKV (container change, streams copied)"
-        tmpfile="$dir/${base_no_ext}[Trans].mkv"
+        tmpfile="$dir/${base_no_ext}[Trans].tmp"
 
         rm -f -- "$tmpfile"
 
@@ -151,6 +151,7 @@ for f in "${files[@]}"; do
             -i "$f" \
             -map 0 \
             -c copy \
+            -f matroska \
             "$tmpfile"
 
         if [[ $? -eq 0 ]]; then
