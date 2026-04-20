@@ -103,6 +103,20 @@ for f in "${files[@]}"; do
     debug "ffprobe JSON OK"
 
     #####################################################
+    # Build subtitle map args (ffmpeg 7.x: ? suffix not supported on metadata filters)
+    #####################################################
+
+    sub_maps=()
+    if jq -e '[.streams[] | select(.codec_type=="subtitle" and (.tags.language? == "eng"))] | length > 0' <<< "$probe" >/dev/null 2>&1; then
+        sub_maps+=(-map "0:s:m:language:eng")
+    fi
+    if jq -e '[.streams[] | select(.codec_type=="subtitle" and (.tags.language? == "und"))] | length > 0' <<< "$probe" >/dev/null 2>&1; then
+        sub_maps+=(-map "0:s:m:language:und")
+    fi
+
+    debug "sub_maps: ${sub_maps[*]}"
+
+    #####################################################
     # Extract video/audio metadata
     #####################################################
 
@@ -146,7 +160,7 @@ for f in "${files[@]}"; do
         ffmpeg -nostdin -hide_banner -y \
             -i "$f" \
             -map 0:v -map 0:a \
-            -map "0:s:m:language:eng?" -map "0:s:m:language:und?" \
+            "${sub_maps[@]}" \
             -c copy \
             -f matroska \
             "$tmpfile"
@@ -343,7 +357,7 @@ for f in "${files[@]}"; do
             -hwaccel_output_format vaapi \
             -i "$f" \
             -map 0:v:0 -map 0:a \
-            -map "0:s:m:language:eng?" -map "0:s:m:language:und?" \
+            "${sub_maps[@]}" \
             -vf "$vf_chain" \
             -c:v hevc_vaapi \
             -qp 24 \
