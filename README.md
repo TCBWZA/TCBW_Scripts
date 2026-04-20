@@ -18,8 +18,7 @@ TCBW_Scripts/
 │   │   ├── sync_movies.sh             - Rsyncs movie library to a network mount
 │   │   └── sync_tv.sh                 - Rsyncs TV library to a network mount
 │   └── lxc/
-│       ├── lxc-upgrade.sh             - Updates Proxmox host and all LXC containers in parallel (with autoremove)
-│       └── pve-lxc-upgrade.sh         - Automated LXC container updater for Proxmox
+│       └── lxc-upgrade.sh             - Updates Proxmox host and all LXC containers in parallel (with autoremove)
 ├── Video/
 │   ├── Foreign/                        - Compression scripts for foreign language content
 │   │   ├── README.md
@@ -38,8 +37,11 @@ TCBW_Scripts/
 │   │   ├── clean_compress_amd_x265_aac.sh - AMD GPU w/ track filtering (bash)
 │   │   ├── clean_compress_qsv_x265_aac.ps1 - Intel QSV w/ track filtering (PowerShell)
 │   │   ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE compression (PowerShell)
+│   │   ├── remuxmp4.sh                - MP4 to MKV container remux with Radarr integration (bash)
 │   │   ├── apply-movie-metadata.sh    - NFO metadata writer to MKV tags (bash)
 │   │   ├── Apply-MovieMetadata.ps1    - NFO metadata writer to MKV tags (PowerShell)
+│   │   ├── setreleasedate.sh          - NFO release date to file timestamp setter (bash)
+│   │   ├── setreleasedate.ps1         - NFO release date to file timestamp setter (PowerShell)
 │   │   ├── dedup.ps1                  - Duplicate removal (PowerShell)
 │   │   └── findcorrupt.ps1            - Corrupt MKV detection with Radarr integration (PowerShell)
    └── TV/                             - Compression, deduplication, and maintenance scripts for TV shows
@@ -53,7 +55,9 @@ TCBW_Scripts/
        ├── findforeign.ps1             - Foreign-audio detection with Sonarr integration (PowerShell)
        ├── findcorrupt.ps1             - Corrupt MKV detection with Sonarr integration (PowerShell)
        ├── apply-episode-metadata.sh   - NFO metadata writer to MKV tags (bash)
-       └── Apply-EpisodeMetadata.ps1   - NFO metadata writer to MKV tags (PowerShell)
+       ├── Apply-EpisodeMetadata.ps1   - NFO metadata writer to MKV tags (PowerShell)
+       ├── setairdate.sh               - NFO air date to file timestamp setter (bash)
+       └── setairdate.ps1              - NFO air date to file timestamp setter (PowerShell)
 └── Files/
     └── (legacy or additional files)
 ```
@@ -66,7 +70,7 @@ See [Linux/README.md](Linux/README.md) for detailed descriptions of Linux utilit
 
 **USE AT YOUR OWN RISK**
 
-The settings in use work for me. You need to make sure things like bitrate meet your quality requirements. **THESE WILL NOT WORK FOR UHD.** (except `clean_compressUHD_qsv_x265_aac.ps1`)
+The settings in use work for me. You need to make sure things like bitrate meet your quality requirements. **THESE WILL NOT WORK FOR UHD.**
 
 ### Overview
 
@@ -74,9 +78,9 @@ A comprehensive collection of powerful video transcoding, compression, and dedup
 
 ### Video Folder Organization
 
-- **[Foreign/](Video/Foreign/README.md)** - Deinterlacing scripts optimized for foreign language content
-- **[Movies/](Video/Movies/README.md)** - Deinterlacing scripts optimized for movie content  
-- **[TV/](Video/TV/README.md)** - Deinterlacing scripts optimized for TV show content
+- **[Foreign/](Video/Foreign/README.md)** - Compression scripts for foreign language content
+- **[Movies/](Video/Movies/README.md)** - Compression and maintenance scripts for movie content
+- **[TV/](Video/TV/README.md)** - Compression and maintenance scripts for TV show content
 
 See each folder's README for detailed file descriptions and usage information.
 
@@ -107,7 +111,7 @@ This dual-machine approach ensures reliable batch processing despite the Debian 
 - **File Lock Detection**: Skips files currently open by other processes (media players, Plex, etc.)
 - **Atomic Replacement**: Writes to a temp file and swaps atomically; originals are only replaced when output is smaller and valid
 - **Format Guards**: Automatically skips 4K (UHD) and AV1-encoded files
-- **Subtitle Filtering**: Retains only English and undefined-language subtitle tracks; other languages are dropped
+- **Subtitle Filtering**: TV and Movies hbcompress scripts retain only English and undefined-language subtitle tracks. Foreign scripts copy all subtitle tracks without filtering.
 
 ### Maintenance & Quality Assurance Scripts
 
@@ -186,9 +190,6 @@ This dual-machine approach ensures reliable batch processing despite the Debian 
 # Movies - Intel QSV compression
 .\Video\Movies\compress_qsv_x265_aac.ps1
 
-# Movies - Intel QSV with 4K support
-.\Video\Movies\clean_compressUHD_qsv_x265_aac.ps1
-
 # Foreign - Intel QSV compression
 .\Video\Foreign\compress_qsv_x265_aac.ps1
 ```
@@ -243,8 +244,8 @@ For detailed usage instructions and script options, see the README files in each
 4. **Conversion Decision**: Only converts files that meet these criteria:
    - Video is not already x265/HEVC
    - Bitrate exceeds 2.5 Mbps
-   - Audio is not already AAC
    - Video is interlaced (not progressive)
+   - Note: audio codec is a conversion trigger for Movies and TV scripts (not already AAC) but not for Foreign hbcompress scripts (all audio is always copied)
 5. **Interlace Detection**: Three-stage analysis:
    - Fast pass: `field_order` metadata (hard interlace flags resolve immediately)
    - Slow pass: `ffprobe -show_frames` frame-level scan at the 5-minute mark; classifies as `interlaced`, `telecine` (NTSC 3:2 pulldown at ~29.97 fps), or `unknown`
@@ -291,15 +292,14 @@ MAX_JOBS=2                      # Number of parallel encoding jobs
 
 ### Intel QSV (Quick Sync Video)
 
-- **Files**: `compress_qsv_x265_aac.ps1`, `hbcompress_qsv_x265_aac.ps1`, `clean_compress_qsv_x265_aac.ps1`, `clean_compressUHD_qsv_x265_aac.ps1`
+- **Files**: `compress_qsv_x265_aac.ps1`, `hbcompress_qsv_x265_aac.ps1`, `clean_compress_qsv_x265_aac.ps1`
 - **Best For**: Intel processors with integrated graphics
 - **Performance**: Excellent power efficiency
 - **Compatibility**: Works with most modern Intel CPUs
-- **4K Support**: Use `clean_compressUHD_qsv_x265_aac.ps1` for UHD content
 
 ### AMD VAAPI
 
-- **Files**: `compress_amd_x265_aac.sh`, `compressmp4_amd_x265_aac.sh`; `compress_amd_x265_aac.ps1` for Windows
+- **Files**: `compress_amd_x265_aac.sh`, `compress_amd_x265_aac.ps1`
 - **Best For**: AMD GPUs (Radeon RX series)
 - **Performance**: High throughput with parallel encoding
 - **Compatibility**: Requires compatible AMD hardware with VAAPI support (`/dev/dri/renderD128`)

@@ -493,6 +493,72 @@ PowerShell equivalent of `apply-episode-metadata.sh`. Reads episode metadata fro
 
 ---
 
+### setairdate.sh
+
+Bash utility that sets file timestamps on TV episode video and NFO file pairs based on the air date recorded in the NFO sidecar.
+
+**What it does:**
+
+- Recursively scans for MKV and MP4 video files.
+- For each video, finds the matching `<basename>.nfo` file and parses the `<aired>` element (YYYY-MM-DD format).
+- Sets both the video file and the NFO file `mtime` to midday (12:00:00) on the aired date.
+- If the NFO has no recognisable date, uses the earliest existing `mtime` of the two files and sets both to midday on that day.
+- Skips video files with no matching NFO.
+
+**Requirements:**
+
+- `xmlstarlet`
+- Bash 4+
+- GNU coreutils (`stat -c`, `date -d`) or macOS equivalents
+
+**Execution:**
+
+```bash
+# Run from within the TV directory
+./setairdate.sh
+
+# With debug output
+./setairdate.sh --debug
+```
+
+---
+
+### setairdate.ps1
+
+PowerShell equivalent of `setairdate.sh`. Sets file timestamps on TV episode video and NFO file pairs based on the NFO air date.
+
+**What it does:**
+
+- Recursively scans for MKV and MP4 video files.
+- For each video, finds the matching `<basename>.nfo` and reads the `<aired>` element.
+- Sets both the video file and the NFO file `CreationTime` and `LastWriteTime` to midday (12:00:00) on the aired date.
+- If the NFO contains no recognisable date, uses the earliest existing timestamp across both files and sets both to midday on that day.
+- Skips video files with no matching NFO.
+- Dry-run mode (`-DryRun`) performs all processing steps but writes no timestamp changes.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-DryRun` | Preview mode; no file timestamps are modified. |
+| `-Debug` | Enables verbose debug output to the console. |
+
+**Execution:**
+
+```powershell
+# Run from within the TV directory
+Set-Location "Z:\Media\TV"
+.\setairdate.ps1
+
+# Dry-run preview
+.\setairdate.ps1 -DryRun
+
+# With debug output
+.\setairdate.ps1 -DryRun -Debug
+```
+
+---
+
 ## Encoding Settings (Compression Scripts)
 
 | Setting | Value |
