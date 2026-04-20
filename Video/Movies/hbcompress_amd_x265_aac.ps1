@@ -5,7 +5,7 @@
 .DESCRIPTION
     Recursively scans the current directory for MKV, MP4, and TS files 1 GB or larger
     and re-encodes files that are not already HEVC+AAC or exceed 2.5 Mbps video bitrate.
-    Encoding uses hevc_amf via AMD VCE hardware acceleration.
+    Encoding uses HandBrakeCLI with the vce_h265 AMD VCE hardware encoder.
 
     Additional features:
     - MKV container health check: broken containers are remuxed before transcoding.
@@ -20,8 +20,8 @@
 
 .NOTES
     - No other command-line parameters. Edit constants at the top of the script.
-    - Requires ffmpeg and ffprobe on PATH.
-    - Requires an AMD GPU with AMF/VCE support.
+    - Requires ffmpeg, ffprobe, and HandBrakeCLI on PATH.
+    - Requires an AMD GPU with VCE support.
     - Requires PowerShell 7 or later.
 
 .EXAMPLE

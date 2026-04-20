@@ -28,7 +28,7 @@ Use at your own risk. These scripts perform destructive operations on video file
 ### PowerShell Scripts
 
 - PowerShell 7.0 or later
-- `HandBrakeCLI` required by `hbcompress_qsv_x265_aac.ps1`:
+- `HandBrakeCLI` (required by `hbcompress_amd_x265_aac.ps1` and `hbcompress_qsv_x265_aac.ps1`):
   - Windows: `winget install HandBrake.HandBrakeCLI` or `choco install handbrake-cli`
   - Verify: `HandBrakeCLI --version`
 
@@ -91,7 +91,7 @@ cd /mnt/media/Foreign
 
 ### compress_qsv_x265_aac.ps1
 
-PowerShell compression script using Intel Quick Sync Video (QSV) encoding. Targets `.mkv` and `.ts` files that are 1 GB or larger.
+PowerShell compression script using Intel Quick Sync Video (QSV) encoding. Targets `.mkv`, `.ts`, and `.mp4` files that are 1 GB or larger.
 
 **What it does:**
 
@@ -120,24 +120,35 @@ PowerShell batch compression script using HandBrakeCLI with Intel Quick Sync Vid
 
 **What it does:**
 
-- Inspects each file with `ffprobe` to determine video codec, audio codec, and video bitrate.
-- Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
-- Performs two-pass interlace detection:
-  - Fast pass: reads `field_order` from stream metadata.
-  - Frame scan: checks up to 20 frames when metadata is inconclusive; applies `--deinterlace=slower` for interlaced content, `--detelecine --deinterlace=slower` for unknown content.
-- Encodes with HandBrakeCLI using `qsv_h265` encoder at quality 24, `--encoder-preset balanced`, stereo AAC at 160 kbps.
-- Transcodes to a temporary file first; replaces the original only if the new file is smaller.
-- Creates a `.skip_<basename>` marker when a new file is not smaller, preventing repeated re-encode attempts.
-- Supports `.skip` directory markers and per-file `.skip_<basename>` markers.
+- Inspects each file with `ffprobe` to determine video codec, resolution, and video bitrate.
+- Skips files already encoded as HEVC that are under 2.5 Mbps. Audio codec is not checked; all audio is copied without re-encoding.
+- Skips 4K (UHD) and AV1-encoded files.
+- Skips files with no video stream or no audio stream.
+- Checks MKV containers for structural anomalies (bad `start_time`, corrupt duration, problematic subtitle codecs); automatically remuxes broken containers before transcoding.
+- Detects file locks before and after encoding; skips files currently open by other processes.
+- Performs deferred interlace detection (only when transcoding is required): skips the first 5 minutes to avoid credits, analyzes 200 frames for interlace or telecine patterns. HEVC input skips this step.
+- Applies `--deinterlace=slower` for interlaced content; `--detelecine --deinterlace=slower` for suspected telecine.
+- Encodes with HandBrakeCLI using `qsv_h265` encoder at quality RF 24, `--encoder-preset medium`.
+- Copies all audio tracks and subtitles without language filtering (`--audio all --aencoder copy`, `--subtitle copy`).
+- Writes to a temporary file; atomically replaces the original only if the output is smaller and non-empty.
+- Creates a `.skip_<basename>` marker when output is not smaller, preventing repeated re-encode attempts.
+- Supports upward recursive `.skip` directory markers and per-file `.skip_<basename>` markers.
 - Updates the terminal title during encoding to show the current file name.
 
-No command-line parameters. Edit the threshold constants at the top of the script before running.
+**Parameters:**
+
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| `-Debug` | No | | Enable verbose debug output with timestamps |
 
 **Execution:**
 
 ```powershell
 Set-Location "Z:\Media\Foreign"
 .\hbcompress_qsv_x265_aac.ps1
+
+# With debug output
+.\hbcompress_qsv_x265_aac.ps1 -Debug
 ```
 
 ---
@@ -148,24 +159,35 @@ PowerShell batch compression script using HandBrakeCLI with AMD VCE hardware enc
 
 **What it does:**
 
-- Inspects each file with `ffprobe` to determine video codec, audio codec, and video bitrate.
-- Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
-- Interlace detection:
-  - Fast pass: reads `field_order` from stream metadata.
-  - Deep scan: reads frame-level interlace flags from `ffprobe` (first 200 frames) when metadata is inconclusive.
-- Applies `--deinterlace=slower` for interlaced content; `--detelecine --deinterlace=slower` for unknown/telecine.
-- Encodes with HandBrakeCLI using `vce_h265` encoder at quality RF 24, stereo AAC at 160 kbps.
-- Transcodes to a temporary file; replaces the original only if the new file is smaller.
-- Creates a `.skip_<basename>` marker when output is not smaller.
-- Supports `.skip` directory markers and per-file `.skip_<basename>` markers.
+- Inspects each file with `ffprobe` to determine video codec, resolution, and video bitrate.
+- Skips files already encoded as HEVC that are under 2.5 Mbps. Audio codec is not checked; all audio is copied without re-encoding.
+- Skips 4K (UHD) and AV1-encoded files.
+- Skips files with no video stream or no audio stream.
+- Checks MKV containers for structural anomalies (bad `start_time`, corrupt duration, problematic subtitle codecs); automatically remuxes broken containers before transcoding.
+- Detects file locks before and after encoding; skips files currently open by other processes.
+- Performs deferred interlace detection (only when transcoding is required): skips the first 5 minutes to avoid credits, analyzes 200 frames for interlace or telecine patterns. HEVC input skips this step.
+- Applies `--deinterlace=slower` for interlaced content; `--detelecine --deinterlace=slower` for suspected telecine.
+- Encodes with HandBrakeCLI using `amd_h265` encoder at quality RF 24, `--encoder-preset balanced`.
+- Copies all audio tracks and subtitles without language filtering (`--audio all --aencoder copy`, `--subtitle copy`).
+- Writes to a temporary file; atomically replaces the original only if the output is smaller and non-empty.
+- Creates a `.skip_<basename>` marker when output is not smaller, preventing repeated re-encode attempts.
+- Supports upward recursive `.skip` directory markers and per-file `.skip_<basename>` markers.
+- Updates the terminal title during encoding to show the current file name.
 
-No command-line parameters.
+**Parameters:**
+
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| `-Debug` | No | | Enable verbose debug output with timestamps |
 
 **Execution:**
 
 ```powershell
 Set-Location "Z:\Media\Foreign"
 .\hbcompress_amd_x265_aac.ps1
+
+# With debug output
+.\hbcompress_amd_x265_aac.ps1 -Debug
 ```
 
 ---

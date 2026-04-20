@@ -28,7 +28,9 @@ Use at your own risk. These scripts perform destructive operations on video file
 ### PowerShell Scripts
 
 - PowerShell 7.0 or later
-- `HandBrakeCLI` is not required by any script in this folder
+- `HandBrakeCLI` (required by `hbcompress_amd_x265_aac.ps1`):
+  - Windows: `winget install HandBrake.HandBrakeCLI` or `choco install handbrake-cli`
+  - Verify: `HandBrakeCLI --version`
 
 ---
 
@@ -190,7 +192,7 @@ PowerShell compression script using AMD GPU (AMF/VCE) hardware acceleration with
 - Atomic replacement: writes to a temp file and swaps in place only when the result is smaller and valid.
 - 4K (UHD) and AV1 guards: those files are skipped automatically.
 - `.skip` directory marker and `.skip_<basename>` per-file marker support.
-- Encodes with `hevc_amf` via AMD VCE.
+- Encodes with `vce_h265` via HandBrakeCLI AMD VCE.
 
 **Parameters:**
 
@@ -424,6 +426,74 @@ Set-Location "Z:\Media\Movies"
 
 # With audit log
 .\Apply-MovieMetadata.ps1 -AuditLogPath ".\movie_audit.log"
+```
+
+---
+
+### setreleasedate.sh
+
+Bash utility that sets file timestamps on movie video and NFO file pairs based on the release date recorded in the NFO sidecar.
+
+**What it does:**
+
+- Recursively scans for MKV and MP4 video files.
+- For each video, finds the matching `<basename>.nfo` and parses `<premiered>` (preferred, YYYY-MM-DD) or `<year>` (fallback, resolved to January 1 of that year).
+- Sets both the video file and the NFO file `mtime` to midday (12:00:00) on the resolved date.
+- If the NFO contains no recognisable date, uses the earliest existing `mtime` of the two files.
+- Skips files in `extras` subdirectories and files with non-feature suffixes (`-trailer`, `-featurette`, `-behindthescenes`, etc.).
+- Skips video files with no matching NFO.
+
+**Requirements:**
+
+- `xmlstarlet`
+- Bash 4+
+- GNU coreutils (`stat -c`, `date -d`) or macOS equivalents
+
+**Execution:**
+
+```bash
+# Run from within the Movies directory
+./setreleasedate.sh
+
+# With debug output
+./setreleasedate.sh --debug
+```
+
+---
+
+### setreleasedate.ps1
+
+PowerShell equivalent of `setreleasedate.sh`. Sets file timestamps on movie video and NFO file pairs based on the release date in the NFO sidecar.
+
+**What it does:**
+
+- Recursively scans for MKV and MP4 video files.
+- For each video, finds the matching `<basename>.nfo` and reads `<premiered>` (preferred) or `<year>` (fallback, resolved to January 1 of that year).
+- Sets both the video file and the NFO file `CreationTime` and `LastWriteTime` to midday (12:00:00) on the resolved date.
+- If the NFO contains no recognisable date, uses the earliest existing timestamp across both files.
+- Skips files in `extras` subdirectories and files with non-feature suffixes (`-trailer`, `-featurette`, `-behindthescenes`, etc.).
+- Skips video files with no matching NFO.
+- Dry-run mode (`-DryRun`) performs all processing steps but writes no timestamp changes.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-DryRun` | Preview mode; no file timestamps are modified. |
+| `-Debug` | Enables verbose debug output to the console. |
+
+**Execution:**
+
+```powershell
+# Run from within the Movies directory
+Set-Location "Z:\Media\Movies"
+.\setreleasedate.ps1
+
+# Dry-run preview
+.\setreleasedate.ps1 -DryRun
+
+# With debug output
+.\setreleasedate.ps1 -DryRun -Debug
 ```
 
 ---
