@@ -11,16 +11,34 @@
     jobs run at once.
 
 .NOTES
-    - No command-line parameters. Edit $MaxJobs at the top of the script.
+    - Edit $MaxJobs at the top of the script.
     - Requires ffmpeg and ffprobe on PATH.
     - Requires an AMD GPU with AMF/VCE support.
     - Files tagged [Cleaned] or [Trans] are deleted automatically.
     - A .skip_<basename> marker is created when output is not smaller.
 
+.PARAMETER Debug
+    Enable verbose debug output.
+
 .EXAMPLE
     Set-Location "Z:\Media\Movies"
     .\compress_amd_x265_aac.ps1
 #>
+
+param(
+    [Alias("d")]
+    [switch]$Debug
+)
+
+$DebugMode = $Debug.IsPresent
+
+function Write-DebugLog {
+    param([string]$Message)
+    if ($DebugMode) {
+        $ts = (Get-Date).ToString("HH:mm:ss.fff")
+        Write-Host "[DEBUG $ts] $Message" -ForegroundColor DarkGray
+    }
+}
 
 $MaxJobs = 2
 
@@ -62,6 +80,8 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
     if (-not $NeedsConvert -and $vcodec -ne "hevc") { $NeedsConvert = $true }
     if (-not $NeedsConvert -and $vbitrate -ne "N/A" -and [int]$vbitrate -gt 2500000) { $NeedsConvert = $true }
     if (-not $NeedsConvert -and $field -ne "progressive") { $NeedsConvert = $true }
+
+    Write-DebugLog "vcodec=$vcodec vbitrate=$vbitrate acodec=$acodec field=$field NeedsConvert=$NeedsConvert"
 
     if (-not $NeedsConvert) {
         Write-Host "Skipping $File -- already in desired format"

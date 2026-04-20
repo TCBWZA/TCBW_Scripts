@@ -1,9 +1,23 @@
 # Requires PowerShell 7+
+param(
+    [Alias("d")]
+    [switch]$Debug
+)
+
 $ErrorActionPreference = "Stop"
+$DebugMode = $Debug.IsPresent
+
+function Write-DebugLog {
+    param([string]$Message)
+    if ($DebugMode) {
+        $ts = (Get-Date).ToString("HH:mm:ss.fff")
+        Write-Host "[DEBUG $ts] $Message" -ForegroundColor DarkGray
+    }
+}
 
 Register-EngineEvent PowerShell.Exiting -Action {
     Write-Host "Interrupted -- exiting safely"
-} | Out-Null
+}
 
 Write-Host "Starting up..."
 Write-Host "Scanning for files..."
@@ -40,18 +54,16 @@ function Get-VideoInterlaceStatus {
 
     #
     # SLOW PASS — ONLY IF field_order missing or unknown
-    # OPTIMIZED: Limit to first 20 frames to reduce analysis time
     #
     try {
-        $probeJson = ffprobe -v quiet -print_format json -show_frames -select_streams v -count:frames 20 "$Path"
+        $probeJson = ffprobe -v quiet -print_format json -show_frames -select_streams v -read_intervals "300%+200" "$Path"
         $probe = $probeJson | ConvertFrom-Json
     }
     catch {
         return "unknown"
     }
 
-    # Skip first 5 minutes (9000 frames at 30fps) to avoid credits/intros, then check next 20 frames
-    $frames = $probe.frames | Select-Object -Skip 9000 -First 20
+    $frames = $probe.frames
 
     if ($frames.interlaced_frame -contains 1) {
         return "interlaced"
@@ -70,7 +82,7 @@ Write-Host "Found $($files.Count) files."
 Write-Host "Beginning processing..."
 
 foreach ($f in $files) {
-    Write-Host "$([char]0x1B)]0;$($f.Name)`a"
+
     # File size in GB
     $sizeGB = [math]::Floor($f.Length / 1GB)
     if ($sizeGB -lt 1) { continue }
@@ -108,32 +120,29 @@ foreach ($f in $files) {
     $probeJson = ffprobe -v quiet -print_format json -show_streams $f.FullName
     $probe = $probeJson | ConvertFrom-Json
 
-    $videoStream = $probe.streams | Where-Object { $_.codec_type -eq "video" } | Select-Object -First 1
-    $audioStream = $probe.streams | Where-Object { $_.codec_type -eq "audio" } | Select-Object -First 1
+    $videoStream = $probe.streams | Where-Object { $_.codec_type -eq "video" }
+    $audioStream = $probe.streams | Where-Object { $_.codec_type -eq "audio" }
 
     $vcodec = $videoStream.codec_name
-    $vbitrate = if ($videoStream.bit_rate) { [int]($videoStream.bit_rate[0]) } else { 0 }
+    $vbitrate = [int]$videoStream.bit_rate
     $acodec = $audioStream.codec_name
 
+    Write-DebugLog "vcodec=$vcodec vbitrate=$vbitrate acodec=$acodec"
+
     #####################################################
-    # Fast checks first, only detect interlacing if needed
+    # Detect interlacing BEFORE deciding conversion
     #####################################################
+    $status = Get-VideoInterlaceStatus $f.FullName
+
     $needs_convert = $false
+    if ($vcodec -ne "hevc") { $needs_convert = $true }
+    if ($vbitrate -gt 2500000) { $needs_convert = $true }
     if ($acodec -ne "aac") { $needs_convert = $true }
-    if (-not $needs_convert -and $vcodec -ne "hevc") { $needs_convert = $true }
-    if (-not $needs_convert -and $vbitrate -gt 2500000) { $needs_convert = $true }
-    
-    # Only run expensive interlace detection if other checks pass
-    $status = $null
-    if (-not $needs_convert) {
-        $status = Get-VideoInterlaceStatus $f.FullName
-        # Telecine or interlaced ALWAYS requires conversion
-        if ($status -ne "progressive") { $needs_convert = $true }
-    }
-    else {
-        # If we already need to convert, we still need status for filter choice
-        $status = Get-VideoInterlaceStatus $f.FullName
-    }
+
+    # Telecine or interlaced ALWAYS requires conversion
+    if ($status -ne "progressive") { $needs_convert = $true }
+
+    Write-DebugLog "interlace=$status needs_convert=$needs_convert"
 
     if (-not $needs_convert) {
         Write-Host "Skipping $($f.FullName) -- already in desired format"
@@ -168,6 +177,7 @@ foreach ($f in $files) {
     Write-Host "Input    : $($f.FullName)"
     Write-Host "Temp Out : $tmpfile"
     Write-Host "Filters  : $hb_filter"
+    Write-DebugLog "Launching HandBrakeCLI"
 
     #####################################################
     # RUN HANDBRAKE DIRECTLY (FULL OUTPUT)
@@ -215,18 +225,19 @@ foreach ($f in $files) {
         $newSize = (Get-Item -LiteralPath $tmpfile).Length
         
         if ($newSize -lt $origSize) {
-            Set-ItemProperty -Path $tmpfile -Name LastWriteTime -Value $orig.LastWriteTime
+            Set-ItemProperty -LiteralPath $tmpfile -Name LastWriteTime -Value $orig.LastWriteTime
             Remove-Item -LiteralPath $f.FullName -Force
             Move-Item -LiteralPath $tmpfile -Destination $f.FullName -Force
             $origMB = [math]::Round($origSize / 1MB, 2)
             $newMB = [math]::Round($newSize / 1MB, 2)
             Write-Host "Replaced: ${origMB}MB → ${newMB}MB"
+            Write-DebugLog "Replacement successful"
         }
         else {
             $origMB = [math]::Round($origSize / 1MB, 2)
             $newMB = [math]::Round($newSize / 1MB, 2)
             Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_$show_name"
-            New-Item -Path $show_skip_file -ItemType File -Force | Out-Null
+            New-Item -LiteralPath $show_skip_file -ItemType File -Force | Out-Null
             Remove-Item -LiteralPath $tmpfile -Force
         }
     }

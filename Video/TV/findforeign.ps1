@@ -74,10 +74,22 @@ param(
     # Sonarr enabled by default
     [switch]$NoSonarr,
 
+    [switch]$Debug,
+
     [string]$SonarrUrl = "http://docker:8989",
 
     [string]$SonarrLogFile = "D:\Work\SonarrLog.txt"
 )
+
+$DebugMode = $Debug.IsPresent
+
+function Write-DebugLog {
+    param([string]$Message)
+    if ($DebugMode) {
+        $ts = (Get-Date).ToString("HH:mm:ss.fff")
+        Write-Host "[DEBUG $ts] $Message" -ForegroundColor DarkGray
+    }
+}
 
 # -------------------------------
 # Sonarr API Key

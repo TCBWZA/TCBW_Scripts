@@ -1,3 +1,18 @@
+param(
+    [Alias("d")]
+    [switch]$Debug
+)
+
+$DebugMode = $Debug.IsPresent
+
+function Write-DebugLog {
+    param([string]$Message)
+    if ($DebugMode) {
+        $ts = (Get-Date).ToString("HH:mm:ss.fff")
+        Write-Host "[DEBUG $ts] $Message" -ForegroundColor DarkGray
+    }
+}
+
 $MaxJobs = 2
 
 Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
@@ -38,6 +53,8 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
     if ($acodec -ne "aac") { $NeedsConvert = $true }
     if ($field -ne "progressive") { $NeedsConvert = $true }
 
+    Write-DebugLog "vcodec=$vcodec vbitrate=$vbitrate acodec=$acodec field=$field NeedsConvert=$NeedsConvert"
+
     if (-not $NeedsConvert) {
         Write-Host "Skipping $File -- already in desired format"
         return
@@ -49,7 +66,7 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
     if (Test-Path $Tmp) { Remove-Item $Tmp -Force }
 
     # Detect interlacing using idet
-    $idet = ffmpeg -hide_banner -filter:v idet -frames:v 500 -an -f null - "$File" 2>&1
+    $idet = ffmpeg -hide_banner -ss 300 -filter:v idet -frames:v 200 -an -f null - "$File" 2>&1
     $InterlacedCount = ($idet | Select-String -Pattern "Interlaced:\s*(\d+)" -AllMatches).Matches.Groups[1].Value
 
     if ([int]$InterlacedCount -gt 0) {

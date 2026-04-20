@@ -25,13 +25,16 @@
     .\clean_compress_qsv_x265_aac.ps1
 
 .EXAMPLE
-    .\clean_compress_qsv_x265_aac.ps1 -MAX_JOBS 4 -DEBUG $true
+    .\clean_compress_qsv_x265_aac.ps1 -MAX_JOBS 4 -Debug
 #>
 
 param(
     [int]$MAX_JOBS = 2,
-    [bool]$DEBUG = $false
+    [Alias("d")]
+    [switch]$Debug
 )
+
+$DEBUG = $Debug.IsPresent
 
 $ErrorActionPreference = 'Continue'
 

@@ -3,6 +3,17 @@
 trap 'echo "Interrupted -- exiting safely"; exit 1' INT
 
 MAX_JOBS=2
+DEBUG=false
+
+# -------- Argument Parsing --------
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -d|--debug) DEBUG=true; shift ;;
+        *) echo "Unknown argument: $1"; exit 1 ;;
+    esac
+done
+
+debug() { $DEBUG && echo "[DEBUG] $*" >&2; }
 
 echo "Starting up..."
 echo "Scanning for files..."
@@ -44,6 +55,8 @@ for f in "${files[@]}"; do
     vbitrate=$(jq -r '.streams[] | select(.codec_type=="video") | (.tags.BPS // .bit_rate // "0")' <<< "$probe")
     acodec=$(jq -r '.streams[] | select(.codec_type=="audio") | .codec_name' <<< "$probe")
     field_order=$(jq -r '.streams[] | select(.codec_type=="video") | .field_order' <<< "$probe")
+
+    debug "vcodec=$vcodec vbitrate=$vbitrate acodec=$acodec field_order=$field_order"
 
     # Fast checks first, skip expensive detection if already need to convert
     needs_convert=false
@@ -171,8 +184,8 @@ for f in "${files[@]}"; do
         all_audio="$english_audio $unknown_audio"
         all_audio=$(echo "$all_audio" | xargs)  # Remove extra whitespace
         
-        echo "  DEBUG: Found English audio indices: '$english_audio'"
-        echo "  DEBUG: Found unknown/null audio indices: '$unknown_audio'"
+        debug "Found English audio indices: '$english_audio'"
+        debug "Found unknown/null audio indices: '$unknown_audio'"
         
         if [[ -n "$all_audio" ]]; then
             # Build -map commands for all matched audio tracks using STREAM indices
@@ -217,8 +230,8 @@ for f in "${files[@]}"; do
         all_subs="$english_subs $unknown_subs"
         all_subs=$(echo "$all_subs" | xargs)  # Remove extra whitespace
         
-        # echo "  DEBUG: Found English subtitle indices: '$english_subs'"
-        # echo "  DEBUG: Found unknown/null subtitle indices: '$unknown_subs'"
+        debug "Found English subtitle indices: '$english_subs'"
+        debug "Found unknown/null subtitle indices: '$unknown_subs'"
         
         if [[ -n "$all_subs" ]]; then
             # MUST include -map 0:v:0 when using explicit -map for subtitles (v:0 skips attached pics)

@@ -72,6 +72,7 @@ param(
     [string]$CsvFile = "",
     [switch]$Append,
     [switch]$Audit,
+    [switch]$Debug,
 
     [switch]$Help,
     [switch]$ShowHelp,
@@ -83,6 +84,16 @@ param(
     [string]$RadarrLogFile = "D:\Work\RadarrLog.txt",
     [string]$MissingMovieLog = "D:\Work\MissingMovies.txt"
 )
+
+$DebugMode = $Debug.IsPresent
+
+function Write-DebugLog {
+    param([string]$Message)
+    if ($DebugMode) {
+        $ts = (Get-Date).ToString("HH:mm:ss.fff")
+        Write-Host "[DEBUG $ts] $Message" -ForegroundColor DarkGray
+    }
+}
 
 # -------------------------------
 # Unified help handler
