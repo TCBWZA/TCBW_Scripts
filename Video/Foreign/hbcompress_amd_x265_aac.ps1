@@ -1,5 +1,19 @@
 # Requires PowerShell 7+
+param(
+    [Alias("d")]
+    [switch]$Debug
+)
+
 $ErrorActionPreference = "Stop"
+$DebugMode = $Debug.IsPresent
+
+function Write-DebugLog {
+    param([string]$Message)
+    if ($DebugMode) {
+        $ts = (Get-Date).ToString("HH:mm:ss.fff")
+        Write-Host "[DEBUG $ts] $Message" -ForegroundColor DarkGray
+    }
+}
 
 Register-EngineEvent PowerShell.Exiting -Action {
     Write-Host "Interrupted -- exiting safely"
@@ -42,14 +56,14 @@ function Get-VideoInterlaceStatus {
     # SLOW PASS — ONLY IF field_order missing or unknown
     #
     try {
-        $probeJson = ffprobe -v quiet -print_format json -show_frames -select_streams v "$Path"
+        $probeJson = ffprobe -v quiet -print_format json -show_frames -select_streams v -read_intervals "300%+200" "$Path"
         $probe = $probeJson | ConvertFrom-Json
     }
     catch {
         return "unknown"
     }
 
-    $frames = $probe.frames | Select-Object -First 200
+    $frames = $probe.frames
 
     if ($frames.interlaced_frame -contains 1) {
         return "interlaced"
@@ -113,6 +127,8 @@ foreach ($f in $files) {
     $vbitrate = [int]$videoStream.bit_rate
     $acodec = $audioStream.codec_name
 
+    Write-DebugLog "vcodec=$vcodec vbitrate=$vbitrate acodec=$acodec"
+
     #####################################################
     # Detect interlacing BEFORE deciding conversion
     #####################################################
@@ -125,6 +141,8 @@ foreach ($f in $files) {
 
     # Telecine or interlaced ALWAYS requires conversion
     if ($status -ne "progressive") { $needs_convert = $true }
+
+    Write-DebugLog "interlace=$status needs_convert=$needs_convert"
 
     if (-not $needs_convert) {
         Write-Host "Skipping $($f.FullName) -- already in desired format"
@@ -159,6 +177,7 @@ foreach ($f in $files) {
     Write-Host "Input    : $($f.FullName)"
     Write-Host "Temp Out : $tmpfile"
     Write-Host "Filters  : $hb_filter"
+    Write-DebugLog "Launching HandBrakeCLI"
 
     #####################################################
     # RUN HANDBRAKE DIRECTLY (FULL OUTPUT)
@@ -212,6 +231,7 @@ foreach ($f in $files) {
             $origMB = [math]::Round($origSize / 1MB, 2)
             $newMB = [math]::Round($newSize / 1MB, 2)
             Write-Host "Replaced: ${origMB}MB → ${newMB}MB"
+            Write-DebugLog "Replacement successful"
         }
         else {
             $origMB = [math]::Round($origSize / 1MB, 2)

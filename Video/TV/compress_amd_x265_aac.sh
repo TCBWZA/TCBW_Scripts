@@ -272,6 +272,7 @@ for f in "${files[@]}"; do
             echo "Running idet pixel analysis for PAL content..."
 
             idet_out=$(ffmpeg -nostdin -hide_banner \
+                -ss 300 \
                 -i "$f" \
                 -vf idet \
                 -frames:v 200 \

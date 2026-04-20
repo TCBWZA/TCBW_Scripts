@@ -189,6 +189,7 @@ for f in "${files[@]}"; do
         echo "Running deep interlace scan..."
 
         interlaced_count=$(ffmpeg -nostdin -hide_banner \
+            -ss 300 \
             -skip_frame nokey \
             -filter:v idet \
             -frames:v 200 \

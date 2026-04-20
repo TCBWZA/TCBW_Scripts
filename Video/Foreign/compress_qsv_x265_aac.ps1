@@ -1,4 +1,11 @@
-﻿###############################################################
+﻿param(
+    [Alias("d")]
+    [switch]$Debug
+)
+
+$DebugMode = $Debug.IsPresent
+
+###############################################################
 # PRE-FLIGHT CHECKS
 ###############################################################
 $requiredTools = @('ffprobe', 'ffmpeg')
@@ -41,7 +48,7 @@ $MinDiskSpace = 50                # Minimum free disk space (GB)
 $TempDir = ""   # or "D:\fasttemp" for intermediate files
 
 # Gather files
-$AllFiles = Get-ChildItem -Recurse -Include *.mkv,*.ts -File | Where-Object {
+$AllFiles = Get-ChildItem -Recurse -Include *.mkv,*.ts,*.mp4 -File | Where-Object {
     $Base = [System.IO.Path]::GetFileNameWithoutExtension($_.FullName)
     $FileSizeGB = [math]::Floor($_.Length / 1GB)
     -not ($Base.Contains("[Cleaned]") -or $Base.Contains("[Trans]")) -and
@@ -135,9 +142,60 @@ $AllFiles | ForEach-Object -Parallel {
     $field    = $video.field_order
     $acodec   = $audio.codec_name
 
+    if ($using:DebugMode) { Write-Host "[DEBUG] $File vcodec=$vcodec vbitrate=$vbitrate acodec=$acodec field=$field" -ForegroundColor DarkGray }
+
     # Skip AV1 files entirely
     if ($vcodec -eq "av1") {
         Write-Host "Skipping $File -- AV1 detected"
+        $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
+        return
+    }
+
+    #####################################################
+    # Fast remux path: HEVC + progressive + low bitrate + non-MKV container
+    #####################################################
+
+    $ext = [System.IO.Path]::GetExtension($File).ToLower().TrimStart('.')
+    $canRemux = ($vcodec -eq "hevc") -and
+                (-not ($vbitrate -match '^\d+$' -and [int]$vbitrate -gt $using:MinBitrate)) -and
+                ($field -eq "progressive") -and
+                ($ext -ne "mkv")
+
+    if ($canRemux) {
+        Write-Host "Remuxing $File → MKV (container change, streams copied)"
+        if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Force }
+
+        ffmpeg -nostdin -hide_banner -y `
+            -i "$File" `
+            -map 0 `
+            -c copy `
+            -f matroska `
+            "$Tmp"
+
+        if ($LASTEXITCODE -eq 0) {
+            $origFile = Get-Item -LiteralPath $File
+            $origSize = $origFile.Length
+            $newSize = (Get-Item -LiteralPath $Tmp).Length
+
+            if ($newSize -lt $origSize) {
+                $timestamp = $origFile.LastWriteTime
+                Remove-Item -LiteralPath $File -Force
+                Move-Item -LiteralPath $Tmp -Destination $File -Force
+                (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
+                $origMB = [math]::Round($origSize / 1MB, 2)
+                $newMB = [math]::Round($newSize / 1MB, 2)
+                Write-Host "Replaced (remux): ${origMB}MB → ${newMB}MB"
+            }
+            else {
+                Write-Host "Skipped (remux): new file not smaller"
+                New-Item -Path $episode_skip_file -ItemType File -Force | Out-Null
+                Remove-Item -LiteralPath $Tmp -Force
+            }
+        }
+        else {
+            if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Force }
+        }
+
         $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
         return
     }
@@ -154,6 +212,8 @@ $AllFiles | ForEach-Object -Parallel {
         $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
         return
     }
+
+    if ($using:DebugMode) { Write-Host "[DEBUG] $File NeedsConvert=true vf=$vf" -ForegroundColor DarkGray }
 
     # Remove stale temp file
     if (Test-Path -LiteralPath $Tmp) {
@@ -187,7 +247,7 @@ $AllFiles | ForEach-Object -Parallel {
         -vf "$vf" `
         -c:v hevc_qsv `
         -b:v 1800k -maxrate 2000k -bufsize 4000k `
-        -c:a aac -b:a 160k `
+        -c:a copy `
         -c:s copy `
         -f matroska `
         "$Tmp"
@@ -240,27 +300,27 @@ Receive-Job $progressJob | Out-Null
 Remove-Job $progressJob
 
 Write-Host "All encoding tasks completed."
-Write-Host "Cleaning up leftover [Trans] sidecar files and directories..."
 
+#####################################################
 # Cleanup section
 #####################################################
 
-Write-Host "Cleaning up all [Cleaned] and [Trans] files and directories..."
+Write-Host "Cleaning up leftover [Trans] files..."
 
-# Remove ALL [Cleaned] files (including .mkv, .tmp, .nfo, .jpg, etc.)
-Get-ChildItem -Recurse -Include "*[Cleaned].*" -Force |
-    Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Recurse -File |
+    Where-Object {
+        $_.Name -match '\[Trans\]\.tmp' -or
+        $_.Name -match '\[Trans\]\.nfo' -or
+        $_.Name -match '\[Trans\]\.jpg'
+    } |
+    ForEach-Object {
+        Remove-Item -LiteralPath $_.FullName -Force
+    }
 
-# Remove [Cleaned] trickplay directories
-Get-ChildItem -Recurse -Directory -Include "*[Cleaned].trickplay" |
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Recurse -Directory |
+    Where-Object { $_.Name -match '\[Trans\]\.trickplay' } |
+    ForEach-Object {
+        Remove-Item -LiteralPath $_.FullName -Recurse -Force
+    }
 
-# Remove ALL [Trans] files (including .mkv, .tmp, .nfo, .jpg, etc.)
-Get-ChildItem -Recurse -Include "*[Trans].*" -Force |
-    Remove-Item -Force -ErrorAction SilentlyContinue
-
-# Remove [Trans] trickplay directories
-Get-ChildItem -Recurse -Directory -Include "*[Trans].trickplay" |
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
-Write-Host "Cleanup complete."
+Write-Host "All tasks complete."
