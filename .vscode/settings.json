@@ -12,12 +12,14 @@
         "choco",
         "copyts",
         "coreutils",
+        "DRYRUN",
         "episodedetails",
         "EXITCODES",
         "findcorrupt",
         "Kodi",
         "LASTEXITCODE",
         "mkvinfo",
+        "mkvmerge",
         "mkvpropedit",
         "mkvs",
         "mkvtoolnix",
@@ -26,6 +28,7 @@
         "noprint",
         "setairdate",
         "setreleasedate",
+        "showtitle",
         "xmlstarlet"
     ]
 }
