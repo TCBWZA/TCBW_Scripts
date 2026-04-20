@@ -73,11 +73,9 @@ function Format-Title {
 # Safe MKV title reader
 function Get-MkvTitle {
     param([string]$MkvPath)
-    Write-DebugLog "Reading MKV title via mkvinfo: $MkvPath"
-    $mkvinfo = & mkvinfo $MkvPath 2>$null
-    $match = [regex]::Match($mkvinfo, "Title:\s*(.+)")
-    if ($match.Success) { return $match.Groups[1].Value.Trim() }
-    return $null
+    Write-DebugLog "Reading MKV title via mkvmerge: $MkvPath"
+    $json = & mkvmerge --identify --identification-format json $MkvPath 2>$null | ConvertFrom-Json
+    return $json.container.properties.title
 }
 
 # Build MKV tags XML
