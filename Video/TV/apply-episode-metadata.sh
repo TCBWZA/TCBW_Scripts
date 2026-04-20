@@ -62,7 +62,7 @@ echo "AUDIT_LOG='$AUDIT_LOG' LOGGING_ENABLED=$LOGGING_ENABLED"
 # ------------------------------
 # Dependency checks
 # ------------------------------
-for cmd in xmlstarlet mkvinfo mkvpropedit; do
+for cmd in xmlstarlet mkvmerge mkvpropedit jq; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         echo "ERROR: Required command '$cmd' not found"
         exit 1
@@ -98,7 +98,8 @@ xml_get() {
 # ------------------------------
 get_mkv_title() {
     local mkv="$1"
-    mkvinfo "$mkv" 2>/dev/null | grep -Po 'Title:\s*\K.*' | head -n1 || true
+    mkvmerge --identify --identification-format json "$mkv" 2>/dev/null \
+        | jq -r '.container.properties.title // empty'
 }
 
 # ------------------------------
