@@ -8,10 +8,14 @@
     ],
     "cSpell.words": [
         "apikey",
+        "behindthescenes",
         "choco",
         "copyts",
+        "coreutils",
+        "episodedetails",
         "EXITCODES",
         "findcorrupt",
+        "Kodi",
         "LASTEXITCODE",
         "mkvinfo",
         "mkvpropedit",
@@ -19,6 +23,9 @@
         "mkvtoolnix",
         "moviefile",
         "nokey",
-        "noprint"
+        "noprint",
+        "setairdate",
+        "setreleasedate",
+        "xmlstarlet"
     ]
 }
