@@ -352,7 +352,7 @@ Get-ChildItem -LiteralPath $Root -Recurse -File -Filter "*.mkv" | ForEach-Object
 
     if ($isCorrupt -or $isNoAudio) {
 
-        $corruptFound = $true
+        $script:corruptFound = $true
         $reason = if ($isNoAudio) { "NO AUDIO" } else { "CORRUPT" }
         Write-Host "${reason} MKV: $File" -ForegroundColor Red
 

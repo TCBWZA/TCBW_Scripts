@@ -337,7 +337,7 @@ Get-ChildItem -LiteralPath $Root -Recurse -File -Filter "*.mkv" | ForEach-Object
 
     if (Test-MkvCorrupt -Path $File) {
 
-        $corruptFound = $true
+        $script:corruptFound = $true
         Write-Host "CORRUPT MKV: $File" -ForegroundColor Red
 
         if ($Audit) {
