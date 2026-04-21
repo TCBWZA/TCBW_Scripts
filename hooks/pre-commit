@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# pre-commit hook: blocks commits containing personal names or hardcoded credentials.
+# Install: copy to .git/hooks/pre-commit and make executable.
+#   cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+FOUND=0
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null)
+[[ -z "$STAGED" ]] && exit 0
+
+echo "--- Pre-commit security check ---"
+
+while IFS= read -r file; do
+    CONTENT=$(git show ":$file" 2>/dev/null) || continue
+
+    # 1. Personal names
+    # Pattern built from parts so the literal names don't appear in this file.
+    NAME1="dun""can"; NAME2="mac""millan"
+    MATCHES=$(printf '%s' "$CONTENT" | grep -inE "\b($NAME1|$NAME2)\b" || true)
+    if [[ -n "$MATCHES" ]]; then
+        echo "[BLOCKED] Personal name in: $file"
+        printf '%s\n' "$MATCHES" | sed 's/^/  /'
+        FOUND=1
+    fi
+
+    # 2. Hardcoded API keys / tokens
+    # Matches variable assignments whose value is a non-placeholder string of 16+ chars.
+    CRED_RE='(api[_-]?key|api[_-]?token|access[_-]?token|secret[_-]?key|auth[_-]?token)[[:space:]]*[=:][[:space:]]*["'"'"']?[A-Za-z0-9_/+=\-]{16,}["'"'"']?'
+    SAFE_RE='(your[_-]?(api|key|token)|api[_-]?key[_-]?here|placeholder|change[_-]?me|<[^>]+>|example|dummy|test[_-]?key)'
+    MATCHES=$(printf '%s' "$CONTENT" | grep -inE "$CRED_RE" | grep -ivE "$SAFE_RE" || true)
+    if [[ -n "$MATCHES" ]]; then
+        echo "[BLOCKED] Possible hardcoded credential in: $file"
+        printf '%s\n' "$MATCHES" | sed 's/^/  /'
+        FOUND=1
+    fi
+
+done <<< "$STAGED"
+
+if [[ $FOUND -ne 0 ]]; then
+    echo ""
+    echo "Commit blocked. Remove or sanitize sensitive content before committing."
+    echo "To bypass intentionally: git commit --no-verify"
+    exit 1
+fi
+
+echo "Security check passed."
+exit 0

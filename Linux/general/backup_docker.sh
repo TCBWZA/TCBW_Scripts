@@ -1,11 +1,10 @@
 #!/bin/bash
 
 ### --- CONFIGURATION --- ###
-### Make sure to adjust these variables before running the script
-### Confirm that all necessary tools (tar, pigz, zstd) are installed and available in the PATH
+### Make sure that pigz and other requirements are installed.
 
 CTID=100
-SOURCE="/sysdata_docker"
+SOURCE="/mnt/sysdata_docker"
 DEST="/mnt/nmedia/pve/docker-backup.tar"
 COMPRESSOR="pigz"   # options: pigz | zstd | gzip
 ### ---------------------- ###

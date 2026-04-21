@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Shell scripts and git hooks must always use LF
+*.sh text eol=lf
+hooks/* text eol=lf
