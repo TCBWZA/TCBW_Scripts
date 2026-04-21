@@ -6,6 +6,25 @@ Utility scripts for the Proxmox host. All scripts are intended to run directly o
 
 ---
 
+## Requirements
+
+Install once on the Proxmox host before running these scripts:
+
+```bash
+# rsync - required by all sync_*.sh scripts
+apt install rsync
+
+# pigz - parallel gzip for backup_docker.sh (recommended)
+apt install pigz
+
+# zstd - alternative compressor for backup_docker.sh
+apt install zstd
+```
+
+`pct` is part of Proxmox VE and is already present on any Proxmox host. `tar`, `gzip`, `find`, and standard coreutils (`chown`, `chmod`) are pre-installed on Debian/Ubuntu.
+
+---
+
 ## Scripts
 
 ### sync.sh
@@ -35,6 +54,8 @@ Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/nmedia/Media/Video/T
 ./sync_tv.sh
 ```
 
+**Requirements:** `rsync`
+
 ---
 
 ### sync_etv.sh
@@ -44,6 +65,8 @@ Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/emedia/Media/Video/T
 ```bash
 ./sync_etv.sh
 ```
+
+**Requirements:** `rsync`
 
 ---
 
@@ -55,6 +78,8 @@ Rsyncs the movie library from `/main/media/Video/Movies/` to `/mnt/nmedia/media/
 ./sync_movies.sh
 ```
 
+**Requirements:** `rsync`
+
 ---
 
 ### sync_anime.sh
@@ -64,6 +89,8 @@ Rsyncs the anime library from `/main/media/Video/Anime/` to `/mnt/nmedia/Media/V
 ```bash
 ./sync_anime.sh
 ```
+
+**Requirements:** `rsync`
 
 ---
 
@@ -75,6 +102,8 @@ Rsyncs the audiobook library from `/main/media/audiobooks/` to `/mnt/nmedia/Medi
 ./sync_audiobooks.sh
 ```
 
+**Requirements:** `rsync`
+
 ---
 
 ### sync_books.sh
@@ -84,6 +113,8 @@ Rsyncs the book library from `/main/media/books/` to `/mnt/nmedia/Media/books`. 
 ```bash
 ./sync_books.sh
 ```
+
+**Requirements:** `rsync`
 
 ---
 
@@ -95,6 +126,8 @@ Rsyncs system backup data from `/mnt/sysdata_backups/` to `/mnt/nmedia/DATA/sysd
 ./sync_backups.sh
 ```
 
+**Requirements:** `rsync`
+
 ---
 
 ### sync_docker.sh
@@ -105,7 +138,7 @@ Stops LXC container 100 (if running), rsyncs the Docker data volume from `/mnt/s
 ./sync_docker.sh
 ```
 
-**Requirements:** `pct` (Proxmox host only)
+**Requirements:** `rsync`, `pct` (Proxmox host only)
 
 ---
 
@@ -125,7 +158,13 @@ Supports three compressors - configure the `COMPRESSOR` variable at the top of t
 ./backup_docker.sh
 ```
 
-**Requirements:** `pct`, and whichever compressor is configured (`pigz` or `zstd`)
+**Requirements:** `pct` (Proxmox host only), plus whichever compressor is configured:
+
+```bash
+apt install pigz   # recommended
+# or
+apt install zstd
+```
 
 ---
 

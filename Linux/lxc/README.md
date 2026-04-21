@@ -30,3 +30,30 @@ Updates the Proxmox host itself and then updates all LXC containers in parallel 
 ```
 
 > Logs for each container are written to `/var/log/lxc-update-<CTID>.log` on the host.
+
+---
+
+### shrinkvol.sh
+
+Interactive utility that shrinks an LXC container's root logical volume (LVM). Prompts for the container VMID and target size, then stops the container, reduces the LV and filesystem, updates the container config, and optionally restarts the container.
+
+**What it does:**
+
+- Lists all containers via `pct list` so you can confirm the VMID.
+- Stops the container if running.
+- Locates the logical volume (`vm-<VMID>-disk-0`) via `lvdisplay`.
+- Activates the LV, runs `lvreduce -r` (resizes filesystem and LV together), then deactivates.
+- Updates the `rootfs` size entry in `/etc/pve/lxc/<VMID>.conf`.
+- Prompts whether to restart the container after completion.
+
+> **Warning:** Shrinking a filesystem is destructive and cannot be undone. Always have a backup before running this script. Use `backup_docker.sh` or Proxmox's built-in snapshot/backup tools first.
+
+**Requirements:** `pct` (Proxmox host only), `lvm2`
+
+```bash
+apt install lvm2
+```
+
+```bash
+./shrinkvol.sh
+```
