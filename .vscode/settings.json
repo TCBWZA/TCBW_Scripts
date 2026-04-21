@@ -26,10 +26,12 @@
         "mkvtoolnix",
         "moviefile",
         "nokey",
+        "nonfo",
         "noprint",
         "setairdate",
         "setreleasedate",
         "showtitle",
+        "writable",
         "xmlstarlet"
     ]
 }
