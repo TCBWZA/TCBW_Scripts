@@ -500,9 +500,11 @@ Bash utility that sets file timestamps on TV episode video and NFO file pairs ba
 **What it does:**
 
 - Recursively scans for MKV and MP4 video files.
-- For each video, finds the matching `<basename>.nfo` file and parses the `<aired>` element (YYYY-MM-DD format).
+- For each video, finds the matching `<basename>.nfo` and parses the `<aired>` element (YYYY-MM-DD format).
 - Sets both the video file and the NFO file `mtime` to midday (12:00:00) on the aired date.
-- If the NFO has no recognisable date, uses the earliest existing `mtime` of the two files and sets both to midday on that day.
+- Rejects NFO `<aired>` dates more than 30 days in the future as corrupt metadata (e.g. typos like `2038-01-01`); retroactively corrects files already stamped by a previous bad run.
+- If no valid date is found in the NFO, falls back to the earliest existing `mtime` of the two files. If those timestamps are also more than 30 days in the future, uses the parent folder creation/birth date instead.
+- A final guard skips (with a warning) any file whose fully resolved date is still more than 30 days in the future.
 - Skips video files with no matching NFO.
 
 **Requirements:**
@@ -510,6 +512,12 @@ Bash utility that sets file timestamps on TV episode video and NFO file pairs ba
 - `xmlstarlet`
 - Bash 4+
 - GNU coreutils (`stat -c`, `date -d`) or macOS equivalents
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `--debug` | Enable verbose debug output |
 
 **Execution:**
 
@@ -532,7 +540,9 @@ PowerShell equivalent of `setairdate.sh`. Sets file timestamps on TV episode vid
 - Recursively scans for MKV and MP4 video files.
 - For each video, finds the matching `<basename>.nfo` and reads the `<aired>` element.
 - Sets both the video file and the NFO file `CreationTime` and `LastWriteTime` to midday (12:00:00) on the aired date.
-- If the NFO contains no recognisable date, uses the earliest existing timestamp across both files and sets both to midday on that day.
+- Rejects NFO `<aired>` dates more than 30 days in the future as corrupt metadata (e.g. typos like `2038-01-01`); retroactively corrects files already stamped by a previous bad run.
+- If no valid date is found in the NFO, falls back to the earliest existing timestamp across both files. If those timestamps are also more than 30 days in the future, uses the parent folder `CreationTime` instead.
+- A final guard skips (with a warning) any file whose fully resolved date is still more than 30 days in the future.
 - Skips video files with no matching NFO.
 - Dry-run mode (`-DryRun`) performs all processing steps but writes no timestamp changes.
 
