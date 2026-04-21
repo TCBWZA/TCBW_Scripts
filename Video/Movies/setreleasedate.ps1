@@ -25,6 +25,11 @@
     existing CreationTime and LastWriteTime of both files and sets both to
     midday on the day of the earliest timestamp found.
 
+.PARAMETER NoNfo
+    Optional path to a file. When provided, the full path of each video that
+    has no matching NFO is appended to this file (one path per line). The file
+    is created if it does not exist. The parent directory must already exist.
+
 .PARAMETER DryRun
     Performs all processing steps but does not modify any file timestamps.
     Implies no changes are written.
@@ -48,13 +53,28 @@
 
 param(
     [switch]$DryRun,
-    [switch]$Debug
+    [switch]$Debug,
+    [string]$NoNfo = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $DebugMode = $Debug.IsPresent
+
+# Validate -NoNfo path if supplied
+if ($NoNfo -ne '') {
+    $noNfoLeaf   = [System.IO.Path]::GetFileName($NoNfo)
+    $noNfoParent = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($NoNfo))
+    if ([string]::IsNullOrWhiteSpace($noNfoLeaf) -or $noNfoLeaf -eq '.' -or $noNfoLeaf -eq '..') {
+        Write-Error "-NoNfo filename '$NoNfo' is not valid."
+        exit 1
+    }
+    if (-not (Test-Path -LiteralPath $noNfoParent -PathType Container)) {
+        Write-Error "-NoNfo parent directory '$noNfoParent' does not exist."
+        exit 1
+    }
+}
 
 # ---------------------------------------------------------------------------
 # Logging helpers
@@ -137,6 +157,7 @@ $videoFiles = Get-ChildItem -LiteralPath $rootPath -Recurse -File |
 
 $processed = 0
 $skipped   = 0
+$filtered  = 0
 $errors    = 0
 
 foreach ($video in $videoFiles) {
@@ -149,7 +170,7 @@ foreach ($video in $videoFiles) {
     $pathParts = $video.FullName.Split([System.IO.Path]::DirectorySeparatorChar)
     if ($pathParts | Where-Object { $_ -ieq 'extras' }) {
         Write-DebugLog "  Inside 'extras' directory - skipping"
-        $skipped++
+        $filtered++
         continue
     }
 
@@ -163,12 +184,24 @@ foreach ($video in $videoFiles) {
     }
     if ($isExtra) {
         Write-DebugLog "  Non-feature suffix detected - skipping"
-        $skipped++
+        $filtered++
         continue
     }
 
     if (-not (Test-Path -LiteralPath $nfoPath)) {
+        # Fall back to movie.nfo in the same directory
+        $movieNfoPath = [System.IO.Path]::Combine($video.DirectoryName, 'movie.nfo')
+        if (Test-Path -LiteralPath $movieNfoPath) {
+            Write-DebugLog "  '$([System.IO.Path]::GetFileName($nfoPath))' not found; using movie.nfo"
+            $nfoPath = $movieNfoPath
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $nfoPath)) {
         Write-DebugLog "  No NFO found - skipping"
+        if ($NoNfo -ne '') {
+            Add-Content -LiteralPath $NoNfo -Value $video.FullName -Encoding UTF8
+        }
         $skipped++
         continue
     }
@@ -305,4 +338,4 @@ foreach ($video in $videoFiles) {
 }
 
 Write-Host ""
-Write-Host "Done.  Processed: $processed   Skipped (no NFO): $skipped   Errors: $errors"
+Write-Host "Done.  Processed: $processed   Skipped (no NFO): $skipped   Filtered (extras/trailers): $filtered   Errors: $errors"

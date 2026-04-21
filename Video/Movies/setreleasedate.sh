@@ -30,6 +30,14 @@
 # USAGE
 #   ./setreleasedate.sh
 #   ./setreleasedate.sh --debug
+#   ./setreleasedate.sh --nonfo <file>
+#
+# OPTIONS
+#   --nonfo <file>
+#       Append the full path of each video skipped due to a missing NFO to
+#       <file>. The file is created if it does not exist. <file> must be a
+#       valid Linux filename (no null bytes; not '.' or '..'; the parent
+#       directory must exist and be writable).
 # =============================================================================
 
 # Reset any inherited shell options (Proxmox root shells often force -eu)
@@ -43,10 +51,35 @@ IFS=$'\n\t'
 # ---------------------------------------------------------------------------
 
 DEBUG=0
+NONFO_FILE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --debug) DEBUG=1 ;;
+        --nonfo)
+            if [[ $# -lt 2 ]]; then
+                printf 'ERROR: --nonfo requires a file argument\n' >&2
+                exit 1
+            fi
+            shift
+            NONFO_FILE="$1"
+            # Validate: no null bytes (bash strings can't contain them anyway),
+            # not '.' or '..', and the parent directory must exist and be writable.
+            _nonfo_base=$(basename "$NONFO_FILE")
+            _nonfo_dir=$(dirname "$NONFO_FILE")
+            if [[ -z "$_nonfo_base" || "$_nonfo_base" == '.' || "$_nonfo_base" == '..' ]]; then
+                printf 'ERROR: --nonfo filename "%s" is not valid\n' "$NONFO_FILE" >&2
+                exit 1
+            fi
+            if [[ ! -d "$_nonfo_dir" ]]; then
+                printf 'ERROR: --nonfo parent directory "%s" does not exist\n' "$_nonfo_dir" >&2
+                exit 1
+            fi
+            if [[ ! -w "$_nonfo_dir" ]]; then
+                printf 'ERROR: --nonfo parent directory "%s" is not writable\n' "$_nonfo_dir" >&2
+                exit 1
+            fi
+            ;;
         *)
             printf 'Unknown argument: %s\n' "$1" >&2
             exit 1
@@ -132,6 +165,7 @@ done
 
 processed=0
 skipped=0
+filtered=0
 errors=0
 
 # Suffixes that identify non-main-feature content (lower-cased for comparison)
@@ -156,7 +190,7 @@ while IFS= read -r -d '' video; do
     # Skip files inside an 'extras' directory (any level)
     if printf '%s' "$video" | grep -iqE '(^|/)extras/'; then
         log_debug "  Inside 'extras' directory - skipping"
-        skipped=$((skipped + 1))
+        filtered=$((filtered + 1))
         continue
     fi
 
@@ -171,12 +205,24 @@ while IFS= read -r -d '' video; do
     done
     if [[ $is_extra -eq 1 ]]; then
         log_debug "  Non-feature suffix detected - skipping"
-        skipped=$((skipped + 1))
+        filtered=$((filtered + 1))
         continue
     fi
 
     if [[ ! -f "$nfo" ]]; then
+        # Fall back to movie.nfo in the same directory
+        _movie_nfo="$(dirname "$video")/movie.nfo"
+        if [[ -f "$_movie_nfo" ]]; then
+            log_debug "  '$(basename "$nfo")' not found; using movie.nfo"
+            nfo="$_movie_nfo"
+        fi
+    fi
+
+    if [[ ! -f "$nfo" ]]; then
         log_debug "  No NFO found - skipping"
+        if [[ -n "$NONFO_FILE" ]]; then
+            printf '%s\n' "$video" >> "$NONFO_FILE"
+        fi
         skipped=$((skipped + 1))
         continue
     fi
@@ -304,5 +350,5 @@ while IFS= read -r -d '' video; do
 
 done < <(find . -type f \( -iname '*.mkv' -o -iname '*.mp4' \) -print0)
 
-printf '\nDone.  Processed: %d   Skipped (no NFO): %d   Errors: %d\n' \
-    "$processed" "$skipped" "$errors"
+printf '\nDone.  Processed: %d   Skipped (no NFO): %d   Filtered (extras/trailers): %d   Errors: %d\n' \
+    "$processed" "$skipped" "$filtered" "$errors"
