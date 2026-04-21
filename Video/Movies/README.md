@@ -437,17 +437,28 @@ Bash utility that sets file timestamps on movie video and NFO file pairs based o
 **What it does:**
 
 - Recursively scans for MKV and MP4 video files.
-- For each video, finds the matching `<basename>.nfo` and parses `<premiered>` (preferred, YYYY-MM-DD) or `<year>` (fallback, resolved to January 1 of that year).
+- For each video, finds `<basename>.nfo`; falls back to `movie.nfo` in the same directory if the named NFO is absent.
+- Parses `<premiered>` (preferred, YYYY-MM-DD) or `<year>` (fallback, resolved to January 1 of that year).
 - Sets both the video file and the NFO file `mtime` to midday (12:00:00) on the resolved date.
-- If the NFO contains no recognisable date, uses the earliest existing `mtime` of the two files.
-- Skips files in `extras` subdirectories and files with non-feature suffixes (`-trailer`, `-featurette`, `-behindthescenes`, etc.).
-- Skips video files with no matching NFO.
+- Rejects NFO dates more than 30 days in the future as corrupt metadata (e.g. typos like `2038-01-01`). When the `<premiered>` year is suspect but `<year>` is earlier and valid, substitutes that year while keeping the original month and day.
+- If no valid date is found in the NFO, falls back to the earliest existing `mtime` of the two files. If those timestamps are also more than 30 days in the future (e.g. already stamped by a previous bad run), uses the parent folder creation/birth date instead.
+- A final guard skips (with a warning) any file whose fully resolved date is still more than 30 days in the future.
+- Skips files in `extras` subdirectories and files with non-feature suffixes (`-trailer`, `-featurette`, `-behindthescenes`, etc.) - these are counted as **Filtered**, not Skipped.
+- Skips video files with no matching NFO - these are counted as **Skipped (no NFO)** and optionally recorded via `--nonfo`.
+- Summary line reports `Processed`, `Skipped (no NFO)`, `Filtered (extras/trailers)`, and `Errors` separately.
 
 **Requirements:**
 
 - `xmlstarlet`
 - Bash 4+
 - GNU coreutils (`stat -c`, `date -d`) or macOS equivalents
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `--debug` | Enable verbose debug output |
+| `--nonfo <file>` | Append the path of each video with no matching NFO to `<file>` (created if absent; parent directory must exist) |
 
 **Execution:**
 
@@ -457,6 +468,12 @@ Bash utility that sets file timestamps on movie video and NFO file pairs based o
 
 # With debug output
 ./setreleasedate.sh --debug
+
+# Record files with no NFO
+./setreleasedate.sh --nonfo /tmp/missing_nfo.txt
+
+# Combined
+./setreleasedate.sh --nonfo /tmp/missing_nfo.txt --debug
 ```
 
 ---
@@ -468,12 +485,15 @@ PowerShell equivalent of `setreleasedate.sh`. Sets file timestamps on movie vide
 **What it does:**
 
 - Recursively scans for MKV and MP4 video files.
-- For each video, finds the matching `<basename>.nfo` and reads `<premiered>` (preferred) or `<year>` (fallback, resolved to January 1 of that year).
+- For each video, finds `<basename>.nfo`; falls back to `movie.nfo` in the same directory if the named NFO is absent.
+- Reads `<premiered>` (preferred) or `<year>` (fallback, resolved to January 1 of that year).
 - Sets both the video file and the NFO file `CreationTime` and `LastWriteTime` to midday (12:00:00) on the resolved date.
-- If the NFO contains no recognisable date, uses the earliest existing timestamp across both files.
-- Skips files in `extras` subdirectories and files with non-feature suffixes (`-trailer`, `-featurette`, `-behindthescenes`, etc.).
-- Skips video files with no matching NFO.
-- Dry-run mode (`-DryRun`) performs all processing steps but writes no timestamp changes.
+- Rejects NFO dates more than 30 days in the future as corrupt metadata (e.g. typos like `2038-01-01`). When the `<premiered>` year is suspect but `<year>` is earlier and valid, substitutes that year while keeping the original month and day.
+- If no valid date is found in the NFO, falls back to the earliest existing timestamp across both files. If those timestamps are also more than 30 days in the future (e.g. already stamped by a previous bad run), uses the parent folder `CreationTime` instead.
+- A final guard skips (with a warning) any file whose fully resolved date is still more than 30 days in the future.
+- Skips files in `extras` subdirectories and files with non-feature suffixes (`-trailer`, `-featurette`, `-behindthescenes`, etc.) - these are counted as **Filtered**, not Skipped.
+- Skips video files with no matching NFO - these are counted as **Skipped (no NFO)** and optionally recorded via `-NoNfo`.
+- Summary line reports `Processed`, `Skipped (no NFO)`, `Filtered (extras/trailers)`, and `Errors` separately.
 
 **Parameters:**
 
@@ -481,6 +501,7 @@ PowerShell equivalent of `setreleasedate.sh`. Sets file timestamps on movie vide
 |---|---|
 | `-DryRun` | Preview mode; no file timestamps are modified. |
 | `-Debug` | Enables verbose debug output to the console. |
+| `-NoNfo <path>` | Append the path of each video with no matching NFO to `<path>` (created if absent; parent directory must exist). Optional. |
 
 **Execution:**
 
@@ -494,6 +515,12 @@ Set-Location "Z:\Media\Movies"
 
 # With debug output
 .\setreleasedate.ps1 -DryRun -Debug
+
+# Record files with no NFO
+.\setreleasedate.ps1 -NoNfo C:\temp\missing_nfo.txt
+
+# Combined
+.\setreleasedate.ps1 -NoNfo C:\temp\missing_nfo.txt -DryRun -Debug
 ```
 
 ---
