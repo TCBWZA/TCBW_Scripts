@@ -93,7 +93,7 @@ build_tags_xml() {
     {
         echo "<Tags>"
         echo "  <Tag>"
-        for key in TITLE YEAR TAGLINE PLOT PREMIERED; do
+        for key in TITLE DATE_RELEASED TAGLINE PLOT PREMIERED; do
             local val="${TAGS[$key]}"
             local esc
             esc=$(printf '%s' "$val" | xmlstarlet esc)
@@ -215,8 +215,10 @@ while IFS= read -r -d '' mkv; do
 
     if [[ -s "$tags_tmp" ]]; then
         ex_title=$(get_mkv_tag "$tags_tmp" "TITLE")
-        ex_year=$(get_mkv_tag "$tags_tmp" "YEAR")
-        log_debug "Existing TITLE=$ex_title YEAR=$ex_year"
+        ex_year=$(get_mkv_tag "$tags_tmp" "DATE_RELEASED")
+        # Also check legacy YEAR tag written by older versions of this script
+        [[ -z "$ex_year" ]] && ex_year=$(get_mkv_tag "$tags_tmp" "YEAR")
+        log_debug "Existing TITLE=$ex_title DATE_RELEASED=$ex_year"
 
         if [[ "$ex_title" == "$title" && "$ex_year" == "$year" ]]; then
             echo "Skipping: Already processed."
@@ -231,7 +233,7 @@ while IFS= read -r -d '' mkv; do
     # Build tag map
     # ------------------------------
     TAGS[TITLE]="$title"
-    TAGS[YEAR]="$year"
+    TAGS[DATE_RELEASED]="$year"
     TAGS[TAGLINE]="$tagline"
     TAGS[PLOT]="$plot"
     TAGS[PREMIERED]="$premiered"

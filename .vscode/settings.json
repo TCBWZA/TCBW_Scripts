@@ -39,6 +39,7 @@
         "nokey",
         "nonfo",
         "noprint",
+        "remuxed",
         "rootfs",
         "setairdate",
         "setreleasedate",

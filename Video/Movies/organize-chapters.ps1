@@ -56,7 +56,7 @@ function Invoke-OrganizeDirectory {
     $chapterFiles = Get-ChildItem -LiteralPath $Dir -Filter "*_chapters.xml" -File -ErrorAction SilentlyContinue
 
     if ($chapterFiles) {
-        $dest = Join-Path $Dir "chapters"
+        $dest = Join-Path $Dir ".chapters"
         if ($Debug) { Write-Host "[DEBUG] Creating: $dest" }
         if (-not $DryRun) {
             New-Item -ItemType Directory -Path $dest -Force | Out-Null
