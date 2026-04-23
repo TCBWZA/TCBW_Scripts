@@ -1,3 +1,40 @@
+<#
+.SYNOPSIS
+    Moves chapter XML files into per-folder chapters subdirectories.
+
+.DESCRIPTION
+    Recursively scans a directory tree for *_chapters.xml files and moves them
+    into a chapters/ subdirectory alongside the source files. Skips directories
+    containing a .skip marker file.
+
+    Features:
+    - Recursive directory traversal
+    - Dry-run mode for safe preview
+    - Debug output with path details
+    - .skip directory marker support
+
+.PARAMETER Root
+    Root directory to scan. Defaults to the current directory.
+
+.PARAMETER DryRun
+    Preview changes without moving any files.
+
+.PARAMETER Debug
+    Enables verbose debug output.
+
+.EXAMPLE
+    PS> .\organize-chapters.ps1
+
+.EXAMPLE
+    PS> .\organize-chapters.ps1 -DryRun
+
+.EXAMPLE
+    PS> .\organize-chapters.ps1 -Root "D:\TV" -DryRun
+
+.NOTES
+    - Run from the root directory containing your TV show folders, or pass -Root.
+    - Place a .skip file in any directory to exclude it and all subdirectories.
+#>
 param(
     [string]$Root    = ".",
     [switch]$DryRun,
