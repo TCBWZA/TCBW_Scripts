@@ -166,6 +166,7 @@ done
 processed=0
 skipped=0
 filtered=0
+already=0
 errors=0
 
 # Suffixes that identify non-main-feature content (lower-cased for comparison)
@@ -355,6 +356,20 @@ while IFS= read -r -d '' video; do
     fi
 
     ts_str="${target_date} 12:00:00"
+
+    # Skip if both files already carry the target timestamp
+    _expected_epoch=$(date -d "$ts_str" '+%s' 2>/dev/null \
+        || date -jf '%Y-%m-%d %H:%M:%S' "$ts_str" '+%s' 2>/dev/null \
+        || echo 0)
+    if [[ $_expected_epoch -gt 0 \
+        && $(get_mtime_epoch "$video") -eq $_expected_epoch \
+        && $(get_mtime_epoch "$nfo") -eq $_expected_epoch ]]; then
+        log_debug "  Already at target timestamp - skipping"
+        printf '%s\n' "Skipping: Already processed."
+        already=$((already + 1))
+        continue
+    fi
+
     printf '%s  ->  %s\n' "$video" "$ts_str"
 
     if set_timestamp "$video" "$ts_str" && set_timestamp "$nfo" "$ts_str"; then
@@ -366,5 +381,5 @@ while IFS= read -r -d '' video; do
 
 done < <(find . -type f \( -iname '*.mkv' -o -iname '*.mp4' \) -print0)
 
-printf '\nDone.  Processed: %d   Skipped (no NFO): %d   Filtered (extras/trailers): %d   Errors: %d\n' \
-    "$processed" "$skipped" "$filtered" "$errors"
+printf '\nDone.  Processed: %d   Already done: %d   Skipped (no NFO): %d   Filtered (extras/trailers): %d   Errors: %d\n' \
+    "$processed" "$already" "$skipped" "$filtered" "$errors"
