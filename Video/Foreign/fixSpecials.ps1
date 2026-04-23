@@ -1,3 +1,36 @@
+<#
+.SYNOPSIS
+    Renames Specials folders to Season 00, merging content if Season 00 already exists.
+
+.DESCRIPTION
+    Recursively scans the current directory for folders named "Specials" and renames
+    them to "Season 00" to conform to standard media library naming. If a Season 00
+    folder already exists in the same parent, the contents of Specials are merged into
+    it and the empty Specials folder is removed.
+
+    Features:
+    - Dry-run mode for safe preview
+    - Timestamped audit log written to the working directory
+    - Debug output with detailed operation trace
+    - Safe merge handling when Season 00 already exists
+
+.PARAMETER DryRun
+    Preview changes without renaming or moving any files.
+
+.PARAMETER Debug
+    Enables verbose debug output with timestamps.
+
+.EXAMPLE
+    PS> .\fixSpecials.ps1
+
+.EXAMPLE
+    PS> .\fixSpecials.ps1 -DryRun
+
+.NOTES
+    - Run from the root directory containing your foreign-language show folders.
+    - An audit log is written to the working directory with a timestamp in the filename.
+    - Use -DryRun first to preview changes before applying them.
+#>
 param(
     [switch]$DryRun,
     [switch]$Debug

@@ -1,32 +1,38 @@
 ﻿<#
-    TV Show Folder Cleaner & Dedupe Script
-    ---------------------------------------
+.SYNOPSIS
+    Removes duplicate episodes and associated sidecar files from video folders.
 
-    This script recursively scans TV show folders, removes duplicate episodes,
-    and deletes associated sidecar files based on S##E## or ##x## pattern matching.
+.DESCRIPTION
+    Recursively scans video folders, removes duplicate episodes, and deletes
+    associated sidecar files based on S##E## or ##x## episode pattern matching.
+    When duplicates are found, the largest file is kept and others are removed.
 
     How it works:
-        1. Scans all files recursively for S##E##, S##E###, ##x##, #x##, or ##x### patterns
-           (e.g., S01E05, S18E012, 01x05, 1x05, 01x012)
-        2. Groups files by their episode code within the same directory
-        3. When duplicates exist (same episode, different extensions/names),
-           keeps the largest file and deletes others
-        4. Removes associated sidecar files (.nfo, .srt, etc.)
+    - Scans all files recursively for S##E##, S##E###, ##x##, #x##, or ##x### patterns
+      (e.g., S01E05, S18E012, 01x05, 1x05, 01x012)
+    - Groups files by their episode code within the same directory
+    - When duplicates exist, keeps the largest file and deletes others
+    - Removes associated sidecar files (.nfo, .srt, etc.)
 
-    Supported video extensions:
-        .mkv, .mp4, .avi, .ts
+    Supported video extensions: .mkv, .mp4, .avi, .ts
 
-    Dedupe priority (highest to lowest):
-        MKV → MP4 → TS → AVI
+    Dedupe priority (highest to lowest): MKV → MP4 → TS → AVI
 
-    AUDIT MODE:
-        Use -Audit to run the script in "safe mode" where NOTHING is deleted.
-        Instead, the script will show what *would* be removed.
+.PARAMETER Audit
+    Run in safe mode - shows what would be removed without deleting anything.
 
-        Example:
-            .\dedup.ps1 -Audit
+.PARAMETER Debug
+    Enables verbose debug output with timestamps.
 
-        Without -Audit, the script performs real deletions.
+.EXAMPLE
+    PS> .\dedup.ps1
+
+.EXAMPLE
+    PS> .\dedup.ps1 -Audit
+
+.NOTES
+    - Run from the root directory containing your video folders.
+    - Use -Audit first to preview changes before performing real deletions.
 #>
 
 param(
