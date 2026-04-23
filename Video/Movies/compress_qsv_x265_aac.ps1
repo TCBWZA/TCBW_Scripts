@@ -15,7 +15,8 @@
     - Requires ffmpeg and ffprobe on PATH.
     - Requires an Intel CPU or GPU with Quick Sync Video support.
     - Files tagged [Cleaned] or [Trans] are deleted automatically.
-    - A .skip_<basename> marker is created when output is not smaller.
+    - A .skip directory marker skips the entire folder. A .skip_<basename> per-file marker skips that specific file.
+    - A .skip_<basename> marker is created automatically when output is not smaller.
 
 .PARAMETER Debug
     Enable verbose debug output.
@@ -58,6 +59,24 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
         return
     }
 
+    # Skip if directory .skip marker exists
+    if (Test-Path -LiteralPath (Join-Path $Dir ".skip")) {
+        Write-Host "Skipping $File -- .skip directory marker found"
+        return
+    }
+
+    # Skip if per-file .skip_<basename> marker exists
+    if (Test-Path -LiteralPath (Join-Path $Dir ".skip_$Base")) {
+        Write-Host "Skipping $File -- .skip_$Base per-file marker found"
+        return
+    }
+
+    # Skip 2160p or higher resolution videos (filename match)
+    if ($Base -imatch '2160[pP]\]') {
+        Write-Host "Skipping $File -- 4K (or higher) video match (filename)"
+        return
+    }
+
     Write-Host "Checking $File"
 
     # ffprobe checks
@@ -72,6 +91,15 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
 
     $field = ffprobe -v error -select_streams v:0 `
         -show_entries stream=field_order -of default=nw=1:nk=1 "$File"
+
+    $vheight = ffprobe -v error -select_streams v:0 `
+        -show_entries stream=height -of default=nw=1:nk=1 "$File"
+
+    # SKIP: high resolution (> 1100p) -- ffprobe secondary check, supplements filename check
+    if ([int]$vheight -gt 1100) {
+        Write-Host "Skipping $File -- high-resolution video detected (height=$vheight)"
+        return
+    }
 
     # Fast checks first, skip if true
     $NeedsConvert = $false
@@ -173,8 +201,8 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
             else {
                 $origMB = [math]::Round($origSize / 1MB, 2)
                 $newMB = [math]::Round($newSize / 1MB, 2)
-                Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip file"
-                $skipFile = Join-Path (Split-Path -LiteralPath $File) '.skip'
+                Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_<basename> marker"
+                $skipFile = Join-Path (Split-Path -LiteralPath $File) ".skip_$([System.IO.Path]::GetFileNameWithoutExtension($File))"
                 New-Item -LiteralPath $skipFile -ItemType File -Force | Out-Null
                 Remove-Item -LiteralPath $Tmp -Force
             }

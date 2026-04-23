@@ -1,4 +1,45 @@
-﻿param(
+﻿<#
+.SYNOPSIS
+    Transcodes foreign-language video files to HEVC/AAC using ffmpeg with Intel QSV hardware encoding.
+
+.DESCRIPTION
+    Recursively scans the current directory for MKV, MP4, and TS files over 1 GB and
+    transcodes them to HEVC (H.265) video with AAC audio using ffmpeg and the Intel
+    Quick Sync Video (hevc_qsv) hardware encoder. Files already in the desired format
+    are skipped. Supports parallel encoding with a configurable job limit.
+
+    Features:
+    - Parallel encoding with configurable job limit
+    - Progress bar tracking
+    - Debug mode output
+    - Pre-flight tool availability checks
+    - Disk space guard before processing
+    - Fast remux path for non-MKV containers already in HEVC
+    - High-resolution (> 1100p) and AV1 guards
+    - Interlace detection and deinterlacing via QSV
+    - Atomic replacement with size validation
+    - Temp file cleanup on interruption
+    - Per-file and parent-directory .skip marker support
+    - Configurable temp directory for intermediate files
+
+.PARAMETER Debug
+    Enables verbose debug output.
+
+.EXAMPLE
+    PS> .\compress_qsv_x265_aac.ps1
+
+.EXAMPLE
+    PS> .\compress_qsv_x265_aac.ps1 -Debug
+
+.NOTES
+    - Requires PowerShell 7+, ffmpeg, and ffprobe on PATH.
+    - Intel Quick Sync Video hardware encoding must be available on the system.
+    - Run from the root directory containing your foreign-language video folders.
+    - Adjust $MaxJobs, $MinBitrate, $MinFileSize, $MinDiskSpace, and $TempDir as needed.
+    - Place a .skip file in any directory to exclude it and all subdirectories.
+    - Place a .skip_<basename> file alongside a video to exclude that file.
+#>
+param(
     [Alias("d")]
     [switch]$Debug
 )
@@ -99,7 +140,7 @@ $AllFiles | ForEach-Object -Parallel {
         return
     }
     if (Test-Path -LiteralPath $episode_skip_file) {
-        Write-Host "Skipping $File -- episode marked as uncompressible"
+        Write-Host "Skipping $File -- episode marked as un-compressible"
         $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
         return
     }
@@ -147,6 +188,14 @@ $AllFiles | ForEach-Object -Parallel {
     # Skip AV1 files entirely
     if ($vcodec -eq "av1") {
         Write-Host "Skipping $File -- AV1 detected"
+        $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
+        return
+    }
+
+    # SKIP: high resolution (> 1100p) -- ffprobe secondary check
+    $vheight = if ($video.height) { [int]$video.height } else { 0 }
+    if ($vheight -gt 1100) {
+        Write-Host "Skipping $File -- high-resolution video detected (height=$vheight)"
         $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
         return
     }

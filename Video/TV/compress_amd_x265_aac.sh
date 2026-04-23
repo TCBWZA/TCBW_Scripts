@@ -76,6 +76,12 @@ for f in "${files[@]}"; do
         continue
     fi
 
+    # Skip 2160p or higher resolution videos (filename match)
+    if [[ "$base_no_ext" =~ 2160[pP]\] ]]; then
+        echo "Skipping $f -- 4K (or higher) video match (filename)"
+        continue
+    fi
+
     #####################################################
     # Skip and delete cleaned/transcoded files
     #####################################################
@@ -139,6 +145,13 @@ for f in "${files[@]}"; do
 
     if [[ "$vcodec_lc" =~ ^(av1|av01|libaom-av1|unknown)$ ]]; then
         echo "Skipping $f -- AV1 or unsupported codec detected ($vcodec_lc)"
+        continue
+    fi
+
+    # SKIP: high resolution (> 1100p) -- ffprobe secondary check, supplements filename check
+    height=$(jq -r '.streams[] | select(.codec_type=="video") | .height' <<< "$probe")
+    if (( height > 1100 )); then
+        echo "Skipping $f -- high-resolution video detected (height=$height)"
         continue
     fi
 

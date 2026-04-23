@@ -30,6 +30,24 @@ for f in "${files[@]}"; do
         continue
     fi
 
+    # Skip if directory .skip marker exists
+    if [[ -f "${dir}/.skip" ]]; then
+        echo "Skipping $f -- .skip directory marker found"
+        continue
+    fi
+
+    # Skip if per-file .skip_<basename> marker exists
+    if [[ -f "${dir}/.skip_${base_no_ext}" ]]; then
+        echo "Skipping $f -- .skip_${base_no_ext} per-file marker found"
+        continue
+    fi
+
+    # Skip 2160p or higher resolution videos (filename match)
+    if [[ "$base_no_ext" =~ 2160[pP]\] ]]; then
+        echo "Skipping $f -- 4K (or higher) video match (filename)"
+        continue
+    fi
+
     echo "Checking $f"
 
     #####################################################
@@ -46,6 +64,13 @@ for f in "${files[@]}"; do
     # Skip AV1 files entirely
     if [[ "$vcodec" == "av1" ]]; then
         echo "Skipping $f -- AV1 detected"
+        continue
+    fi
+
+    # SKIP: high resolution (> 1100p) -- ffprobe secondary check, supplements filename check
+    height=$(jq -r '.streams[] | select(.codec_type=="video") | .height' <<< "$probe")
+    if (( height > 1100 )); then
+        echo "Skipping $f -- high-resolution video detected (height=$height)"
         continue
     fi
 
@@ -181,8 +206,8 @@ for f in "${files[@]}"; do
                 chmod 666 "$f"
                 echo "Replaced: $(( orig_size / 1024 / 1024 ))MB → $(( new_size / 1024 / 1024 ))MB"
             else
-                echo "Skipped: new file not smaller ($(( orig_size / 1024 / 1024 ))MB → $(( new_size / 1024 / 1024 ))MB) - creating .skip file"
-                touch "${dir}/.skip"
+                echo "Skipped: new file not smaller ($(( orig_size / 1024 / 1024 ))MB → $(( new_size / 1024 / 1024 ))MB) - creating .skip_<basename> marker"
+                touch "${dir}/.skip_${base_no_ext}"
                 rm -f "$tmpfile"
             fi
         else
