@@ -128,6 +128,13 @@ for f in "${files[@]}"; do
         continue
     fi
 
+    # SKIP: high resolution (> 1100p) -- ffprobe secondary check
+    height=$(jq -r '.streams[] | select(.codec_type=="video") | .height' <<< "$probe")
+    if (( height > 1100 )); then
+        echo "Skipping $f -- high-resolution video detected (height=$height)"
+        continue
+    fi
+
     #####################################################
     # Fast remux path (HEVC + progressive + low bitrate + wrong container)
     #####################################################

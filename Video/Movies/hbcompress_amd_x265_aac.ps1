@@ -395,6 +395,13 @@ foreach ($f in $files) {
         continue
     }
 
+    # SKIP: 2160p or higher resolution (filename match)
+    if ($baseNoExt -imatch '2160[pP]\]') {
+        Write-Host "Skipping $($f.FullName) -- 4K (or higher) video match (filename)"
+        Debug "4K (or higher) video match (filename)"
+        continue
+    }
+
     # SKIP: Already processed
     if ($baseNoExt -match '\[Cleaned\]|\[Trans\]') {
         Debug "Already processed marker found, deleting original"
@@ -432,10 +439,10 @@ foreach ($f in $files) {
     Debug "Video bitrate: $($videoStream.bit_rate)"
     Debug "Resolution: ${width}x${height}"
 
-    # SKIP: 4K
-    if ($width -ge 3800 -and $height -ge 2000) {
-        Write-Host "Skipping $($f.FullName) -- 4K video detected (${width}x${height})"
-        Debug "4K resolution detected, skipping file"
+    # SKIP: high resolution (> 1100p) -- ffprobe secondary check, supplements filename check
+    if ($height -gt 1100) {
+        Write-Host "Skipping $($f.FullName) -- high-resolution video detected (height=$height)"
+        Debug "High-resolution (> 1100p) detected, skipping file"
         continue
     }
 
