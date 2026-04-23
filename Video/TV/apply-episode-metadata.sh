@@ -62,7 +62,7 @@ echo "AUDIT_LOG='$AUDIT_LOG' LOGGING_ENABLED=$LOGGING_ENABLED"
 # ------------------------------
 # Dependency checks
 # ------------------------------
-for cmd in xmlstarlet mkvmerge mkvpropedit jq; do
+for cmd in xmlstarlet mkvmerge mkvpropedit mkvextract jq; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         echo "ERROR: Required command '$cmd' not found"
         exit 1
@@ -94,12 +94,12 @@ xml_get() {
 }
 
 # ------------------------------
-# MKV title reader (safe)
+# MKV tag reader
 # ------------------------------
-get_mkv_title() {
-    local mkv="$1"
-    mkvmerge --identify --identification-format json "$mkv" 2>/dev/null \
-        | jq -r '.container.properties.title // empty'
+get_mkv_tag() {
+    local xmlfile="$1"
+    local tagname="$2"
+    xmlstarlet sel -t -v "//Simple[Name='$tagname']/String" "$xmlfile" 2>/dev/null || true
 }
 
 # ------------------------------
@@ -196,16 +196,30 @@ while IFS= read -r -d '' mkv; do
     )
 
     # ------------------------------
-    # Compare existing MKV title
+    # Compare existing MKV tags
     # ------------------------------
-    existing_title=$(get_mkv_title "$mkv")
     new_global_title="${series}: ${ep_title}"
+    tags_tmp=$(mktemp /tmp/mkv_tags_XXXXXX.xml)
+    mkvextract "$mkv" tags "$tags_tmp" 2>/dev/null || true
 
-    if [[ -n "$existing_title" && "$existing_title" == "$new_global_title" ]]; then
-        echo "Skipping: Already processed."
-        log_audit "Skipped: Already processed"
-        continue
+    if [[ -s "$tags_tmp" ]]; then
+        ex_series=$(get_mkv_tag "$tags_tmp" "SERIES")
+        ex_season=$(get_mkv_tag "$tags_tmp" "SEASON")
+        ex_episode=$(get_mkv_tag "$tags_tmp" "EPISODE")
+        ex_ep_title=$(get_mkv_tag "$tags_tmp" "TITLE")
+        log_debug "Existing SERIES=$ex_series SEASON=$ex_season EPISODE=$ex_episode TITLE=$ex_ep_title"
+
+        if [[ "$ex_series" == "$series" && \
+              "$ex_season" == "$ep_season" && \
+              "$ex_episode" == "$ep_number" && \
+              "$ex_ep_title" == "$ep_title" ]]; then
+            echo "Skipping: Already processed."
+            log_audit "Skipped: Already processed"
+            rm -f "$tags_tmp"
+            continue
+        fi
     fi
+    rm -f "$tags_tmp"
 
     # ------------------------------
     # Preserve timestamps (mtime only)
