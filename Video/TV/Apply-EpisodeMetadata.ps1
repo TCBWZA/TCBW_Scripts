@@ -70,12 +70,27 @@ function Format-Title {
     return ($s.Trim() -replace "\s+", " ")
 }
 
-# Safe MKV title reader
-function Get-MkvTitle {
+# MKV tags reader
+function Get-MkvTags {
     param([string]$MkvPath)
-    Write-DebugLog "Reading MKV title via mkvmerge: $MkvPath"
-    $json = & mkvmerge --identify --identification-format json $MkvPath 2>$null | ConvertFrom-Json
-    return $json.container.properties.title
+    Write-DebugLog "Reading MKV tags via mkvextract: $MkvPath"
+    $tmp = [System.IO.Path]::ChangeExtension([System.IO.Path]::GetTempFileName(), ".xml")
+    try {
+        & mkvextract $MkvPath tags $tmp 2>$null | Out-Null
+        if (-not (Test-Path -LiteralPath $tmp) -or (Get-Item -LiteralPath $tmp).Length -eq 0) {
+            return @{}
+        }
+        [xml]$xml = Get-Content -LiteralPath $tmp -Raw
+        $result = @{}
+        foreach ($simple in $xml.Tags.Tag.Simple) {
+            if ($simple.Name) { $result[$simple.Name] = $simple.String }
+        }
+        return $result
+    }
+    catch { return @{} }
+    finally {
+        if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+    }
 }
 
 # Build MKV tags XML
@@ -218,18 +233,19 @@ foreach ($mkv in $mkvs) {
     }
 
     #
-    # TITLE CHECK
+    # TAGS CHECK
     #
-    $existingTitle = Get-MkvTitle -MkvPath $mkv.FullName
     $newGlobalTitle = "$series - $title"
+    $existingTags = Get-MkvTags -MkvPath $mkv.FullName
+    Write-DebugLog "Existing SERIES tag:  '$($existingTags['SERIES'])'"
+    Write-DebugLog "Existing SEASON tag:  '$($existingTags['SEASON'])'"
+    Write-DebugLog "Existing EPISODE tag: '$($existingTags['EPISODE'])'"
+    Write-DebugLog "Existing TITLE tag:   '$($existingTags['TITLE'])'"
 
-    $existingNorm = Format-Title $existingTitle
-    $newNorm      = Format-Title $newGlobalTitle
-
-    Write-DebugLog "Existing MKV title: '$existingTitle'"
-    Write-DebugLog "Expected MKV title: '$newGlobalTitle'"
-
-    if ($existingNorm -eq $newNorm) {
+    if ($existingTags['SERIES'] -eq $series -and
+        $existingTags['SEASON'] -eq $season -and
+        $existingTags['EPISODE'] -eq $episodeNum -and
+        $existingTags['TITLE'] -eq $title) {
         Write-Host "Skipping: Already processed."
         Write-Audit "Skipped: Already processed"
         continue

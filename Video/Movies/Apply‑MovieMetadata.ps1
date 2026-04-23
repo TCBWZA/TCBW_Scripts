@@ -77,12 +77,27 @@ function Get-XmlValue {
     return $null
 }
 
-# Safe MKV title reader
-function Get-MkvTitle {
+# MKV tags reader
+function Get-MkvTags {
     param([string]$MkvPath)
-    Write-DebugLog "Reading MKV title via mkvmerge: $MkvPath"
-    $json = & mkvmerge --identify --identification-format json $MkvPath 2>$null | ConvertFrom-Json
-    return $json.container.properties.title
+    Write-DebugLog "Reading MKV tags via mkvextract: $MkvPath"
+    $tmp = [System.IO.Path]::ChangeExtension([System.IO.Path]::GetTempFileName(), ".xml")
+    try {
+        & mkvextract $MkvPath tags $tmp 2>$null | Out-Null
+        if (-not (Test-Path -LiteralPath $tmp) -or (Get-Item -LiteralPath $tmp).Length -eq 0) {
+            return @{}
+        }
+        [xml]$xml = Get-Content -LiteralPath $tmp -Raw
+        $result = @{}
+        foreach ($simple in $xml.Tags.Tag.Simple) {
+            if ($simple.Name) { $result[$simple.Name] = $simple.String }
+        }
+        return $result
+    }
+    catch { return @{} }
+    finally {
+        if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+    }
 }
 
 # Build MKV tags XML
@@ -103,6 +118,18 @@ Write-Audit "=== Movie run started ==="
 $mkvs = Get-ChildItem -LiteralPath . -Recurse -Filter *.mkv
 
 foreach ($mkv in $mkvs) {
+
+    # Skip if directory .skip marker exists
+    if (Test-Path -LiteralPath (Join-Path $mkv.DirectoryName ".skip")) {
+        Write-Host "Skipping $($mkv.FullName) -- .skip directory marker found"
+        continue
+    }
+
+    # Skip if per-file .skip_<basename> marker exists
+    if (Test-Path -LiteralPath (Join-Path $mkv.DirectoryName ".skip_$($mkv.BaseName)")) {
+        Write-Host "Skipping $($mkv.FullName) -- .skip_$($mkv.BaseName) per-file marker found"
+        continue
+    }
 
     Write-Host "----"
     Write-Host "Processing MKV: $($mkv.FullName)"
@@ -152,9 +179,12 @@ foreach ($mkv in $mkvs) {
         DATE_RELEASED = $year
     }
 
-    # Check existing MKV title
-    $existingTitle = Get-MkvTitle -MkvPath $mkv.FullName
-    if ($existingTitle -and $existingTitle -eq $title) {
+    # Check existing MKV tags
+    $existingTags = Get-MkvTags -MkvPath $mkv.FullName
+    Write-DebugLog "Existing TITLE tag:        '$($existingTags['TITLE'])'"
+    Write-DebugLog "Existing DATE_RELEASED tag: '$($existingTags['DATE_RELEASED'])'"
+
+    if ($existingTags['TITLE'] -eq $title -and $existingTags['DATE_RELEASED'] -eq $year) {
         Write-Host "Skipping: Already processed."
         Write-Audit "Skipped: Already processed"
         continue

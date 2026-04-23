@@ -77,12 +77,12 @@ xml_get() {
 }
 
 # ------------------------------
-# MKV title reader
+# MKV tag reader
 # ------------------------------
-get_mkv_title() {
-    local mkv="$1"
-    mkvmerge --identify --identification-format json "$mkv" 2>/dev/null \
-        | jq -r '.container.properties.title // empty'
+get_mkv_tag() {
+    local xmlfile="$1"
+    local tagname="$2"
+    xmlstarlet sel -t -v "//Simple[Name='$tagname']/String" "$xmlfile" 2>/dev/null || true
 }
 
 # ------------------------------
@@ -108,7 +108,7 @@ build_tags_xml() {
 # ------------------------------
 # Dependency checks
 # ------------------------------
-for cmd in xmlstarlet mkvmerge mkvpropedit jq; do
+for cmd in xmlstarlet mkvmerge mkvpropedit mkvextract jq; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         echo "ERROR: Required command '$cmd' not found"
         exit 1
@@ -130,12 +130,24 @@ tmpfile=$(mktemp)
 find . -type f -iname '*.mkv' -print0 > "$tmpfile"
 
 while IFS= read -r -d '' mkv; do
+    dir=$(dirname "$mkv")
+    base=$(basename "$mkv" .mkv)
+
+    # Skip if directory .skip marker exists
+    if [[ -f "${dir}/.skip" ]]; then
+        echo "Skipping $mkv -- .skip directory marker found"
+        continue
+    fi
+
+    # Skip if per-file .skip_<basename> marker exists
+    if [[ -f "${dir}/.skip_${base}" ]]; then
+        echo "Skipping $mkv -- .skip_${base} per-file marker found"
+        continue
+    fi
+
     echo "----"
     echo "Processing MKV: $mkv"
     log_audit "Processing MKV: $mkv"
-
-    dir=$(dirname "$mkv")
-    base=$(basename "$mkv" .mkv)
 
     primary_nfo="$dir/$base.nfo"
     fallback_nfo="$dir/movie.nfo"
@@ -196,14 +208,24 @@ while IFS= read -r -d '' mkv; do
     [[ -n "$year" ]] && new_title="$title ($year)"
 
     # ------------------------------
-    # Compare existing MKV title
+    # Compare existing MKV tags
     # ------------------------------
-    existing_title=$(get_mkv_title "$mkv")
-    if [[ -n "$existing_title" && "$existing_title" == "$new_title" ]]; then
-        echo "Skipping: Already processed."
-        log_audit "Skipped: Already processed"
-        continue
+    tags_tmp=$(mktemp /tmp/mkv_tags_XXXXXX.xml)
+    mkvextract "$mkv" tags "$tags_tmp" 2>/dev/null || true
+
+    if [[ -s "$tags_tmp" ]]; then
+        ex_title=$(get_mkv_tag "$tags_tmp" "TITLE")
+        ex_year=$(get_mkv_tag "$tags_tmp" "YEAR")
+        log_debug "Existing TITLE=$ex_title YEAR=$ex_year"
+
+        if [[ "$ex_title" == "$title" && "$ex_year" == "$year" ]]; then
+            echo "Skipping: Already processed."
+            log_audit "Skipped: Already processed"
+            rm -f "$tags_tmp"
+            continue
+        fi
     fi
+    rm -f "$tags_tmp"
 
     # ------------------------------
     # Build tag map
