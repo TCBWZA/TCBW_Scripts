@@ -166,6 +166,20 @@ foreach ($video in $videoFiles) {
 
     Write-DebugLog "Checking: $($video.FullName)"
 
+    # Skip if directory .skip marker exists
+    if (Test-Path -LiteralPath (Join-Path $video.DirectoryName ".skip")) {
+        Write-DebugLog "  .skip directory marker found - skipping"
+        $filtered++
+        continue
+    }
+
+    # Skip if per-file .skip_<basename> marker exists
+    if (Test-Path -LiteralPath (Join-Path $video.DirectoryName ".skip_$baseName")) {
+        Write-DebugLog "  .skip_$baseName per-file marker found - skipping"
+        $filtered++
+        continue
+    }
+
     # Skip files inside an 'extras' directory (any level)
     $pathParts = $video.FullName.Split([System.IO.Path]::DirectorySeparatorChar)
     if ($pathParts | Where-Object { $_ -ieq 'extras' }) {

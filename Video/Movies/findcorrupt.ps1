@@ -346,6 +346,20 @@ $corruptFound = $false
 Get-ChildItem -LiteralPath $Root -Recurse -File -Filter "*.mkv" | ForEach-Object {
 
     $File = $_.FullName
+    $Dir  = $_.DirectoryName
+    $Base = $_.BaseName
+
+    # Skip if directory .skip marker exists
+    if (Test-Path -LiteralPath (Join-Path $Dir ".skip")) {
+        Write-Host "Skipping $File -- .skip directory marker found"
+        return
+    }
+
+    # Skip if per-file .skip_<basename> marker exists
+    if (Test-Path -LiteralPath (Join-Path $Dir ".skip_$Base")) {
+        Write-Host "Skipping $File -- .skip_$Base per-file marker found"
+        return
+    }
 
     $isCorrupt  = Test-MkvCorrupt -Path $File
     $isNoAudio  = -not $isCorrupt -and (Test-MkvNoAudio -Path $File)

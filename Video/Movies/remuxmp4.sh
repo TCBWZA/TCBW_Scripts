@@ -165,6 +165,12 @@ for f in "${files[@]}"; do
         continue
     fi
 
+    # Per-file .skip_<basename> check
+    if [[ -f "$dir/.skip_${base_no_ext}" ]]; then
+        echo "Skipping $f -- .skip_${base_no_ext} per-file marker found"
+        continue
+    fi
+
     #####################################################
     # Skip and delete leftover transcoded files
     #####################################################

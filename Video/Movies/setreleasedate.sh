@@ -184,8 +184,24 @@ while IFS= read -r -d '' video; do
     # Remove the extension to construct the NFO path
     base="${video%.*}"
     nfo="${base}.nfo"
+    _dir=$(dirname "$video")
+    _base_no_ext=$(basename "$base")
 
     log_debug "Checking: $video"
+
+    # Skip if directory .skip marker exists
+    if [[ -f "${_dir}/.skip" ]]; then
+        log_debug "  .skip directory marker found - skipping"
+        filtered=$((filtered + 1))
+        continue
+    fi
+
+    # Skip if per-file .skip_<basename> marker exists
+    if [[ -f "${_dir}/.skip_${_base_no_ext}" ]]; then
+        log_debug "  .skip_${_base_no_ext} per-file marker found - skipping"
+        filtered=$((filtered + 1))
+        continue
+    fi
 
     # Skip files inside an 'extras' directory (any level)
     if printf '%s' "$video" | grep -iqE '(^|/)extras/'; then
