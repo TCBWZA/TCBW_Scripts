@@ -11,4 +11,4 @@ if ! mountpoint -q "/mnt/nmedia"; then
     exit 1
 fi
 
-rsync -avh --modify-window=5 --itemize-changes --progress --delete "$SOURCE" "$DEST"
+rsync -avh --modify-window=5 --itemize-changes --progress --delete --exclude='*.tmp' "$SOURCE" "$DEST"

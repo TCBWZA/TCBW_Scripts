@@ -9,4 +9,4 @@ if ! mountpoint -q "/mnt/nmedia"; then
     exit 1
 fi
 
-tar -czpf $DEST $SOURCE
+tar -czpf $DEST --exclude='*.tmp' $SOURCE
