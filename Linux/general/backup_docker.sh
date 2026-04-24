@@ -45,19 +45,19 @@ case "$COMPRESSOR" in
 
     pigz)
         # Parallel gzip with low CPU + low IO priority
-        ionice -c3 nice -n 19 tar -cf - "$SOURCE" \
+        ionice -c3 nice -n 19 tar -cf - --exclude='*.tmp' "$SOURCE" \
             | ionice -c3 nice -n 19 pigz -9 > "${DEST}.gz"
         ;;
 
     zstd)
         # zstd with low priority (best compression)
-        ionice -c3 nice -n 19 tar -cf - "$SOURCE" \
+        ionice -c3 nice -n 19 tar -cf - --exclude='*.tmp' "$SOURCE" \
             | ionice -c3 nice -n 19 zstd -19 -T0 -o "${DEST}.zst"
         ;;
 
     gzip)
         # Standard gzip with low priority
-        ionice -c3 nice -n 19 tar -czpf "${DEST}.gz" "$SOURCE"
+        ionice -c3 nice -n 19 tar -czpf "${DEST}.gz" --exclude='*.tmp' "$SOURCE"
         ;;
 
     *)
