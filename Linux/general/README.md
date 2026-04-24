@@ -25,6 +25,12 @@ apt install zstd
 
 ---
 
+## Common behavior
+
+All `sync_*.sh` and `backup_*.sh` scripts skip files with a `.tmp` extension (`--exclude='*.tmp'` for rsync; `--exclude='*.tmp'` for tar).
+
+---
+
 ## Scripts
 
 ### sync.sh
