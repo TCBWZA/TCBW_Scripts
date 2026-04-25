@@ -124,7 +124,7 @@ PowerShell batch compression script using HandBrakeCLI with Intel Quick Sync Vid
 - Skips files already encoded as HEVC that are under 2.5 Mbps. Audio codec is not checked; all audio is copied without re-encoding.
 - Skips 4K (UHD) and AV1-encoded files.
 - Skips files with no video stream or no audio stream.
-- Checks MKV containers for structural anomalies (bad `start_time`, corrupt duration, problematic subtitle codecs); automatically remuxes broken containers before transcoding.
+- Checks MKV containers for structural anomalies (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors such as non-monotonic timestamps, truncated streams, or missing moov atom); automatically remuxes broken containers before transcoding.
 - Detects file locks before and after encoding; skips files currently open by other processes.
 - Performs deferred interlace detection (only when transcoding is required): skips the first 5 minutes to avoid credits, analyzes 200 frames for interlace or telecine patterns. HEVC input skips this step.
 - Applies `--deinterlace=slower` for interlaced content; `--detelecine --deinterlace=slower` for suspected telecine.
@@ -163,7 +163,7 @@ PowerShell batch compression script using HandBrakeCLI with AMD VCE hardware enc
 - Skips files already encoded as HEVC that are under 2.5 Mbps. Audio codec is not checked; all audio is copied without re-encoding.
 - Skips 4K (UHD) and AV1-encoded files.
 - Skips files with no video stream or no audio stream.
-- Checks MKV containers for structural anomalies (bad `start_time`, corrupt duration, problematic subtitle codecs); automatically remuxes broken containers before transcoding.
+- Checks MKV containers for structural anomalies (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors such as non-monotonic timestamps, truncated streams, or missing moov atom); automatically remuxes broken containers before transcoding.
 - Detects file locks before and after encoding; skips files currently open by other processes.
 - Performs deferred interlace detection (only when transcoding is required): skips the first 5 minutes to avoid credits, analyzes 200 frames for interlace or telecine patterns. HEVC input skips this step.
 - Applies `--deinterlace=slower` for interlaced content; `--detelecine --deinterlace=slower` for suspected telecine.
@@ -188,31 +188,6 @@ Set-Location "Z:\Media\Foreign"
 
 # With debug output
 .\hbcompress_amd_x265_aac.ps1 -Debug
-```
-
----
-
-### deinterlace_qsv_x265_aac.ps1
-
-PowerShell compression script using Intel Quick Sync Video (QSV) encoding via direct `ffmpeg`. Targets `.mkv` files that are 1 GB or larger.
-
-**What it does:**
-
-- Inspects each file with `ffprobe` to determine video codec, audio codec, and field order.
-- Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
-- Interlace detection: reads `field_order` metadata; falls back to a 500-frame `idet` filter scan.
-- Applies `deinterlace_qsv` filter for interlaced content; `format=qsv` passthrough for progressive.
-- Encodes with `hevc_qsv` at 1800k target / 2000k max, audio AAC at 160 kbps.
-- Transcodes to a temporary file; replaces the original only if transcoding succeeds.
-- Runs up to `$MaxJobs` (default 2) parallel encoding jobs via `Start-Job`.
-
-No command-line parameters. Edit `$MaxJobs` at the top of the script to change parallelism.
-
-**Execution:**
-
-```powershell
-Set-Location "Z:\Media\Foreign"
-.\deinterlace_qsv_x265_aac.ps1
 ```
 
 ---
