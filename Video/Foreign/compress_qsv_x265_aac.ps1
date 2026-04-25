@@ -121,6 +121,21 @@ $progressJob = Start-Job -ArgumentList $Total, $Progress -ScriptBlock {
     Write-Progress -Activity "Encoding Files" -Completed
 }
 
+# Container health check scriptblock -- passed into the parallel runspace via $using:
+$ContainerCheckSB = {
+    param([string]$Path)
+    try {
+        $probeJson = ffprobe -v quiet -print_format json -show_format -show_streams "$Path"
+        $probe = $probeJson | ConvertFrom-Json
+    } catch { return $true }
+    if ($probe.format.start_time -eq "N/A") { return $true }
+    if ($probe.format.duration -eq "N/A") { return $true }
+    if ($probe.format.duration -match '^-?[\d.]+$' -and [double]$probe.format.duration -le 0) { return $true }
+    $ffmpegErrors = & ffmpeg -nostdin -hide_banner -v error -i $Path -f null - 2>&1
+    if ($ffmpegErrors) { return $true }
+    return $false
+}
+
 # Parallel processing
 $AllFiles | ForEach-Object -Parallel {
 
@@ -200,64 +215,59 @@ $AllFiles | ForEach-Object -Parallel {
         return
     }
 
-    #####################################################
-    # Fast remux path: HEVC + progressive + low bitrate + non-MKV container
-    #####################################################
-
-    $ext = [System.IO.Path]::GetExtension($File).ToLower().TrimStart('.')
-    $canRemux = ($vcodec -eq "hevc") -and
-                (-not ($vbitrate -match '^\d+$' -and [int]$vbitrate -gt $using:MinBitrate)) -and
-                ($field -eq "progressive") -and
-                ($ext -ne "mkv")
-
-    if ($canRemux) {
-        Write-Host "Remuxing $File → MKV (container change, streams copied)"
-        if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Force }
-
-        ffmpeg -nostdin -hide_banner -y `
-            -i "$File" `
-            -map 0 `
-            -c copy `
-            -f matroska `
-            "$Tmp"
-
-        if ($LASTEXITCODE -eq 0) {
-            $origFile = Get-Item -LiteralPath $File
-            $origSize = $origFile.Length
-            $newSize = (Get-Item -LiteralPath $Tmp).Length
-
-            if ($newSize -lt $origSize) {
-                $timestamp = $origFile.LastWriteTime
-                Remove-Item -LiteralPath $File -Force
-                Move-Item -LiteralPath $Tmp -Destination $File -Force
-                (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
-                $origMB = [math]::Round($origSize / 1MB, 2)
-                $newMB = [math]::Round($newSize / 1MB, 2)
-                Write-Host "Replaced (remux): ${origMB}MB → ${newMB}MB"
-            }
-            else {
-                Write-Host "Skipped (remux): new file not smaller"
-                New-Item -Path $episode_skip_file -ItemType File -Force | Out-Null
-                Remove-Item -LiteralPath $Tmp -Force
-            }
-        }
-        else {
-            if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Force }
-        }
-
-        $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
-        return
-    }
-
-    # Fast checks first, skip expensive detection if already need to convert
+    # Fast checks: determine whether transcoding is needed
     $NeedsConvert = $false
     if ($acodec -ne "aac") { $NeedsConvert = $true }
     if (-not $NeedsConvert -and $vcodec -ne "hevc") { $NeedsConvert = $true }
     if (-not $NeedsConvert -and $vbitrate -match '^\d+$' -and [int]$vbitrate -gt $MinBitrate) { $NeedsConvert = $true }
     if (-not $NeedsConvert -and $field -ne "progressive") { $NeedsConvert = $true }
 
+    # mov_text → SRT: MP4 text subtitles cannot be stream-copied into MKV
+    $SubArgs = @('-c:s', 'copy')
+    if ([System.IO.Path]::GetExtension($File).ToLower() -eq '.mp4') {
+        $subInfo = ffprobe -v quiet -print_format json -show_streams "$File" | ConvertFrom-Json
+        if ($subInfo.streams | Where-Object { $_.codec_type -eq 'subtitle' -and $_.codec_name -eq 'mov_text' }) {
+            Write-Host "Subtitle: mov_text detected in MP4 -- converting to SRT"
+            $SubArgs = @('-c:s', 'srt')
+        }
+    }
+
     if (-not $NeedsConvert) {
-        Write-Host "Skipping $File -- already in desired format"
+        #####################################################
+        # No transcode needed -- check for container problems
+        #####################################################
+        $hasContainerProblem = & $using:ContainerCheckSB $File
+        if ($hasContainerProblem) {
+            Write-Host "Remuxing $File → container repair"
+            if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Force }
+
+            ffmpeg -nostdin -hide_banner -y `
+                -i "$File" `
+                -map 0 `
+                -c:v copy -c:a copy `
+                @SubArgs `
+                -f matroska `
+                "$Tmp"
+
+            if ($LASTEXITCODE -eq 0) {
+                $origFile = Get-Item -LiteralPath $File
+                $timestamp = $origFile.LastWriteTime
+                $origMB = [math]::Round($origFile.Length / 1MB, 2)
+                $newMB  = [math]::Round((Get-Item -LiteralPath $Tmp).Length / 1MB, 2)
+                Remove-Item -LiteralPath $File -Force
+                Move-Item -LiteralPath $Tmp -Destination $File -Force
+                (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
+                Write-Host "Replaced (remux): ${origMB}MB → ${newMB}MB"
+            }
+            else {
+                if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Force }
+            }
+        }
+        else {
+            Write-Host "Skipping $File -- already in desired format"
+            New-Item -Path $episode_skip_file -ItemType File -Force | Out-Null
+        }
+
         $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
         return
     }
@@ -297,7 +307,7 @@ $AllFiles | ForEach-Object -Parallel {
         -c:v hevc_qsv `
         -b:v 1800k -maxrate 2000k -bufsize 4000k `
         -c:a copy `
-        -c:s copy `
+        @SubArgs `
         -f matroska `
         "$Tmp"
 
