@@ -78,18 +78,19 @@ function Test-MKVContainerProblem {
         return $true
     }
 
-    $badSubs = @("hdmv_pgs_subtitle","dvd_subtitle","dvb_subtitle")
-    $subStreams = $probe.streams | Where-Object { $_.codec_type -eq "subtitle" }
-
-    foreach ($s in $subStreams) {
-        if ($badSubs -contains $s.codec_name) {
-            Debug "Container issue: problematic subtitle codec $($s.codec_name)"
-            return $true
-        }
-    }
-
     if ($probe.format.duration -eq "N/A") {
         Debug "Container issue: duration is N/A"
+        return $true
+    }
+    if ($probe.format.duration -match '^-?[\d.]+$' -and [double]$probe.format.duration -le 0) {
+        Debug "Container issue: duration is non-positive ($($probe.format.duration))"
+        return $true
+    }
+
+    # Deeper check: demux pass catches non-monotonic timestamps, truncation, missing moov
+    $ffmpegErrors = & ffmpeg -nostdin -hide_banner -v error -i $Path -f null - 2>&1
+    if ($ffmpegErrors) {
+        Debug "Container issue: ffmpeg demux errors detected"
         return $true
     }
 
