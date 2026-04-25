@@ -466,6 +466,14 @@ foreach ($f in $files) {
     $hasAAC = $audioCodecs -contains "aac"
     Debug "Has AAC: $hasAAC"
 
+    # Build per-track audio arguments for HandBrake
+    $audioCount    = $audioStreams.Count
+    $hb_audio      = (1..$audioCount) -join ","
+    $hb_aencoder   = (@("av_aac") * $audioCount) -join ","
+    $hb_ab         = (@("160")    * $audioCount) -join ","
+    Debug "Audio tracks: $hb_audio"
+    Debug "Audio encoders: $hb_aencoder"
+
     $vcodec   = $videoStream.codec_name
     $vbitrate = [int]($videoStream.bit_rate ?? 0)
 
@@ -640,8 +648,9 @@ foreach ($f in $files) {
             --encoder-preset balance `
             --quality 24 `
             --maxHeight 2160 `
-            --aencoder av_aac `
-            --ab 160 `
+            --audio $hb_audio `
+            --aencoder $hb_aencoder `
+            --ab $hb_ab `
             --subtitle-lang-list eng,und --subtitle-default=1 `
     }
     else {
@@ -653,8 +662,9 @@ foreach ($f in $files) {
             --quality 24 `
             --encoder-preset balance `
             --maxHeight 2160 `
-            --aencoder av_aac `
-            --ab 160 `
+            --audio $hb_audio `
+            --aencoder $hb_aencoder `
+            --ab $hb_ab `
             --subtitle-lang-list eng,und --subtitle-default=1 `
             $hb_filter
     }
