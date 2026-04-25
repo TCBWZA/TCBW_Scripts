@@ -41,6 +41,20 @@ function Write-DebugLog {
     }
 }
 
+function Test-ContainerProblem {
+    param([string]$Path)
+    try {
+        $probeJson = ffprobe -v quiet -print_format json -show_format -show_streams "$Path"
+        $probe = $probeJson | ConvertFrom-Json
+    } catch { return $true }
+    if ($probe.format.start_time -eq "N/A") { return $true }
+    if ($probe.format.duration -eq "N/A") { return $true }
+    if ($probe.format.duration -match '^-?[\d.]+$' -and [double]$probe.format.duration -le 0) { return $true }
+    $ffmpegErrors = & ffmpeg -nostdin -hide_banner -v error -i $Path -f null - 2>&1
+    if ($ffmpegErrors) { return $true }
+    return $false
+}
+
 $MaxJobs = 2
 
 Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
@@ -111,7 +125,38 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
     Write-DebugLog "vcodec=$vcodec vbitrate=$vbitrate acodec=$acodec field=$field NeedsConvert=$NeedsConvert"
 
     if (-not $NeedsConvert) {
-        Write-Host "Skipping $File -- already in desired format"
+        if (Test-ContainerProblem -Path $File) {
+            Write-Host "Remuxing $File → container repair"
+            $Tmp = Join-Path $Dir "$Base`[Trans`].tmp"
+            if (Test-Path $Tmp) { Remove-Item $Tmp -Force }
+
+            # mov_text → SRT: MP4 text subtitles cannot be stream-copied into MKV
+            $RemuxSubArgs = @('-c:s', 'copy')
+            if ([System.IO.Path]::GetExtension($File).ToLower() -eq '.mp4') {
+                $subInfo = ffprobe -v quiet -print_format json -show_streams "$File" | ConvertFrom-Json
+                if ($subInfo.streams | Where-Object { $_.codec_type -eq 'subtitle' -and $_.codec_name -eq 'mov_text' }) {
+                    Write-Host "Subtitle: mov_text detected in MP4 -- converting to SRT"
+                    $RemuxSubArgs = @('-c:s', 'srt')
+                }
+            }
+
+            ffmpeg -hide_banner -y -i "$File" -c:v copy -c:a copy @RemuxSubArgs -f matroska "$Tmp"
+
+            if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $Tmp)) {
+                $origFile = Get-Item -LiteralPath $File
+                $timestamp = $origFile.LastWriteTime
+                $origMB = [math]::Round($origFile.Length / 1MB, 2)
+                $newMB  = [math]::Round((Get-Item -LiteralPath $Tmp).Length / 1MB, 2)
+                Remove-Item -LiteralPath $File -Force
+                Move-Item -LiteralPath $Tmp -Destination $File -Force
+                (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
+                Write-Host "Replaced (remux): ${origMB}MB → ${newMB}MB"
+            } else {
+                if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Force }
+            }
+        } else {
+            Write-Host "Skipping $File -- already in desired format"
+        }
         return
     }
 
@@ -131,6 +176,16 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
         $vf = ""
     }
 
+    # mov_text → SRT: MP4 text subtitles cannot be stream-copied into MKV
+    $SubArgs = @('-c:s', 'copy')
+    if ([System.IO.Path]::GetExtension($File).ToLower() -eq '.mp4') {
+        $subInfo = ffprobe -v quiet -print_format json -show_streams "$File" | ConvertFrom-Json
+        if ($subInfo.streams | Where-Object { $_.codec_type -eq 'subtitle' -and $_.codec_name -eq 'mov_text' }) {
+            Write-Host "Subtitle: mov_text detected in MP4 -- converting to SRT"
+            $SubArgs = @('-c:s', 'srt')
+        }
+    }
+
     # Wait for job slots
     while ((Get-Job -State Running).Count -ge $MaxJobs) {
         Start-Sleep -Seconds 1
@@ -139,7 +194,7 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
     Write-Host "Processing $File"
     # Start encoding job
     Start-Job -ScriptBlock {
-        param($File, $Tmp, $vf)
+        param($File, $Tmp, $vf, $SubArgs)
          
         # Clean temp file immediately before ffmpeg runs
         if (Test-Path -LiteralPath $Tmp) {
@@ -153,7 +208,7 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
                 -c:v hevc_qsv `
                 -b:v 1800k -maxrate 2000k -bufsize 4000k `
                 -c:a aac -b:a 160k `
-                -c:s copy `
+                @SubArgs `
                 -f matroska `
                 "$Tmp"
         } else {
@@ -164,7 +219,7 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
                 -c:v hevc_qsv `
                 -b:v 1800k -maxrate 2000k -bufsize 4000k `
                 -c:a aac -b:a 160k `
-                -c:s copy `
+                @SubArgs `
                 -f matroska `
                 "$Tmp"
         }
@@ -212,7 +267,7 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
             }
         }
 
-    } -ArgumentList $File, $Tmp, $vf
+    } -ArgumentList $File, $Tmp, $vf, $SubArgs
 
 }
 

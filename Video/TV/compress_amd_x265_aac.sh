@@ -15,6 +15,49 @@ done
 
 debug() { $DEBUG && echo "[DEBUG] $*"; }
 
+#####################################################
+# CONTAINER HEALTH CHECK
+#####################################################
+
+check_container_problem() {
+    local path="$1"
+    local probe_json
+    probe_json=$(ffprobe -v quiet -print_format json -show_format -show_streams "$path" 2>/dev/null)
+
+    if ! jq -e . >/dev/null 2>&1 <<< "$probe_json"; then
+        debug "Container check: ffprobe failed for $path -- treating as problematic"
+        return 0
+    fi
+
+    local start_time
+    start_time=$(jq -r '.format.start_time // "N/A"' <<< "$probe_json")
+    if [[ "$start_time" == "N/A" ]]; then
+        debug "Container issue: start_time is N/A"
+        return 0
+    fi
+
+    local duration
+    duration=$(jq -r '.format.duration // "N/A"' <<< "$probe_json")
+    if [[ "$duration" == "N/A" ]]; then
+        debug "Container issue: duration is N/A"
+        return 0
+    fi
+    if [[ "$duration" =~ ^-?[0-9]+([.][0-9]+)?$ ]] && (( $(echo "$duration <= 0" | bc -l) )); then
+        debug "Container issue: duration is non-positive ($duration)"
+        return 0
+    fi
+
+    # Deeper check: demux pass catches non-monotonic timestamps, truncation, missing moov
+    local ffmpeg_errors
+    ffmpeg_errors=$(ffmpeg -nostdin -hide_banner -v error -i "$path" -f null - 2>&1)
+    if [[ -n "$ffmpeg_errors" ]]; then
+        debug "Container issue: ffmpeg demux errors detected"
+        return 0
+    fi
+
+    return 1
+}
+
 MAX_JOBS=2
 
 echo "Starting up..."
@@ -122,6 +165,15 @@ for f in "${files[@]}"; do
 
     debug "sub_maps: ${sub_maps[*]}"
 
+    # mov_text → SRT: MP4 text subtitles cannot be stream-copied into MKV
+    sub_codec_args=(-c:s copy)
+    if [[ "$f" == *.mp4 ]]; then
+        if jq -e '[.streams[] | select(.codec_type=="subtitle" and .codec_name=="mov_text")] | length > 0' <<< "$probe" >/dev/null 2>&1; then
+            debug "Subtitle: mov_text detected in MP4 -- converting to SRT for MKV output"
+            sub_codec_args=(-c:s srt)
+        fi
+    fi
+
     #####################################################
     # Extract video/audio metadata
     #####################################################
@@ -152,52 +204,6 @@ for f in "${files[@]}"; do
     height=$(jq -r '.streams[] | select(.codec_type=="video") | .height' <<< "$probe")
     if (( height > 1100 )); then
         echo "Skipping $f -- high-resolution video detected (height=$height)"
-        continue
-    fi
-
-    #####################################################
-    # Fast remux path (HEVC + AAC + low bitrate)
-    #####################################################
-
-    can_remux=true
-    [[ "$vcodec_lc" != "hevc" ]] && can_remux=false
-    (( vbitrate > 2500000 )) && can_remux=false
-    [[ "$acodec" != "aac" ]] && can_remux=false
-
-    if $can_remux; then
-        echo "Remuxing $f → HEVC/AAC under threshold"
-        tmpfile="$dir/${base_no_ext}[Trans].tmp"
-
-        rm -f -- "$tmpfile"
-
-        ffmpeg -nostdin -hide_banner -y \
-            -i "$f" \
-            -map 0:v -map 0:a \
-            "${sub_maps[@]}" \
-            -c copy \
-            -f matroska \
-            "$tmpfile"
-
-        if [[ $? -eq 0 ]]; then
-            orig_size=$(stat -c%s "$f")
-            new_size=$(stat -c%s "$tmpfile")
-
-            if (( new_size < orig_size )); then
-                touch -r "$f" "$tmpfile"
-                rm -f -- "$f"
-                mv -- "$tmpfile" "$f"
-                chown 1000:1000 "$f"
-                chmod 666 "$f"
-                echo "Replaced (remux): $((orig_size/1024/1024))MB → $((new_size/1024/1024))MB"
-            else
-                echo "Skipped (remux): new file not smaller"
-                touch "$file_skip_file"
-                rm -f -- "$tmpfile"
-            fi
-        else
-            rm -f -- "$tmpfile"
-        fi
-
         continue
     fi
 
@@ -327,7 +333,40 @@ for f in "${files[@]}"; do
     [[ "$status" != "progressive" ]] && needs_convert=true
 
     if ! $needs_convert; then
-        echo "Skipping $f -- already in desired format"
+        #####################################################
+        # No transcode needed -- check for container problems
+        #####################################################
+        if check_container_problem "$f"; then
+            echo "Remuxing $f → container repair"
+            tmpfile="$dir/${base_no_ext}[Trans].tmp"
+
+            rm -f -- "$tmpfile"
+
+            ffmpeg -nostdin -hide_banner -y \
+                -i "$f" \
+                -map 0:v -map 0:a \
+                "${sub_maps[@]}" \
+                -c:v copy -c:a copy \
+                "${sub_codec_args[@]}" \
+                -f matroska \
+                "$tmpfile"
+
+            if [[ $? -eq 0 ]]; then
+                orig_size=$(stat -c%s "$f")
+                new_size=$(stat -c%s "$tmpfile")
+                touch -r "$f" "$tmpfile"
+                rm -f -- "$f"
+                mv -- "$tmpfile" "$f"
+                chown 1000:1000 "$f"
+                chmod 666 "$f"
+                echo "Replaced (remux): $((orig_size/1024/1024))MB → $((new_size/1024/1024))MB"
+            else
+                rm -f -- "$tmpfile"
+            fi
+        else
+            echo "Skipping $f -- already in desired format"
+        fi
+
         continue
     fi
 
@@ -376,7 +415,7 @@ for f in "${files[@]}"; do
             -c:v hevc_vaapi \
             -qp 24 \
             -c:a aac -b:a 160k \
-            -c:s copy \
+            "${sub_codec_args[@]}" \
             -f matroska \
             "$tmpfile"
 

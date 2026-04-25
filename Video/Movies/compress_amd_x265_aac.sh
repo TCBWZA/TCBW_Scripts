@@ -2,6 +2,38 @@
 
 trap 'echo "Interrupted -- exiting safely"; exit 1' INT
 
+#####################################################
+# CONTAINER HEALTH CHECK
+#####################################################
+
+check_container_problem() {
+    local path="$1"
+    local probe_json
+    probe_json=$(ffprobe -v quiet -print_format json -show_format -show_streams "$path" 2>/dev/null)
+
+    if ! jq -e . >/dev/null 2>&1 <<< "$probe_json"; then
+        return 0
+    fi
+
+    local start_time
+    start_time=$(jq -r '.format.start_time // "N/A"' <<< "$probe_json")
+    [[ "$start_time" == "N/A" ]] && return 0
+
+    local duration
+    duration=$(jq -r '.format.duration // "N/A"' <<< "$probe_json")
+    [[ "$duration" == "N/A" ]] && return 0
+    if [[ "$duration" =~ ^-?[0-9]+([.][0-9]+)?$ ]] && (( $(echo "$duration <= 0" | bc -l) )); then
+        return 0
+    fi
+
+    # Deeper check: demux pass catches non-monotonic timestamps, truncation, missing moov
+    local ffmpeg_errors
+    ffmpeg_errors=$(ffmpeg -nostdin -hide_banner -v error -i "$path" -f null - 2>&1)
+    [[ -n "$ffmpeg_errors" ]] && return 0
+
+    return 1
+}
+
 MAX_JOBS=2
 
 echo "Starting up..."
@@ -118,7 +150,44 @@ for f in "${files[@]}"; do
     [[ "$status" != "progressive" ]] && needs_convert=true
 
     if ! $needs_convert; then
-        echo "Skipping $f -- already in desired format"
+        if check_container_problem "$f"; then
+            echo "Remuxing $f → container repair"
+            tmpfile="$dir/${base_no_ext}[Trans].tmp"
+            rm -f -- "$tmpfile"
+
+            # mov_text → SRT: MP4 text subtitles cannot be stream-copied into MKV
+            remux_sub_args=(-c:s copy)
+            if [[ "$f" == *.mp4 ]]; then
+                if jq -e '[.streams[] | select(.codec_type=="subtitle" and .codec_name=="mov_text")] | length > 0' <<< "$probe" >/dev/null 2>&1; then
+                    echo "Subtitle: mov_text detected in MP4 -- converting to SRT for MKV output"
+                    remux_sub_args=(-c:s srt)
+                fi
+            fi
+
+            ffmpeg -nostdin -hide_banner -y \
+                -i "$f" \
+                -map 0 \
+                -c:v copy -c:a copy \
+                "${remux_sub_args[@]}" \
+                -f matroska \
+                "$tmpfile"
+
+            if [[ $? -eq 0 && -f "$tmpfile" ]]; then
+                orig_size=$(stat -c%s "$f")
+                new_size=$(stat -c%s "$tmpfile")
+                touch -r "$f" "$tmpfile"
+                rm -f -- "$f"
+                mv -- "$tmpfile" "$f"
+                chown 1000:1000 "$f"
+                chmod 666 "$f"
+                echo "Replaced (remux): $((orig_size/1024/1024))MB → $((new_size/1024/1024))MB"
+            else
+                rm -f -- "$tmpfile"
+            fi
+        else
+            echo "Skipping $f -- already in desired format"
+        fi
+
         continue
     fi
 
@@ -151,7 +220,7 @@ for f in "${files[@]}"; do
     if [[ "$f" == *.mp4 ]]; then
         if jq -e '.streams[] | select(.codec_type=="subtitle" and .codec_name=="mov_text")' <<< "$probe" >/dev/null; then
             echo "Subtitle: mov_text detected in MP4 → converting to SRT"
-            subtitle_args="-c:s copy -c:s:m:codec_name=mov_text srt"
+            subtitle_args="-c:s srt"
         else
             echo "Subtitle: MP4 but no mov_text → copying all"
         fi
