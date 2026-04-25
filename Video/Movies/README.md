@@ -123,62 +123,6 @@ Set-Location "Z:\Media\Movies"
 
 ---
 
-### clean_compress_amd_x265_aac.sh
-
-Bash compression script with intelligent audio and subtitle track filtering. Targets `.mkv`, `.mp4`, and `.ts` files 5 GB or larger.
-
-**What it does:**
-
-- All the same compression logic as `compress_amd_x265_aac.sh`.
-- Adds intelligent track filtering: keeps only English-language (`eng`) and untagged (`und`) audio and subtitle streams; removes foreign-language variants.
-- Dynamic stream discovery works correctly even when tracks are not in standard order.
-- Encodes with `hevc_vaapi` at QP 22, VBR 1800k / max 2000k.
-
-No command-line parameters.
-
-**Execution:**
-
-```bash
-cd /mnt/media/Movies
-./clean_compress_amd_x265_aac.sh
-```
-
----
-
-### clean_compress_qsv_x265_aac.ps1
-
-PowerShell compression script with intelligent audio and subtitle track filtering, using Intel Quick Sync Video. Targets `.mkv`, `.mp4`, and `.ts` files 5 GB or larger.
-
-**What it does:**
-
-- All the same compression logic as `compress_qsv_x265_aac.ps1`.
-- Adds intelligent track filtering: keeps only English (`eng`) and untagged (`und`) audio and subtitle streams.
-- Dynamic stream discovery.
-- Encodes with `hevc_qsv`.
-
-**Parameters:**
-
-| Parameter | Required | Default | Description |
-|---|---|---|---|
-| `-MAX_JOBS` | No | `2` | Maximum number of parallel encoding jobs |
-| `-DEBUG` | No | `$false` | Enable verbose debug output |
-
-**Execution:**
-
-```powershell
-# Run with defaults (2 parallel jobs)
-Set-Location "Z:\Media\Movies"
-.\clean_compress_qsv_x265_aac.ps1
-
-# Override parallel job count
-.\clean_compress_qsv_x265_aac.ps1 -MAX_JOBS 4
-
-# Run with debug output
-.\clean_compress_qsv_x265_aac.ps1 -DEBUG $true
-```
-
----
-
 ### hbcompress_amd_x265_aac.ps1
 
 PowerShell compression script using AMD GPU (AMF/VCE) hardware acceleration with MKV container repair, file-lock detection, and atomic replacement. Targets `.mkv`, `.mp4`, and `.ts` files 1 GB or larger.
@@ -187,7 +131,7 @@ PowerShell compression script using AMD GPU (AMF/VCE) hardware acceleration with
 
 - Checks video codec, audio codec, and bitrate; converts files not already HEVC+AAC or exceeding 2.5 Mbps.
 - Two-pass interlace detection: fast metadata check first, then idet frame scan skipping the first 5 minutes to avoid intros/credits.
-- MKV container health check: broken containers (bad timestamps, problematic subtitle codecs, corrupt duration) are remuxed before transcoding.
+- MKV container health check: broken containers (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors such as non-monotonic timestamps, truncated streams, or missing moov atom) are remuxed before transcoding.
 - File-lock detection: files currently open by other processes are skipped.
 - Atomic replacement: writes to a temp file and swaps in place only when the result is smaller and valid.
 - 4K (UHD) and AV1 guards: those files are skipped automatically.
@@ -212,7 +156,112 @@ Set-Location "Z:\Media\Movies"
 
 ---
 
-### dedup.ps1
+### hbcompress_amd_av1_4k.ps1
+
+PowerShell compression script using AMD GPU (AMF/VCE) hardware acceleration to encode 4K content to AV1 via a HandBrake user preset. Targets `.mkv`, `.mp4`, and `.ts` files 5 GB or larger.
+
+**What it does:**
+
+- Checks video codec, audio codec, and bitrate; skips files already encoded as AV1.
+- Skips files below the 5 GB size threshold.
+- MKV container health check: broken containers (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors) are remuxed before transcoding.
+- File-lock detection: files currently open by other processes are skipped.
+- Atomic replacement: writes to a temp file and swaps in place only when the result is smaller and valid.
+- `.skip` directory marker and `.skip_<basename>` per-file marker support.
+- Encodes via HandBrakeCLI using the user-defined **"AV1 4k"** preset (import `AV1 4K preset.json` into HandBrake before use).
+- Requires an AMD GPU with AV1 hardware encoding support.
+
+**Requirements:**
+
+- Import `AV1 4K preset.json` into HandBrake via `Presets > Import from File` before running.
+
+**Parameters:**
+
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| `-Debug` | No | | Enable verbose debug output |
+
+**Execution:**
+
+```powershell
+Set-Location "Z:\Media\Movies"
+.\hbcompress_amd_av1_4k.ps1
+
+# Run with debug output
+.\hbcompress_amd_av1_4k.ps1 -Debug
+```
+
+---
+
+### organize-chapters.sh
+
+Bash utility that recursively moves `*_chapters.xml` files into a `chapters/` subdirectory within each folder that contains them.
+
+**What it does:**
+
+- Walks the directory tree from the specified root.
+- For each directory containing `*_chapters.xml` files, creates a `chapters/` subdirectory and moves all matching files into it.
+- Skips directories containing a `.skip` marker file (and all their subdirectories).
+- Skips any directory already named `chapters` to avoid redundant nesting.
+- Dry-run mode (`--dry-run`) previews all planned moves without making any changes.
+- Prints a summary of files moved and directories skipped.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `--root <dir>` | Root directory to scan. Defaults to `.` |
+| `--dry-run` | Preview mode; no files are moved |
+| `--debug` | Enable verbose debug output |
+
+**Execution:**
+
+```bash
+cd /mnt/media/Movies
+./organize-chapters.sh
+
+# Dry-run preview
+./organize-chapters.sh --dry-run
+
+# Specify a root directory
+./organize-chapters.sh --root /mnt/media/Movies --dry-run
+```
+
+---
+
+### organize-chapters.ps1
+
+PowerShell equivalent of `organize-chapters.sh`. Recursively moves `*_chapters.xml` files into a `chapters/` subdirectory within each folder that contains them.
+
+**What it does:**
+
+- Walks the directory tree from the specified root.
+- For each directory containing `*_chapters.xml` files, creates a `chapters/` subdirectory and moves all matching files into it.
+- Skips directories containing a `.skip` marker file (and all their subdirectories).
+- Skips any directory already named `chapters` to avoid redundant nesting.
+- Dry-run mode (`-DryRun`) previews all planned moves without making any changes.
+- Prints a summary of files moved and directories skipped.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-Root <path>` | Root directory to scan. Defaults to `.` |
+| `-DryRun` | Preview mode; no files are moved |
+| `-Debug` | Enable verbose debug output |
+
+**Execution:**
+
+```powershell
+Set-Location "Z:\Media\Movies"
+.\organize-chapters.ps1
+
+# Dry-run preview
+.\organize-chapters.ps1 -DryRun
+
+# Specify a root directory
+.\organize-chapters.ps1 -Root "Z:\Media\Movies" -DryRun
+```
 
 Recursively scans movie directories for duplicate video files and removes them, keeping the best copy. Also removes associated sidecar files for deleted duplicates.
 
@@ -531,6 +580,7 @@ Set-Location "Z:\Media\Movies"
 |---|---|
 | Video codec (AMD/VAAPI) | `hevc_vaapi` |
 | Video codec (Intel QSV) | `hevc_qsv` |
+| Video codec (AMD VCE via HandBrake AV1) | `av1_amf` |
 | Quality (ffmpeg) | QP 22 |
 | Video bitrate target | 1800 kbps |
 | Video bitrate max | 2000 kbps |

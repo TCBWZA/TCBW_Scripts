@@ -22,21 +22,22 @@ TCBW_Scripts/
 ├── Video/
 │   ├── Foreign/                        - Compression scripts for foreign language content
 │   │   ├── README.md
-│   │   ├── compress_amd_x265_aac.sh   - AMD GPU VAAPI compression (bash)
-│   │   ├── compress_qsv_x265_aac.ps1  - Intel QSV compression (PowerShell)
-│   │   ├── deinterlace_qsv_x265_aac.ps1 - Intel QSV deinterlace/compression (PowerShell)
-│   │   ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE compression (PowerShell)
-│   │   ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV compression (PowerShell)
+│   │   ├── compress_amd_x265_aac.sh   - AMD GPU VAAPI x265 compression (bash)
+│   │   ├── compress_qsv_x265_aac.ps1  - Intel QSV x265 compression (PowerShell)
+│   │   ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE x265 compression (PowerShell)
+│   │   ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV x265 compression (PowerShell)
 │   │   ├── fixSpecials.ps1            - Renames Specials folders to Season 00 (PowerShell)
 │   │   └── dedup.ps1                  - Duplicate removal (PowerShell)
 │   ├── Movies/                         - Compression, deduplication, and maintenance scripts for movies
 │   │   ├── README.md
-│   │   ├── compress_amd_x265_aac.sh   - AMD GPU VAAPI compression (bash)
-│   │   ├── compress_amd_x265_aac.ps1  - AMD GPU compression (PowerShell)
-│   │   ├── compress_qsv_x265_aac.ps1  - Intel QSV compression (PowerShell)
-│   │   ├── clean_compress_amd_x265_aac.sh - AMD GPU w/ track filtering (bash)
-│   │   ├── clean_compress_qsv_x265_aac.ps1 - Intel QSV w/ track filtering (PowerShell)
-│   │   ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE compression (PowerShell)
+│   │   ├── AV1 4K preset.json         - HandBrake AV1 4K user preset (import into HandBrake)
+│   │   ├── compress_amd_x265_aac.sh   - AMD GPU VAAPI x265 compression (bash)
+│   │   ├── compress_amd_x265_aac.ps1  - AMD GPU x265 compression (PowerShell)
+│   │   ├── compress_qsv_x265_aac.ps1  - Intel QSV x265 compression (PowerShell)
+│   │   ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE x265 compression (PowerShell)
+│   │   ├── hbcompress_amd_av1_4k.ps1  - HandBrake AMD VCE AV1 4K compression (PowerShell)
+│   │   ├── organize-chapters.sh       - Moves *_chapters.xml files into chapters/ subdirectory (bash)
+│   │   ├── organize-chapters.ps1      - Moves *_chapters.xml files into chapters/ subdirectory (PowerShell)
 │   │   ├── remuxmp4.sh                - MP4 to MKV container remux with Radarr integration (bash)
 │   │   ├── apply-movie-metadata.sh    - NFO metadata writer to MKV tags (bash)
 │   │   ├── Apply-MovieMetadata.ps1    - NFO metadata writer to MKV tags (PowerShell)
@@ -46,9 +47,11 @@ TCBW_Scripts/
 │   │   └── findcorrupt.ps1            - Corrupt MKV detection with Radarr integration (PowerShell)
    └── TV/                             - Compression, deduplication, and maintenance scripts for TV shows
        ├── README.md
-       ├── compress_amd_x265_aac.sh    - AMD VAAPI compression (bash)
-       ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE compression (PowerShell)
-       ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV compression (PowerShell)
+       ├── compress_amd_x265_aac.sh    - AMD VAAPI x265 compression (bash)
+       ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE x265 compression (PowerShell)
+       ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV x265 compression (PowerShell)
+       ├── organize-chapters.sh        - Moves *_chapters.xml files into chapters/ subdirectory (bash)
+       ├── organize-chapters.ps1       - Moves *_chapters.xml files into chapters/ subdirectory (PowerShell)
        ├── remux.ps1                   - Container-repair remux without re-encoding (PowerShell)
        ├── dedup.ps1                   - Duplicate episode removal and priority-based selection (PowerShell)
        ├── findforeign.sh              - Foreign-audio detection (bash)

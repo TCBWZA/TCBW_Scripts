@@ -59,7 +59,7 @@ Batch video compression script using AMD GPU hardware acceleration (VAAPI) via `
 
 - Inspects each file with `ffprobe` (single JSON call via `jq`) to determine video codec, audio codec, video bitrate, field order, and frame rate.
 - Skips AV1-encoded files entirely.
-- Fast remux path: files already HEVC+AAC under 2.5 Mbps are remuxed (stream copy, no re-encode) with subtitle streams filtered to English (`eng`) and undefined (`und`) only.
+- Container repair remux: files already in the desired format (HEVC+AAC under 2.5 Mbps, progressive) are checked for container anomalies (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors). Broken containers are remuxed (stream copy) into a clean MKV; clean files are skipped without re-encoding.
 - Converts remaining files that are not HEVC+AAC or that exceed 2.5 Mbps video bitrate.
 - Three-stage interlace and telecine detection:
   - **Fast pass**: reads `field_order` from stream metadata. Hard interlace flags (`tt`, `bb`, `tb`, `bt`) resolve immediately to `interlaced`; `progressive` flag resolves immediately to `progressive`.
@@ -105,7 +105,7 @@ PowerShell batch compression script using HandBrakeCLI with AMD VCE hardware enc
 - Skips files already encoded as HEVC+AAC that are under 2.5 Mbps.
 - Skips 4K (UHD) and AV1-encoded files.
 - Skips files with no video stream or no audio stream.
-- Checks MKV containers for structural anomalies (bad `start_time`, corrupt duration, problematic subtitle codecs); automatically remuxes broken containers before transcoding.
+- Checks MKV containers for structural anomalies (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors such as non-monotonic timestamps, truncated streams, or missing moov atom); automatically remuxes broken containers before transcoding.
 - Detects file locks before and after encoding; skips files currently open by other processes.
 - Performs deferred interlace detection (only when transcoding is required): skips the first 5 minutes to avoid credits, analyzes 200 frames for interlace or telecine patterns. HEVC input skips this step.
 - Applies `--deinterlace=slower` for interlaced content; `--detelecine --deinterlace=slower` for suspected telecine.
@@ -144,7 +144,7 @@ PowerShell batch compression script using HandBrakeCLI with Intel Quick Sync Vid
 - Same logic and feature set as `hbcompress_amd_x265_aac.ps1`.
 - Uses `qsv_h265` as the HandBrake encoder with `--encoder-preset medium`.
 - Skips 4K (UHD) and AV1-encoded files.
-- Checks MKV containers for structural anomalies and remuxes broken containers before transcoding.
+- Checks MKV containers for structural anomalies (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors such as non-monotonic timestamps, truncated streams, or missing moov atom); automatically remuxes broken containers before transcoding.
 - Detects file locks before and after encoding.
 - Performs deferred interlace detection with the same frame-skip logic.
 - Filters subtitle streams to English and undefined language tracks.
@@ -565,6 +565,72 @@ Set-Location "Z:\Media\TV"
 
 # With debug output
 .\setairdate.ps1 -DryRun -Debug
+```
+
+---
+
+### organize-chapters.sh
+
+Bash utility that recursively moves `*_chapters.xml` files into a `chapters/` subdirectory within each folder that contains them.
+
+**What it does:**
+
+- Walks the directory tree from the specified root.
+- For each directory containing `*_chapters.xml` files, creates a `chapters/` subdirectory and moves all matching files into it.
+- Skips directories containing a `.skip` marker file (and all their subdirectories).
+- Skips any directory already named `chapters` to avoid redundant nesting.
+- Dry-run mode (`--dry-run`) previews all planned moves without making any changes.
+- Prints a summary of files moved and directories skipped.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `--root <dir>` | Root directory to scan. Defaults to `.` |
+| `--dry-run` | Preview mode; no files are moved |
+| `--debug` | Enable verbose debug output |
+
+**Execution:**
+
+```bash
+cd /mnt/media/TV
+./organize-chapters.sh
+
+# Dry-run preview
+./organize-chapters.sh --dry-run
+```
+
+---
+
+### organize-chapters.ps1
+
+PowerShell equivalent of `organize-chapters.sh`. Recursively moves `*_chapters.xml` files into a `chapters/` subdirectory within each folder that contains them.
+
+**What it does:**
+
+- Walks the directory tree from the specified root.
+- For each directory containing `*_chapters.xml` files, creates a `chapters/` subdirectory and moves all matching files into it.
+- Skips directories containing a `.skip` marker file (and all their subdirectories).
+- Skips any directory already named `chapters` to avoid redundant nesting.
+- Dry-run mode (`-DryRun`) previews all planned moves without making any changes.
+- Prints a summary of files moved and directories skipped.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-Root <path>` | Root directory to scan. Defaults to `.` |
+| `-DryRun` | Preview mode; no files are moved |
+| `-Debug` | Enable verbose debug output |
+
+**Execution:**
+
+```powershell
+Set-Location "Z:\Media\TV"
+.\organize-chapters.ps1
+
+# Dry-run preview
+.\organize-chapters.ps1 -DryRun
 ```
 
 ---
