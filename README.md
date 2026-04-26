@@ -30,6 +30,7 @@ TCBW_Scripts/
 │   │   └── dedup.ps1                  - Duplicate removal (PowerShell)
 │   ├── General/                        - Shared utility scripts used across all video content types
 │   │   ├── README.md
+│   │   ├── dircleanup.sh              - Removes orphaned trickplay dirs, stale .skip markers, and dangling NFOs (bash)
 │   │   ├── dircleanup.ps1             - Removes orphaned trickplay dirs, stale .skip markers, and dangling NFOs (PowerShell)
 │   │   ├── organize-chapters.sh       - Moves *_chapters.xml files into chapters/ subdirectory (bash)
 │   │   ├── organize-chapters.ps1      - Moves *_chapters.xml files into chapters/ subdirectory (PowerShell)

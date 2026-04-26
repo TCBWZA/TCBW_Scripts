@@ -25,6 +25,40 @@ Use at your own risk. Some scripts perform destructive operations on files. Alwa
 
 ## Scripts
 
+### dircleanup.sh
+
+Bash equivalent of `dircleanup.ps1`. Removes orphaned trickplay directories, stale `.skip_<basename>` markers, and dangling `.nfo` sidecar files from a media library directory tree.
+
+**What it does:**
+
+- **Trickplay directories**: Directories named `trickplay` with no video files (`.mkv`, `.mp4`, `.avi`, `.ts`) in the parent directory are removed. Directories matching `<basename>.trickplay` where no video with that base name exists in the same directory are also removed.
+- **Stale `.skip` markers**: Files matching `.skip_<basename>` are removed when no video file with that base name exists in the same directory.
+- **Dangling NFO sidecars**: Files matching `<basename>.nfo` are removed when no video file with that base name exists in the same directory. Generic library-level NFO names (`movie.nfo`, `movies.nfo`, `tvshow.nfo`, `series.nfo`, `show.nfo`) are never removed.
+- Respects `.skip` directory markers: directories containing a `.skip` file and all their subdirectories are excluded from processing.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `--root <dir>` | Root directory to scan. Defaults to `.` |
+| `--audit` | Preview mode; no files or directories are removed |
+| `--debug` | Enable verbose debug output |
+
+**Execution:**
+
+```bash
+# Always audit first to review planned removals
+./dircleanup.sh --root /mnt/media/Movies --audit
+
+# Perform live cleanup
+./dircleanup.sh --root /mnt/media/Movies
+
+# Run from current directory
+./dircleanup.sh --audit
+```
+
+---
+
 ### dircleanup.ps1
 
 PowerShell utility that removes three categories of orphaned items from a media library directory tree: trickplay directories with no corresponding video file, stale `.skip_<basename>` markers for videos that no longer exist, and dangling `.nfo` sidecar files for videos that no longer exist.
