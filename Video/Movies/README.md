@@ -168,12 +168,12 @@ PowerShell compression script using AMD GPU (AMF/VCE) hardware acceleration to e
 - File-lock detection: files currently open by other processes are skipped.
 - Atomic replacement: writes to a temp file and swaps in place only when the result is smaller and valid.
 - `.skip` directory marker and `.skip_<basename>` per-file marker support.
-- Encodes via HandBrakeCLI using the user-defined **"AV1 4k"** preset (import `AV1 4K preset.json` into HandBrake before use).
+- Encodes via HandBrakeCLI using the user-defined **"AV1 4k"** preset (import `Handbrake AV1 4K preset.json` into HandBrake before use).
 - Requires an AMD GPU with AV1 hardware encoding support.
 
 **Requirements:**
 
-- Import `AV1 4K preset.json` into HandBrake via `Presets > Import from File` before running.
+- Import `Handbrake AV1 4K preset.json` into HandBrake via `Presets > Import from File` before running.
 
 **Parameters:**
 
