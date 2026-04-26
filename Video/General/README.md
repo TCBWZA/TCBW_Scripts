@@ -25,6 +25,38 @@ Use at your own risk. Some scripts perform destructive operations on files. Alwa
 
 ## Scripts
 
+### fixSpecials.ps1
+
+PowerShell utility that normalises `Specials` folders in a show library by renaming them to `Season 00` (the standard Jellyfin/Plex naming). Runs recursively from the current directory.
+
+**What it does:**
+
+- Walks all subdirectories looking for folders named exactly `Specials`.
+- If no `Season 00` sibling exists: renames `Specials` to `Season 00`.
+- If `Season 00` already exists: moves all files and subdirectories from `Specials` into `Season 00`, merging contents.
+- Removes `Specials` after a successful merge (only if it is empty after moving).
+- Writes a timestamped audit log (`specials_audit_<timestamp>.log`) in the working directory.
+- Dry-run mode (`-DryRun`) previews all planned operations without making any changes.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-DryRun` | Preview mode; no files or directories are modified |
+| `-Debug` | Enables verbose debug output with timestamps |
+
+**Execution:**
+
+```powershell
+# Dry-run preview
+.\fixSpecials.ps1 -DryRun
+
+# Apply changes
+.\fixSpecials.ps1
+```
+
+---
+
 ### dircleanup.sh
 
 Bash equivalent of `dircleanup.ps1`. Removes orphaned trickplay directories, stale `.skip_<basename>` markers, and dangling `.nfo` sidecar files from a media library directory tree.

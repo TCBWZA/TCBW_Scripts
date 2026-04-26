@@ -95,6 +95,82 @@ cd /mnt/media/TV
 
 ---
 
+### compress_amd_x265_aac.ps1
+
+PowerShell compression script using AMD GPU hardware acceleration (`hevc_amf` via `dxva2`). Targets `.mkv`, `.mp4`, and `.ts` files that are 1 GB or larger.
+
+**What it does:**
+
+- Inspects each file with `ffprobe` to determine video codec, audio codec, video bitrate, and field order.
+- Skips files already encoded as HEVC+AAC that are under 2.5 Mbps and are progressive.
+- Skips 4K (UHD) content (filename and height checks).
+- Files tagged `[Cleaned]` or `[Trans]` are deleted automatically.
+- Detects interlacing via `ffmpeg idet` filter (200 frames, skipping first 5 minutes); applies `yadif` deinterlace filter when interlacing is detected.
+- Encodes with `hevc_amf` at 1800k target / 2000k max bitrate.
+- All audio and subtitle streams are copied without modification.
+- Writes to a temporary file; atomically replaces the original only if the output is smaller.
+- Creates a `.skip_<basename>` marker when output is not smaller, preventing repeated re-encode attempts.
+- Supports `.skip` directory markers and per-file `.skip_<basename>` markers.
+- Runs up to 2 parallel encoding jobs (configurable via `$MaxJobs`).
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-Debug` / `-d` | Enables verbose debug output with timestamps. |
+
+**Execution:**
+
+```powershell
+# Run from within the TV directory
+Set-Location "Z:\Media\TV"
+.\compress_amd_x265_aac.ps1
+
+# Enable debug output
+.\compress_amd_x265_aac.ps1 -Debug
+```
+
+---
+
+### compress_qsv_x265_aac.ps1
+
+PowerShell compression script using Intel Quick Sync Video (QSV) hardware acceleration (`hevc_qsv`). Targets `.mkv`, `.mp4`, and `.ts` files that are 1 GB or larger.
+
+**What it does:**
+
+- Inspects each file with `ffprobe` to determine video codec, audio codec, video bitrate, and field order.
+- Skips files already encoded as HEVC+AAC that are under 2.5 Mbps and are progressive.
+- Container repair remux: already-compliant files with container anomalies (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors) are remuxed (stream copy) into a clean MKV; clean files are skipped without re-encoding.
+- Skips 4K (UHD) content (filename and height checks).
+- Files tagged `[Cleaned]` or `[Trans]` are deleted automatically.
+- Handles MP4 `mov_text` subtitles by converting them to SRT before remuxing into MKV.
+- Detects interlacing via `ffmpeg idet` filter (200 frames, skipping first 5 minutes); applies `deinterlace_qsv` hardware filter when interlacing is detected.
+- Encodes with `hevc_qsv` at 1800k target / 2000k max bitrate.
+- All audio and subtitle streams are copied without modification.
+- Writes to a temporary file; atomically replaces the original only if the output is smaller.
+- Creates a `.skip_<basename>` marker when output is not smaller, preventing repeated re-encode attempts.
+- Supports `.skip` directory markers and per-file `.skip_<basename>` markers.
+- Runs up to 2 parallel encoding jobs (configurable via `$MaxJobs`).
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-Debug` / `-d` | Enables verbose debug output with timestamps. |
+
+**Execution:**
+
+```powershell
+# Run from within the TV directory
+Set-Location "Z:\Media\TV"
+.\compress_qsv_x265_aac.ps1
+
+# Enable debug output
+.\compress_qsv_x265_aac.ps1 -Debug
+```
+
+---
+
 ### hbcompress_amd_x265_aac.ps1
 
 PowerShell batch compression script using HandBrakeCLI with AMD VCE hardware encoding. Targets `.mkv`, `.mp4`, and `.ts` files that are 1 GB or larger.
