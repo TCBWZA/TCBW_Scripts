@@ -26,10 +26,10 @@ TCBW_Scripts/
 │   │   ├── compress_qsv_x265_aac.ps1  - Intel QSV x265 compression (PowerShell)
 │   │   ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE x265 compression (PowerShell)
 │   │   ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV x265 compression (PowerShell)
-│   │   ├── fixSpecials.ps1            - Renames Specials folders to Season 00 (PowerShell)
 │   │   └── dedup.ps1                  - Duplicate removal (PowerShell)
 │   ├── General/                        - Shared utility scripts used across all video content types
 │   │   ├── README.md
+│   │   ├── fixSpecials.ps1            - Renames Specials folders to Season 00, merging if needed (PowerShell)
 │   │   ├── dircleanup.sh              - Removes orphaned trickplay dirs, stale .skip markers, and dangling NFOs (bash)
 │   │   ├── dircleanup.ps1             - Removes orphaned trickplay dirs, stale .skip markers, and dangling NFOs (PowerShell)
 │   │   ├── organize-chapters.sh       - Moves *_chapters.xml files into chapters/ subdirectory (bash)
@@ -54,6 +54,8 @@ TCBW_Scripts/
 │   └── TV/                             - Compression, deduplication, and maintenance scripts for TV shows
 │       ├── README.md
 │       ├── compress_amd_x265_aac.sh    - AMD VAAPI x265 compression (bash)
+│       ├── compress_amd_x265_aac.ps1   - AMD GPU x265 compression (PowerShell)
+│       ├── compress_qsv_x265_aac.ps1   - Intel QSV x265 compression (PowerShell)
 │       ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE x265 compression (PowerShell)
 │       ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV x265 compression (PowerShell)
 │       ├── remux.ps1                   - Container-repair remux without re-encoding (PowerShell)
@@ -187,6 +189,12 @@ This dual-machine approach ensures reliable batch processing despite the Debian 
 **Compression:**
 
 ```powershell
+# TV Content - AMD GPU compression (ffmpeg)
+.\Video\TV\compress_amd_x265_aac.ps1
+
+# TV Content - Intel QSV compression (ffmpeg)
+.\Video\TV\compress_qsv_x265_aac.ps1
+
 # TV Content - AMD VCE compression (HandBrake)
 .\Video\TV\hbcompress_amd_x265_aac.ps1
 
