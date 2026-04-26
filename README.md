@@ -28,39 +28,40 @@ TCBW_Scripts/
 │   │   ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV x265 compression (PowerShell)
 │   │   ├── fixSpecials.ps1            - Renames Specials folders to Season 00 (PowerShell)
 │   │   └── dedup.ps1                  - Duplicate removal (PowerShell)
+│   ├── General/                        - Shared utility scripts used across all video content types
+│   │   ├── README.md
+│   │   ├── dircleanup.ps1             - Removes orphaned trickplay dirs, stale .skip markers, and dangling NFOs (PowerShell)
+│   │   ├── organize-chapters.sh       - Moves *_chapters.xml files into chapters/ subdirectory (bash)
+│   │   ├── organize-chapters.ps1      - Moves *_chapters.xml files into chapters/ subdirectory (PowerShell)
+│   │   ├── setairdate.sh              - NFO air date to file timestamp setter for TV episodes (bash)
+│   │   ├── setairdate.ps1             - NFO air date to file timestamp setter for TV episodes (PowerShell)
+│   │   ├── setreleasedate.sh          - NFO release date to file timestamp setter for movies (bash)
+│   │   └── setreleasedate.ps1         - NFO release date to file timestamp setter for movies (PowerShell)
 │   ├── Movies/                         - Compression, deduplication, and maintenance scripts for movies
 │   │   ├── README.md
-│   │   ├── AV1 4K preset.json         - HandBrake AV1 4K user preset (import into HandBrake)
+│   │   ├── Handbrake AV1 4K preset.json - HandBrake AV1 4K user preset (import into HandBrake)
 │   │   ├── compress_amd_x265_aac.sh   - AMD GPU VAAPI x265 compression (bash)
 │   │   ├── compress_amd_x265_aac.ps1  - AMD GPU x265 compression (PowerShell)
 │   │   ├── compress_qsv_x265_aac.ps1  - Intel QSV x265 compression (PowerShell)
 │   │   ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE x265 compression (PowerShell)
 │   │   ├── hbcompress_amd_av1_4k.ps1  - HandBrake AMD VCE AV1 4K compression (PowerShell)
-│   │   ├── organize-chapters.sh       - Moves *_chapters.xml files into chapters/ subdirectory (bash)
-│   │   ├── organize-chapters.ps1      - Moves *_chapters.xml files into chapters/ subdirectory (PowerShell)
 │   │   ├── remuxmp4.sh                - MP4 to MKV container remux with Radarr integration (bash)
 │   │   ├── apply-movie-metadata.sh    - NFO metadata writer to MKV tags (bash)
 │   │   ├── Apply-MovieMetadata.ps1    - NFO metadata writer to MKV tags (PowerShell)
-│   │   ├── setreleasedate.sh          - NFO release date to file timestamp setter (bash)
-│   │   ├── setreleasedate.ps1         - NFO release date to file timestamp setter (PowerShell)
 │   │   ├── dedup.ps1                  - Duplicate removal (PowerShell)
 │   │   └── findcorrupt.ps1            - Corrupt MKV detection with Radarr integration (PowerShell)
-   └── TV/                             - Compression, deduplication, and maintenance scripts for TV shows
-       ├── README.md
-       ├── compress_amd_x265_aac.sh    - AMD VAAPI x265 compression (bash)
-       ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE x265 compression (PowerShell)
-       ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV x265 compression (PowerShell)
-       ├── organize-chapters.sh        - Moves *_chapters.xml files into chapters/ subdirectory (bash)
-       ├── organize-chapters.ps1       - Moves *_chapters.xml files into chapters/ subdirectory (PowerShell)
-       ├── remux.ps1                   - Container-repair remux without re-encoding (PowerShell)
-       ├── dedup.ps1                   - Duplicate episode removal and priority-based selection (PowerShell)
-       ├── findforeign.sh              - Foreign-audio detection (bash)
-       ├── findforeign.ps1             - Foreign-audio detection with Sonarr integration (PowerShell)
-       ├── findcorrupt.ps1             - Corrupt MKV detection with Sonarr integration (PowerShell)
-       ├── apply-episode-metadata.sh   - NFO metadata writer to MKV tags (bash)
-       ├── Apply-EpisodeMetadata.ps1   - NFO metadata writer to MKV tags (PowerShell)
-       ├── setairdate.sh               - NFO air date to file timestamp setter (bash)
-       └── setairdate.ps1              - NFO air date to file timestamp setter (PowerShell)
+│   └── TV/                             - Compression, deduplication, and maintenance scripts for TV shows
+│       ├── README.md
+│       ├── compress_amd_x265_aac.sh    - AMD VAAPI x265 compression (bash)
+│       ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE x265 compression (PowerShell)
+│       ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV x265 compression (PowerShell)
+│       ├── remux.ps1                   - Container-repair remux without re-encoding (PowerShell)
+│       ├── dedup.ps1                   - Duplicate episode removal and priority-based selection (PowerShell)
+│       ├── findforeign.sh              - Foreign-audio detection (bash)
+│       ├── findforeign.ps1             - Foreign-audio detection with Sonarr integration (PowerShell)
+│       ├── findcorrupt.ps1             - Corrupt MKV detection with Sonarr integration (PowerShell)
+│       ├── apply-episode-metadata.sh   - NFO metadata writer to MKV tags (bash)
+│       └── Apply-EpisodeMetadata.ps1   - NFO metadata writer to MKV tags (PowerShell)
 └── Files/
     └── (legacy or additional files)
 ```
@@ -81,6 +82,7 @@ A comprehensive collection of powerful video transcoding, compression, and dedup
 
 ### Video Folder Organization
 
+- **[General/](Video/General/README.md)** - Shared utility scripts used across all video content types
 - **[Foreign/](Video/Foreign/README.md)** - Compression scripts for foreign language content
 - **[Movies/](Video/Movies/README.md)** - Compression and maintenance scripts for movie content
 - **[TV/](Video/TV/README.md)** - Compression and maintenance scripts for TV show content
