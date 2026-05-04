@@ -11,4 +11,4 @@ if ! mountpoint -q "/mnt/emedia"; then
     exit 1 
 fi
 
-rsync -avh --modify-window=5 --itemize-changes --progress --delete --exclude='*.tmp' "$SOURCE" "$DEST"
+rsync -avh --size-only --no-times --no-perms --omit-dir-times --modify-window=5 --itemize-changes --progress --delete --exclude='*.tmp' "$SOURCE" "$DEST"
