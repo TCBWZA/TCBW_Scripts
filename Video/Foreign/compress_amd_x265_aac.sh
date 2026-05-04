@@ -1,6 +1,29 @@
 #!/bin/bash
 
-trap 'echo "Interrupted -- exiting safely"; exit 1' INT
+###############################################################
+# PRE-FLIGHT CHECKS
+###############################################################
+for tool in ffprobe ffmpeg; do
+    if ! command -v "$tool" &> /dev/null; then
+        echo "ERROR: $tool not found in PATH"
+        echo "Please install or add to PATH before running this script."
+        exit 1
+    fi
+done
+
+###############################################################
+# CLEANUP TRAP FOR INTERRUPTION
+###############################################################
+temp_files=()
+cleanup() {
+    if [[ ${#temp_files[@]} -gt 0 ]]; then
+        debug "\nCleaning up temp files due to interruption..."
+        for file in "${temp_files[@]}"; do
+            rm -f "$file" 2>/dev/null
+        done
+    fi
+}
+trap 'echo "Interrupted -- exiting safely"; cleanup; exit 1' INT TERM EXIT
 
 #####################################################
 # DEBUG MODE
@@ -281,6 +304,7 @@ for f in "${files[@]}"; do
     #####################################################
 
     tmpfile="$dir/${base_no_ext}[Trans].tmp"
+    temp_files+=("$tmpfile")
 
     rm -f -- "$tmpfile"
 
