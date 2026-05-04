@@ -596,7 +596,7 @@ foreach ($f in $files) {
             --input "$($f.FullName)" `
             --output "$tmpfile" `
             --format mkv `
-            --encoder amd_h265 `
+            --encoder vce_h265 `
             --encoder-preset balanced `
             --quality 24 `
             --maxHeight 2160 `
@@ -608,7 +608,7 @@ foreach ($f in $files) {
             --input "$($f.FullName)" `
             --output "$tmpfile" `
             --format mkv `
-            --encoder amd_h265 `
+            --encoder vce_h265 `
             --encoder-preset balanced `
             --quality 24 `
             --maxHeight 2160 `
