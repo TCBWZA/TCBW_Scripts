@@ -1,361 +1,343 @@
 #!/usr/bin/env bash
-IFS=''
-set -euo pipefail
+#
+# Unified MKV cleaner + NFO applier
+# Full DEBUG mode with selective temp preservation
+#
 
-export LANG=C.UTF-8
-export LC_ALL=C.UTF-8
+set +euo
+IFS=$'\n\t'
 
-###############################################################################
-# fixmkvproperties.sh
-#
-# MKV Track Metadata Cleaner
-#
-# Description:
-#   This script cleans MKV track metadata by:
-#
-#   1. Identify MKV structure using mkvmerge JSON.
-#
-#   2. If ANY track is missing .properties.track_number:
-#        - Remux the file with mkvmerge to normalize the container.
-#        - Re-check track numbers after remux.
-#        - If track numbers are still missing, skip the file as corrupt.
-#
-#   3. For each track:
-#        - If the track name matches an exact-match junk list entry, delete it.
-#        - Otherwise, clean partial junk patterns from the name.
-#        - Apply rename/delete operations using mkvpropedit.
-#
-# Usage:
-#     ./fixmkvproperties.sh [--debug]
-#
-# Options:
-#     --debug     Enable verbose debug logging
-#
-# Notes:
-#   - mkvpropedit is only called with guaranteed-valid track selectors.
-#   - Exact-match lists and junk patterns are fully configurable.
-###############################################################################
-
-##############################################
-# COMMAND-LINE OPTION HANDLING
-##############################################
-
+DRYRUN=0
 DEBUG=0
+AUDIT_LOG=""
 
-usage() {
-    echo "Usage: $0 [--debug]"
-    exit 1
-}
-
-if [[ $# -gt 0 ]]; then
+while [[ $# -gt 0 ]]; do
     case "$1" in
-        --debug)
-            DEBUG=1
+        --dry-run) DRYRUN=1 ;;
+        --debug)   DEBUG=1 ;;
+        --audit-log)
+            AUDIT_LOG="$2"
             shift
             ;;
         *)
-            echo "ERROR: Invalid option '$1'"
-            usage
+            echo "Unknown argument: $1" >&2
+            exit 1
             ;;
     esac
-fi
+    shift
+done
 
-dbg() {
-    [[ "$DEBUG" -eq 1 ]] && echo "[DEBUG] $*"
+LOGGING_ENABLED=0
+[[ -n "$AUDIT_LOG" ]] && LOGGING_ENABLED=1
+
+log_audit() {
+    [[ $LOGGING_ENABLED -eq 1 ]] || return
+    printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$AUDIT_LOG"
 }
 
-##############################################
-# PREREQUISITE CHECKS
-##############################################
+log_debug() {
+    if [[ $DEBUG -eq 1 ]]; then
+        printf '[DEBUG] %s\n' "$1"
+        [[ $LOGGING_ENABLED -eq 1 ]] && log_audit "[DEBUG] $1"
+    fi
+}
 
-for cmd in mkvmerge mkvpropedit jq; do
+# Conditional deletion: preserve only selected temp files in DEBUG mode
+safe_rm() {
+    local f="$1"
+    local keep="$2"   # "yes" or "no"
+
+    if [[ $DEBUG -eq 1 && "$keep" == "yes" ]]; then
+        echo "[DEBUG] Preserving temp file: $f"
+    else
+        rm -f "$f"
+    fi
+}
+
+for cmd in xmlstarlet mkvmerge mkvpropedit mkvextract jq stat touch; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
-        echo "ERROR: Required tool '$cmd' is not installed."
+        echo "ERROR: Required command '$cmd' not found"
         exit 1
     fi
 done
 
-##############################################
-# EXACT-MATCH JUNK LISTS
-##############################################
+xml_get() {
+    local file="$1"
+    local xpath="$2"
+    xmlstarlet sel -t -v "$xpath" -n "$file" 2>/dev/null || true
+}
 
-video_junk_exact=(
-  "[Erai-raws]_AVC_CR"
-  "[SubsPlease]_AVC"
-  "[NC-Raws]_AVC"
-  "[ToonsHub]_AVC"
-)
+get_mkv_tag() {
+    local xmlfile="$1"
+    local tagname="$2"
+    xmlstarlet sel -t -v "//Simple[Name='$tagname']/String" "$xmlfile" 2>/dev/null || true
+}
 
-audiosub_junk_exact=(
+build_tags_xml() {
+    local outfile="$1"
+    {
+        echo "<Tags>"
+        echo "  <Tag>"
+        for key in TITLE SERIES SEASON EPISODE DESCRIPTION DATE_RELEASED; do
+            local val="${TAGS[$key]}"
+            local esc
+            esc=$(printf '%s' "$val" | xmlstarlet esc)
+            printf '    <Simple><Name>%s</Name><String>%s</String></Simple>\n' \
+                "$key" "$esc"
+        done
+        echo "  </Tag>"
+        echo "</Tags>"
+    } > "$outfile"
+}
+
+long_patterns=(
   "[Erai-raws]_AAC_CR"
-  "[SubsPlease]_AAC"
-  "[NC-Raws]_AAC"
+  "[Erai-raws]_AVC_CR"
+  "CR - "
+  "CR "
 )
-
-##############################################
-# PARTIAL JUNK PATTERNS
-##############################################
 
 junk_patterns=(
+  "\[Erai-raws\]" "\[SubsPlease\]" "\[Judas\]" "\[EMBER\]"
+  "\[NC-Raws\]" "\[LowPower-Raws\]"
   "Erai-raws" "SubsPlease" "ToonsHub" "Judas" "EMBER"
   "Anime Time" "HorribleSubs" "DeadFish" "AnimeRG"
   "NC-Raws" "LowPower-Raws" "Kirion" "Vodes"
   "Kawaiika-Raws" "Yameii" "AkihitoSubs"
-  "CR WEB-DL" "CR " "CR -" "HiDive" "Netflix"
-  "AMZN" "Amazon" "Disney+" "Bilibili" "Ani-One"
-  "\\[Erai-raws\\]" "\\[SubsPlease\\]" "\\[Judas\\]"
-  "\\[EMBER\\]" "\\[NC-Raws\\]" "\\[LowPower-Raws\\]"
+  "CR WEB-DL" "HiDive" "Netflix" "AMZN" "Amazon"
+  "Disney+" "Bilibili" "Ani-One"
 )
 
-##############################################
-# EXACT MATCH CHECK
-##############################################
-
-is_exact_junk() {
-    local name="$1"
-    shift
-    local list=("$@")
-
-    for item in "${list[@]}"; do
-        if [[ "$name" == "$item" ]]; then
-            dbg "Exact match: '$name' == '$item'"
-            return 0
-        fi
-    done
-
-    return 1
+escape_for_xmlstarlet() {
+    printf '%s' "$1" | sed "s/'/'\\\\''/g"
 }
 
-##############################################
-# CLEAN A TRACK NAME
-##############################################
 
 clean_name() {
     local name="$1"
-    dbg "Cleaning name: '$name'"
 
-    for j in "${junk_patterns[@]}"; do
-        if [[ "$name" =~ $j ]]; then
-            dbg "Removing junk pattern '$j' from '$name'"
-            name="${name//$j/}"
-        fi
+    for p in "${long_patterns[@]}"; do
+        name="${name//$p/}"
     done
 
-    if [[ "$name" == CR\ -\ * ]]; then
-        dbg "Removing CR - prefix"
-        name="${name#CR - }"
-    elif [[ "$name" == CR\ * ]]; then
-        dbg "Removing CR prefix"
-        name="${name#CR }"
-    fi
+    name="$(printf '%s' "$name" | sed 's/\[\]_//g; s/\[\]//g')"
 
-    name="${name//\[\]/}"
-    name="$(echo "$name" | sed 's/^ *//;s/ *$//')"
+    for j in "${junk_patterns[@]}"; do
+        name="${name//$j/}"
+    done
 
-    dbg "Cleaned name: '$name'"
+    name="$(printf '%s' "$name" | sed 's/^[[:space:]]*//')"
     echo "$name"
 }
 
-##############################################
-# FULL TRACK-NUMBER VALIDATION
-##############################################
+echo "Scanning recursively for MKV files..."
+log_audit "=== Unified run started ==="
 
-all_tracks_have_numbers() {
-    local json="$1"
-    local missing
-    missing=$(echo "$json" | jq '[.tracks[].properties.track_number] | map(select(. == null)) | length')
+tmpfile=$(mktemp)
+find . -type f -iname '*.mkv' -print0 > "$tmpfile"
 
-    dbg "Missing track numbers: $missing"
+while IFS= read -r -d '' mkv; do
+    echo "----"
+    echo "Processing MKV: $mkv"
+    log_audit "Processing MKV: $mkv"
 
-    [[ "$missing" -eq 0 ]]
-}
+    dir=$(dirname "$mkv")
+    base=$(basename "$mkv" .mkv)
+    nfo="$dir/$base.nfo"
 
-##############################################
-# NORMALIZE MKV IF ANY TRACK NUMBER IS MISSING
-##############################################
+    apply_tags=1
 
-normalize_mkv() {
-    local file="$1"
-    local tmp="${file%.mkv}.tmp.mkv"
+    if [[ -f "$nfo" ]]; then
+        nfo_clean="$dir/$base.nfo.clean"
 
-    echo "  - Normalizing container (missing track numbers)..."
-    dbg "Running mkvmerge: mkvmerge -o '$tmp' '$file'"
+        sed $'1s/^\uFEFF//' "$nfo" > "$nfo_clean"
+        sync "$nfo_clean"
+        log_debug "Created cleaned NFO: $nfo_clean"
+        
+        escaped_nfo_clean=$(escape_for_xmlstarlet "$nfo_clean")
+        xml_out=$(xmlstarlet sel -t -v "count(//episodedetails)" "$escaped_nfo_clean" 2>&1)
 
-    local orig_mtime orig_atime
-    orig_mtime=$(stat -c %y "$file")
-    orig_atime=$(stat -c %x "$file")
+        xml_rc=$?
+        log_debug "xmlstarlet rc=$xml_rc out='$xml_out'"
+        count="$xml_out"
 
-    if ! mkvmerge -o "$tmp" "$file"; then
-        dbg "mkvmerge failed with exit code $?"
-        echo "  - ERROR: mkvmerge failed. Skipping file."
-        return 1
+        log_debug "episodedetails count = $count"
+
+        if [[ "$count" -lt 1 ]]; then
+            apply_tags=0
+            series=$(basename "$(dirname "$dir")")
+            new_global_title="$series"
+            log_debug "No episodetails found; apply_tags=0"
+        else
+            ep_title=$(xml_get "$nfo_clean" "//episodedetails/title")
+            ep_season=$(xml_get "$nfo_clean" "//episodedetails/season")
+            ep_number=$(xml_get "$nfo_clean" "//episodedetails/episode")
+            ep_plot=$(xml_get "$nfo_clean" "//episodedetails/plot")
+            ep_aired=$(xml_get "$nfo_clean" "//episodedetails/aired")
+            ep_year="${ep_aired:0:4}"
+
+            series=$(xml_get "$nfo_clean" "//episodedetails/showtitle")
+            [[ -z "$series" ]] && series=$(basename "$(dirname "$dir")")
+
+            declare -A TAGS=(
+                [TITLE]="$ep_title"
+                [SERIES]="$series"
+                [SEASON]="$ep_season"
+                [EPISODE]="$ep_number"
+                [DESCRIPTION]="$ep_plot"
+                [DATE_RELEASED]="$ep_year"
+            )
+
+            new_global_title="${series}: ${ep_title}"
+            log_debug "NFO episodic detected: S${ep_season}E${ep_number} - $ep_title"
+        fi
+
+        safe_rm "$nfo_clean" yes
+    else
+        apply_tags=0
+        series=$(basename "$(dirname "$dir")")
+        new_global_title="$series"
+        log_debug "No NFO found; apply_tags=0"
     fi
 
-    dbg "mkvmerge succeeded"
+    # Already processed detection
+    if [[ $apply_tags -eq 1 ]]; then
+        tags_tmp="$dir/$base.extracted.tmp"
+        mkvextract "$mkv" tags "$tags_tmp" 2>/dev/null || true
+        log_debug "Extracted tags to: $tags_tmp"
 
-    mv "$tmp" "$file"
+        if [[ -s "$tags_tmp" ]]; then
+            ex_series=$(get_mkv_tag "$tags_tmp" "SERIES")
+            ex_season=$(get_mkv_tag "$tags_tmp" "SEASON")
+            ex_episode=$(get_mkv_tag "$tags_tmp" "EPISODE")
+            ex_ep_title=$(get_mkv_tag "$tags_tmp" "TITLE")
 
-    touch -d "$orig_mtime" "$file"
-    touch -a -d "$orig_atime" "$file"
+            log_debug "Existing tags: SERIES='$ex_series' SEASON='$ex_season' EPISODE='$ex_episode' TITLE='$ex_ep_title'"
 
-    dbg "Timestamps restored"
-    return 0
-}
-
-##############################################
-# PROCESS A SINGLE MKV FILE
-##############################################
-
-process_file() {
-    local file="$1"
-    echo "Processing: $file"
-
-    local json
-    json=$(mkvmerge --identify --identification-format json "$file")
-
-    dbg "Initial mkvmerge JSON loaded"
-
-    if ! all_tracks_have_numbers "$json"; then
-        dbg "Track numbers missing — normalizing"
-        if ! normalize_mkv "$file"; then
-            echo "  - Skipping due to mkvmerge failure."
-            return
+            if [[ "$ex_series" == "$series" && \
+                  "$ex_season" == "$ep_season" && \
+                  "$ex_episode" == "$ep_number" && \
+                  "$ex_ep_title" == "$ep_title" ]]; then
+                echo "Skipping: Already processed."
+                log_audit "Skipping (already processed): $mkv"
+                safe_rm "$tags_tmp" yes
+                continue
+            fi
         fi
 
-        json=$(mkvmerge --identify --identification-format json "$file")
-        dbg "Re-loaded JSON after normalization"
-
-        if ! all_tracks_have_numbers "$json"; then
-            echo "  - ERROR: Track numbers still missing after normalization. Skipping corrupt file."
-            return
-        fi
+        safe_rm "$tags_tmp" yes
     fi
 
-    local orig_mtime orig_atime
-    orig_mtime=$(stat -c %y "$file")
-    orig_atime=$(stat -c %x "$file")
+    orig_mtime=$(stat -c %y "$mkv")
 
-    ##############################################
-    # VIDEO TRACKS
-    ##############################################
+    if [[ $DRYRUN -eq 1 ]]; then
+        echo "Dry-run: would normalize, clean tracks, set title, apply tags."
+        continue
+    fi
 
-    echo "$json" | jq -c '.tracks[] | select(.type=="video")' | while read -r track; do
-        local id name new_name
+    # Normalize container
+    norm_tmp="$dir/$base.tmp"
+    mkvmerge --title "" -o "$norm_tmp" "$mkv" >/dev/null 2>&1
+    chmod 666 "$norm_tmp"
+    chown 1000:1000 "$norm_tmp"
+    mv -f "$norm_tmp" "$mkv"
+    chmod 666 "$mkv"
+    chown 1000:1000 "$mkv"
+    log_debug "Normalized MKV"
 
-        id=$(echo "$track" | jq -r '.properties.track_number')
-        name=$(echo "$track" | jq -r '.properties.track_name // ""')
+    json=$(mkvmerge -J "$mkv")
 
-        dbg "Video track $id name: '$name'"
+    v_idx=1
+    a_idx=1
+    s_idx=1
 
-        [[ -z "$name" ]] && continue
+    echo "$json" | jq -c '.tracks[]' | while read -r track; do
+        ttype=$(echo "$track" | jq -r '.type')
+        uid=$(echo "$track" | jq -r '.properties.uid')
+        tname=$(echo "$track" | jq -r '.properties.track_name // ""')
 
-        if is_exact_junk "$name" "${video_junk_exact[@]}"; then
-            echo "  - Removing video track name '$name'"
-            dbg "Running mkvpropedit delete for video track $id"
-            mkvpropedit "$file" --edit track:v$id --delete name
-            continue
-        fi
+        case "$ttype" in
+            video) sel="track:v${v_idx}"; v_idx=$((v_idx+1));;
+            audio) sel="track:a${a_idx}"; a_idx=$((a_idx+1));;
+            subtitles) sel="track:s${s_idx}"; s_idx=$((s_idx+1));;
+            *) continue;;
+        esac
 
-        new_name=$(clean_name "$name")
+        real_name=$(mkvpropedit "$mkv" --edit "track:@$uid" --get name 2>/dev/null | sed 's/name=//')
 
-        if [[ "$new_name" != "$name" ]]; then
-            if [[ -z "$new_name" ]]; then
-                echo "  - Removing video track name '$name'"
-                dbg "Running mkvpropedit delete for video track $id"
-                mkvpropedit "$file" --edit track:v$id --delete name
+        if [[ "$ttype" == "video" ]]; then
+            cleaned_name="Video"
+        else
+            if [[ -n "$real_name" ]]; then
+                cleaned_name=$(clean_name "$real_name")
             else
-                echo "  - Renaming video track $id: '$name' -> '$new_name'"
-                dbg "Running mkvpropedit set name='$new_name' for video track $id"
-                mkvpropedit "$file" --edit track:v$id --set "name=$new_name"
+                cleaned_name=$(clean_name "$tname")
             fi
         fi
-    done
 
-    ##############################################
-    # AUDIO TRACKS
-    ##############################################
+        lang=$(echo "$track" | jq -r '.properties.language // ""')
+        lang_name=""
+        case "$lang" in
+            eng) lang_name="English" ;;
+            jpn) lang_name="Japanese" ;;
+            chi|zho|cmn) lang_name="Chinese" ;;
+            yue) lang_name="Cantonese" ;;
+            kor) lang_name="Korean" ;;
+            spa) lang_name="Spanish" ;;
+            fra|fre) lang_name="French" ;;
+            deu|ger) lang_name="German" ;;
+        esac
 
-    echo "$json" | jq -c '.tracks[] | select(.type=="audio")' | while read -r track; do
-        local id name new_name
+        is_sdh=0
+        [[ "$cleaned_name" =~ [Ss][Dd][Hh]|[Cc][Cc]|[Hh][Ii]|Closed[[:space:]]Captions|Hearing[[:space:]]Impaired|HOH ]] && is_sdh=1
 
-        id=$(echo "$track" | jq -r '.properties.track_number')
-        name=$(echo "$track" | jq -r '.properties.track_name // ""')
+        is_signs=0
+        [[ "$cleaned_name" =~ [Ss]igns ]] && is_signs=1
 
-        dbg "Audio track $id name: '$name'"
+        already_has_lang=0
+        [[ "$cleaned_name" =~ English|Japanese|Chinese|Simplified\ Chinese|Mandarin|Cantonese|Korean|Spanish|French|German ]] && already_has_lang=1
 
-        [[ -z "$name" ]] && continue
-
-        if is_exact_junk "$name" "${audiosub_junk_exact[@]}"; then
-            echo "  - Removing audio track name '$name'"
-            dbg "Running mkvpropedit delete for audio track $id"
-            mkvpropedit "$file" --edit track:a$id --delete name
-            continue
-        fi
-
-        new_name=$(clean_name "$name")
-
-        if [[ "$new_name" != "$name" ]]; then
-            if [[ -z "$new_name" ]]; then
-                echo "  - Removing audio track name '$name'"
-                dbg "Running mkvpropedit delete for audio track $id"
-                mkvpropedit "$file" --edit track:a$id --delete name
+        if [[ "$ttype" != "video" ]]; then
+            if [[ $is_sdh -eq 1 ]]; then
+                if [[ $already_has_lang -eq 0 && -n "$lang_name" ]]; then
+                    cleaned_name="$lang_name $cleaned_name"
+                fi
+            elif [[ $is_signs -eq 1 ]]; then
+                if [[ $already_has_lang -eq 0 && -n "$lang_name" ]]; then
+                    cleaned_name="$lang_name $cleaned_name"
+                fi
             else
-                echo "  - Renaming audio track $id: '$name' -> '$new_name'"
-                dbg "Running mkvpropedit set name='$new_name' for audio track $id"
-                mkvpropedit "$file" --edit track:a$id --set "name=$new_name"
+                if [[ $already_has_lang -eq 0 && -n "$lang_name" ]]; then
+                    cleaned_name="$lang_name"
+                fi
             fi
         fi
+
+        log_debug "Track UID=$uid type=$ttype lang=$lang_name real='$real_name' tname='$tname' -> '$cleaned_name'"
+
+        mkvpropedit "$mkv" \
+            --edit "track:@$uid" --set "name=$cleaned_name" \
+            --edit "$sel" --set "name=$cleaned_name" >/dev/null 2>&1
+
     done
 
-    ##############################################
-    # SUBTITLE TRACKS
-    ##############################################
+    temp_tags="$dir/$base.tags.tmp"
+    build_tags_xml "$temp_tags"
+    log_debug "Generated tags XML: $temp_tags"
 
-    echo "$json" | jq -c '.tracks[] | select(.type=="subtitles")' | while read -r track; do
-        local id name new_name
+    if [[ $apply_tags -eq 1 ]]; then
+        log_debug "Applying container title: $new_global_title"
+        mkvpropedit "$mkv" --edit info --set "title=$new_global_title" >/dev/null 2>&1
 
-        id=$(echo "$track" | jq -r '.properties.track_number')
-        name=$(echo "$track" | jq -r '.properties.track_name // ""')
+        log_debug "Applying tags from: $temp_tags"
+        mkvpropedit "$mkv" --tags all:"$temp_tags" >/dev/null 2>&1
+    fi
 
-        dbg "Subtitle track $id name: '$name'"
+    safe_rm "$temp_tags" yes
 
-        [[ -z "$name" ]] && continue
+    touch -d "$orig_mtime" "$mkv"
+    log_audit "Finished: $mkv"
 
-        if is_exact_junk "$name" "${audiosub_junk_exact[@]}"; then
-            echo "  - Removing subtitle track name '$name'"
-            dbg "Running mkvpropedit delete for subtitle track $id"
-            mkvpropedit "$file" --edit track:s$id --delete name
-            continue
-        fi
+done < "$tmpfile"
 
-        new_name=$(clean_name "$name")
-
-        if [[ "$new_name" != "$name" ]]; then
-            if [[ -z "$new_name" ]]; then
-                echo "  - Removing subtitle track name '$name'"
-                dbg "Running mkvpropedit delete for subtitle track $id"
-                mkvpropedit "$file" --edit track:s$id --delete name
-            else
-                echo "  - Renaming subtitle track $id: '$name' -> '$new_name'"
-                dbg "Running mkvpropedit set name='$new_name' for subtitle track $id"
-                mkvpropedit "$file" --edit track:s$id --set "name=$new_name"
-            fi
-        fi
-    done
-
-    touch -d "$orig_mtime" "$file"
-    touch -a -d "$orig_atime" "$file"
-
-    dbg "Timestamps restored"
-    echo "  - Done (timestamps preserved)"
-}
-
-##############################################
-# RECURSIVE MKV SEARCH
-##############################################
-
-find . -type f -iname "*.mkv" -print0 | while IFS= read -r -d '' mkv; do
-    process_file "$mkv"
-done
-
-echo "All MKV files processed."
+rm -f "$tmpfile"
