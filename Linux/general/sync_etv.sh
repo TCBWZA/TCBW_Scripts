@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Deletes files in destination that no longer exist in source
+# parameters are to support copying to cifs mounted exFAT
 
 SOURCE="/main/media/Video/TV/"
 DEST="/mnt/emedia/Media/Video/TV"
