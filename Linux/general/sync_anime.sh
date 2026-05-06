@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Deletes files in destination that no longer exist in source
+# parameters are to support copying to cifs mounted exFAT
 
 SOURCE="/main/media/Video/Anime/"
 DEST="/mnt/nmedia/Media/Video/Anime"
@@ -11,4 +12,4 @@ if ! mountpoint -q "/mnt/nmedia"; then
     exit 1
 fi
 
-rsync -avh --modify-window=5 --itemize-changes --progress --delete --exclude='*.tmp' "$SOURCE" "$DEST"
+rsync -avh --size-only --no-times --no-perms --omit-dir-times --modify-window=5 --itemize-changes --progress --delete --exclude='*.tmp' "$SOURCE" "$DEST"
