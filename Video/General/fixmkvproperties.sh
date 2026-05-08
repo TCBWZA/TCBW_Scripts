@@ -42,10 +42,9 @@ log_debug() {
     fi
 }
 
-# Conditional deletion: preserve only selected temp files in DEBUG mode
 safe_rm() {
     local f="$1"
-    local keep="$2"   # "yes" or "no"
+    local keep="$2"
 
     if [[ $DEBUG -eq 1 && "$keep" == "yes" ]]; then
         echo "[DEBUG] Preserving temp file: $f"
@@ -98,8 +97,7 @@ long_patterns=(
 )
 
 junk_patterns=(
-  "\[Erai-raws\]" "\[SubsPlease\]" "\[Judas\]" "\[EMBER\]"
-  "\[NC-Raws\]" "\[LowPower-Raws\]"
+  "\[Erai-raws\]" "\[SubsPlease\]" "\[Judas\]" "\[EMBER\]" "\[NC-Raws\]" "\[LowPower-Raws\]"
   "Erai-raws" "SubsPlease" "ToonsHub" "Judas" "EMBER"
   "Anime Time" "HorribleSubs" "DeadFish" "AnimeRG"
   "NC-Raws" "LowPower-Raws" "Kirion" "Vodes"
@@ -107,11 +105,6 @@ junk_patterns=(
   "CR WEB-DL" "HiDive" "Netflix" "AMZN" "Amazon"
   "Disney+" "Bilibili" "Ani-One"
 )
-
-escape_for_xmlstarlet() {
-    printf '%s' "$1" | sed "s/'/'\\\\''/g"
-}
-
 
 clean_name() {
     local name="$1"
@@ -148,15 +141,14 @@ while IFS= read -r -d '' mkv; do
     apply_tags=1
 
     if [[ -f "$nfo" ]]; then
-        nfo_clean="$dir/$base.nfo.clean"
+        # Generate a filesystem-safe temp filename for the cleaned NFO
+        nfo_clean="$(mktemp /tmp/cleannfo_XXXXXX)"
 
         sed $'1s/^\uFEFF//' "$nfo" > "$nfo_clean"
         sync "$nfo_clean"
         log_debug "Created cleaned NFO: $nfo_clean"
-        
-        escaped_nfo_clean=$(escape_for_xmlstarlet "$nfo_clean")
-        xml_out=$(xmlstarlet sel -t -v "count(//episodedetails)" "$escaped_nfo_clean" 2>&1)
 
+        xml_out=$(xmlstarlet sel -t -v "count(//episodedetails)" "$nfo_clean" 2>&1)
         xml_rc=$?
         log_debug "xmlstarlet rc=$xml_rc out='$xml_out'"
         count="$xml_out"
@@ -200,7 +192,6 @@ while IFS= read -r -d '' mkv; do
         log_debug "No NFO found; apply_tags=0"
     fi
 
-    # Already processed detection
     if [[ $apply_tags -eq 1 ]]; then
         tags_tmp="$dir/$base.extracted.tmp"
         mkvextract "$mkv" tags "$tags_tmp" 2>/dev/null || true
@@ -235,7 +226,6 @@ while IFS= read -r -d '' mkv; do
         continue
     fi
 
-    # Normalize container
     norm_tmp="$dir/$base.tmp"
     mkvmerge --title "" -o "$norm_tmp" "$mkv" >/dev/null 2>&1
     chmod 666 "$norm_tmp"
@@ -251,7 +241,8 @@ while IFS= read -r -d '' mkv; do
     a_idx=1
     s_idx=1
 
-    echo "$json" | jq -c '.tracks[]' | while read -r track; do
+    # FIXED: no subshell, no pipeline
+    while read -r track; do
         ttype=$(echo "$track" | jq -r '.type')
         uid=$(echo "$track" | jq -r '.properties.uid')
         tname=$(echo "$track" | jq -r '.properties.track_name // ""')
@@ -263,10 +254,18 @@ while IFS= read -r -d '' mkv; do
             *) continue;;
         esac
 
-        real_name=$(mkvpropedit "$mkv" --edit "track:@$uid" --get name 2>/dev/null | sed 's/name=//')
+        real_name_raw=$(mkvpropedit "$mkv" --edit "track:@$uid" --get name 2>&1 || true)
+        if [[ "$real_name_raw" == name=* ]]; then
+            real_name="${real_name_raw#name=}"
+        else
+            real_name=""
+        fi
 
         if [[ "$ttype" == "video" ]]; then
-            cleaned_name="Video"
+            # Only edit video track once, by UID only
+            mkvpropedit "$mkv" \
+                --edit "track:@$uid" --set "name=Video"
+            continue
         else
             if [[ -n "$real_name" ]]; then
                 cleaned_name=$(clean_name "$real_name")
@@ -315,11 +314,18 @@ while IFS= read -r -d '' mkv; do
 
         log_debug "Track UID=$uid type=$ttype lang=$lang_name real='$real_name' tname='$tname' -> '$cleaned_name'"
 
-        mkvpropedit "$mkv" \
-            --edit "track:@$uid" --set "name=$cleaned_name" \
-            --edit "$sel" --set "name=$cleaned_name" >/dev/null 2>&1
+        if [[ "$ttype" == "video" ]]; then
+            mkvpropedit "$mkv" \
+                --edit "track:@$uid" --set "name=Video" >/dev/null 2>&1
+        else
+            mkvpropedit "$mkv" \
+                --edit "track:@$uid" --set "name=$cleaned_name" \
+                --edit "$sel" --set "name=$cleaned_name" >/dev/null 2>&1
+        fi
 
-    done
+        fi
+
+    done < <(echo "$json" | jq -c '.tracks[]')
 
     temp_tags="$dir/$base.tags.tmp"
     build_tags_xml "$temp_tags"
