@@ -18,4 +18,4 @@ if ! grep -qs "/mnt/nmedia" /proc/mounts; then
 fi
 # Deletes files in destination that no longer exist in source
 # parameters are to support copying to cifs mounted exFAT
-rsync -avh --size-only --no-times --no-perms --omit-dir-times --itemize-changes --progress --delete "$SOURCE" "$DEST"
+rsync -avh --size-only --no-times --no-perms --no-owner --no-group --no-times --omit-dir-times --itemize-changes --progress --delete "$SOURCE" "$DEST"

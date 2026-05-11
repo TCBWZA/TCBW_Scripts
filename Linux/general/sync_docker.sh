@@ -100,7 +100,7 @@ done
 # Deletes files in destination that no longer exist in source
 # parameters are to support copying to cifs mounted exFAT
 log "Starting rsync from $SOURCE to $DEST..."
-rsync -avh --size-only --no-times --no-perms --omit-dir-times --modify-window=5 --itemize-changes --progress --delete "$SOURCE" "$DEST"
+rsync -avh --size-only --no-times --no-perms --no-owner --no-group --no-times --omit-dir-times --modify-window=5 --itemize-changes --progress --delete "$SOURCE" "$DEST"
 log "Sync complete."
 
 ### --- RESTORE CONTAINER STATE --- ###
