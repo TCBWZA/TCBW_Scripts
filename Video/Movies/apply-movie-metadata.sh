@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # =============================================================================
-# MOVIE METADATA APPLIER
+# MOVIE METADATA APPLIER (Proxmox‑safe, colourised)
+# =============================================================================
 #   Applies movie metadata from NFO files to MKV files using mkvpropedit.
 #
 # RULES
@@ -18,39 +19,20 @@
 #   - Proxmox-safe (no process substitution, no pipefail)
 # =============================================================================
 
-# Reset inherited shell options (Proxmox root shells often force -eu)
-set +euo
-set -e
-set -u
+# ------------------------------
+# Shell options (Proxmox‑safe)
+# ------------------------------
+set -ou pipefail
 IFS=$'\n\t'
 
 # ------------------------------
-# Argument parsing
+# Colour definitions
 # ------------------------------
-DRYRUN=0
-DEBUG=0
-AUDIT_LOG=""
-
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --dry-run) DRYRUN=1 ;;
-        --debug)   DEBUG=1 ;;
-        --audit-log)
-            AUDIT_LOG="$2"
-            shift
-            ;;
-        *)
-            echo "Unknown argument: $1" >&2
-            exit 1
-            ;;
-    esac
-    shift
-done
-
-LOGGING_ENABLED=0
-[[ -n "$AUDIT_LOG" ]] && LOGGING_ENABLED=1
-
-echo "AUDIT_LOG='$AUDIT_LOG' LOGGING_ENABLED=$LOGGING_ENABLED"
+CLR_RESET="\033[0m"
+CLR_DEBUG="\033[1;35m"
+CLR_INFO="\033[1;36m"
+CLR_WARN="\033[1;33m"
+CLR_ERROR="\033[1;31m"
 
 # ------------------------------
 # Logging helpers
@@ -61,19 +43,42 @@ log_audit() {
     fi
 }
 
+log_info() {
+    >&2 printf "${CLR_INFO}[INFO]${CLR_RESET} %s\n" "$1"
+    [[ $LOGGING_ENABLED -eq 1 ]] && log_audit "[INFO] $1"
+}
+
+log_warn() {
+    >&2 printf "${CLR_WARN}[WARN]${CLR_RESET} %s\n" "$1"
+    [[ $LOGGING_ENABLED -eq 1 ]] && log_audit "[WARN] $1"
+}
+
+log_error() {
+    >&2 printf "${CLR_ERROR}[ERROR]${CLR_RESET} %s\n" "$1"
+    [[ $LOGGING_ENABLED -eq 1 ]] && log_audit "[ERROR] $1"
+}
+
 log_debug() {
     if [[ $DEBUG -eq 1 ]]; then
-        printf '[DEBUG] %s\n' "$1"
+        >&2 printf "${CLR_DEBUG}[DEBUG]${CLR_RESET} %s\n" "$1"
         [[ $LOGGING_ENABLED -eq 1 ]] && log_audit "[DEBUG] $1"
     fi
 }
 
 # ------------------------------
-# XML helper
+# xml_get (YOUR WORKING VERSION)
 # ------------------------------
 xml_get() {
-    log_debug "xml_get accessed"
-    xmlstarlet sel -t -v "$2" "$1" 2>/dev/null || true
+    local file="$1"
+    local path="$2"
+    local value
+
+    value=$(xmlstarlet sel -t -v "$path" "$file" 2>/dev/null || true)
+
+    # Send debug to stderr so it does NOT interfere with command substitution
+    >&2 log_debug "xml_get $path => '$value'"
+
+    printf '%s' "$value"
 }
 
 # ------------------------------
@@ -110,52 +115,76 @@ build_tags_xml() {
 # ------------------------------
 for cmd in xmlstarlet mkvmerge mkvpropedit mkvextract jq; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
-        echo "ERROR: Required command '$cmd' not found"
+        log_error "Required command '$cmd' not found"
         exit 1
     fi
 done
 
 # ------------------------------
-# Prepare TAGS array (fix for set -u)
+# Argument parsing
 # ------------------------------
+DRYRUN=0
+DEBUG=0
+AUDIT_LOG=""
+LOGGING_ENABLED=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dry-run) DRYRUN=1 ;;
+        --debug)   DEBUG=1 ;;
+        --audit-log)
+            AUDIT_LOG="$2"
+            shift
+            ;;
+        *)
+            log_error "Unknown argument: $1"
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+[[ -n "$AUDIT_LOG" ]] && LOGGING_ENABLED=1
+
 declare -A TAGS
 
 # ------------------------------
 # Begin processing
 # ------------------------------
-echo "Scanning recursively for MKV files..."
+log_info "Scanning recursively for MKV files..."
 log_audit "=== Movie run started ==="
 
 tmpfile=$(mktemp)
-find . -type f -iname '*.mkv' -print0 > "$tmpfile"
+find . -type f -iname '*.mkv' \
+    ! -iname '*-trailer.*' \
+    ! -iname '*-deleted.*' \
+    ! -iname '*-behindthescenes.*' \
+    ! -iname '*-interview.*' \
+    -print0 > "$tmpfile"
 
 while IFS= read -r -d '' mkv; do
     dir=$(dirname "$mkv")
     base=$(basename "$mkv" .mkv)
 
-    # Skip if directory .skip marker exists
+    # Skip markers
     if [[ -f "${dir}/.skip" ]]; then
-        echo "Skipping $mkv -- .skip directory marker found"
+        log_warn "Skipping $mkv -- .skip directory marker found"
         continue
     fi
 
-    # Skip if per-file .skip_<basename> marker exists
     if [[ -f "${dir}/.skip_${base}" ]]; then
-        echo "Skipping $mkv -- .skip_${base} per-file marker found"
+        log_warn "Skipping $mkv -- .skip_${base} per-file marker found"
         continue
     fi
 
-    echo "----"
-    echo "Processing MKV: $mkv"
+    log_info "Processing MKV: $mkv"
     log_audit "Processing MKV: $mkv"
 
     primary_nfo="$dir/$base.nfo"
     fallback_nfo="$dir/movie.nfo"
-
-    # ------------------------------
-    # Select metadata source
-    # ------------------------------
     nfo=""
+
+    # Select metadata source
     if [[ -f "$primary_nfo" ]]; then
         nfo="$primary_nfo"
         log_debug "Using primary NFO: $primary_nfo"
@@ -163,16 +192,21 @@ while IFS= read -r -d '' mkv; do
         nfo="$fallback_nfo"
         log_debug "Using fallback NFO: $fallback_nfo"
     else
-        echo "Skipping: No NFO found."
+        log_warn "Skipping: No NFO found."
         log_audit "Skipped: No NFO"
         continue
     fi
 
-    # Validate movie NFO
-    count=$(xmlstarlet sel -t -v "count(/movie)" "$nfo" 2>/dev/null || echo 0)
-    if [[ "$count" != "1" ]]; then
-        echo "Skipping: Invalid movie NFO."
-        log_audit "Skipped: Invalid movie NFO"
+    # ------------------------------
+    # Robust movie NFO validation
+    # ------------------------------
+    root=$(xmlstarlet sel -t -v "name(/*)" "$nfo" 2>/dev/null || echo "")
+
+    if [[ "$root" != "movie" ]]; then
+        log_warn "Skipping: Invalid movie NFO (root='$root')."
+        log_debug "Deleting invalid NFO: $nfo"
+        rm -f "$nfo"
+        log_audit "Deleted invalid NFO"
         continue
     fi
 
@@ -180,24 +214,26 @@ while IFS= read -r -d '' mkv; do
     # Extract metadata
     # ------------------------------
     log_debug "Process Metadata"
+
     title=$(xml_get "$nfo" "/movie/title")
     log_debug "Title: $title"
+
     plot=$(xml_get "$nfo" "/movie/plot")
     log_debug "Plot: $plot"
+
     tagline=$(xml_get "$nfo" "/movie/tagline")
     log_debug "Tagline: $tagline"
+
     premiered=$(xml_get "$nfo" "/movie/premiered")
     log_debug "Premiered: $premiered"
+
     year=""
     if [[ -n "$premiered" ]]; then
         year="${premiered:0:4}"
     fi
     log_debug "Year: $year"
 
-
-    # ------------------------------
     # Title fallback: directory name
-    # ------------------------------
     if [[ -z "$title" ]]; then
         title=$(basename "$dir")
         log_debug "Fallback: using directory name as title: $title"
@@ -216,12 +252,12 @@ while IFS= read -r -d '' mkv; do
     if [[ -s "$tags_tmp" ]]; then
         ex_title=$(get_mkv_tag "$tags_tmp" "TITLE")
         ex_year=$(get_mkv_tag "$tags_tmp" "DATE_RELEASED")
-        # Also check legacy YEAR tag written by older versions of this script
         [[ -z "$ex_year" ]] && ex_year=$(get_mkv_tag "$tags_tmp" "YEAR")
+
         log_debug "Existing TITLE=$ex_title DATE_RELEASED=$ex_year"
 
         if [[ "$ex_title" == "$title" && "$ex_year" == "$year" ]]; then
-            echo "Skipping: Already processed."
+            log_info "Skipping: Already processed."
             log_audit "Skipped: Already processed"
             rm -f "$tags_tmp"
             continue
@@ -260,6 +296,7 @@ while IFS= read -r -d '' mkv; do
         touch -d "$orig_mtime" "$mkv"
         log_audit "Metadata applied"
     else
+        log_info "Dry-run: No changes applied"
         log_audit "Dry-run: No changes applied"
     fi
 
@@ -270,4 +307,4 @@ done < "$tmpfile"
 rm -f "$tmpfile"
 
 log_audit "=== Movie run complete ==="
-
+log_info "Movie metadata run complete."
