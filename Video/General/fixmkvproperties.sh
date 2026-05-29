@@ -4,7 +4,7 @@
 # Full DEBUG mode with selective temp preservation
 #
 
-set +euo
+set -uo pipefail
 IFS=$'\n\t'
 
 DRYRUN=0
@@ -97,7 +97,8 @@ long_patterns=(
 )
 
 junk_patterns=(
-  "\[Erai-raws\]" "\[SubsPlease\]" "\[Judas\]" "\[EMBER\]" "\[NC-Raws\]" "\[LowPower-Raws\]"
+  "\[Erai-raws\]" "\[SubsPlease\]" "\[Judas\]" "\[EMBER\]"
+  "\[SubsPlease\]" "\[Judas\]" "\[EMBER\]" "\[NC-Raws\]" "\[LowPower-Raws\]"
   "Erai-raws" "SubsPlease" "ToonsHub" "Judas" "EMBER"
   "Anime Time" "HorribleSubs" "DeadFish" "AnimeRG"
   "NC-Raws" "LowPower-Raws" "Kirion" "Vodes"
@@ -141,7 +142,6 @@ while IFS= read -r -d '' mkv; do
     apply_tags=1
 
     if [[ -f "$nfo" ]]; then
-        # Generate a filesystem-safe temp filename for the cleaned NFO
         nfo_clean="$(mktemp /tmp/cleannfo_XXXXXX)"
 
         sed $'1s/^\uFEFF//' "$nfo" > "$nfo_clean"
@@ -241,7 +241,6 @@ while IFS= read -r -d '' mkv; do
     a_idx=1
     s_idx=1
 
-    # FIXED: no subshell, no pipeline
     while read -r track; do
         ttype=$(echo "$track" | jq -r '.type')
         uid=$(echo "$track" | jq -r '.properties.uid')
@@ -254,7 +253,7 @@ while IFS= read -r -d '' mkv; do
             *) continue;;
         esac
 
-        real_name_raw=$(mkvpropedit "$mkv" --edit "track:@$uid" --get name 2>&1 || true)
+        real_name_raw=$(mkvpropedit "$mkv" --edit "$sel" --get name 2>&1 || true)
         if [[ "$real_name_raw" == name=* ]]; then
             real_name="${real_name_raw#name=}"
         else
@@ -262,9 +261,8 @@ while IFS= read -r -d '' mkv; do
         fi
 
         if [[ "$ttype" == "video" ]]; then
-            # Only edit video track once, by UID only
             mkvpropedit "$mkv" \
-                --edit "track:@$uid" --set "name=Video"
+                --edit "$sel" --set "name=Video"
             continue
         else
             if [[ -n "$real_name" ]]; then
@@ -316,13 +314,10 @@ while IFS= read -r -d '' mkv; do
 
         if [[ "$ttype" == "video" ]]; then
             mkvpropedit "$mkv" \
-                --edit "track:@$uid" --set "name=Video" >/dev/null 2>&1
+                --edit "$sel" --set "name=Video" >/dev/null 2>&1
         else
             mkvpropedit "$mkv" \
-                --edit "track:@$uid" --set "name=$cleaned_name" \
                 --edit "$sel" --set "name=$cleaned_name" >/dev/null 2>&1
-        fi
-
         fi
 
     done < <(echo "$json" | jq -c '.tracks[]')
