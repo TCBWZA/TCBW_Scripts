@@ -1,2 +1,3 @@
 TCBW_Scripts.code-workspace
 hooks/pre-commit
+.vscode/extensions.json
