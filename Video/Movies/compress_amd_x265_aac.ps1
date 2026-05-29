@@ -101,6 +101,12 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
         Write-Host "Skipping $File -- high-resolution video detected (height=$vheight)"
         return
     }
+    
+    # Skip AV1 video codec
+    if ($vcodec -eq "av1") {
+        Write-Host "Skipping $File -- AV1 video detected (codec)"
+        return
+    }
 
     # Fast checks first, skip if true
     $NeedsConvert = $false
