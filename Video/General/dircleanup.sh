@@ -28,7 +28,7 @@
 #   --audit        Preview mode; no files or directories are removed.
 #   --debug        Enable verbose debug output.
 
-set -euo pipefail
+set -uo pipefail
 IFS=$'\n\t'
 
 # ---------------------------------------------------------------------------
