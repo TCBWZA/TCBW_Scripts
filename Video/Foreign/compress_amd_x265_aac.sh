@@ -30,9 +30,11 @@ trap 'echo "Interrupted -- exiting safely"; cleanup; exit 1' INT TERM EXIT
 #####################################################
 
 DEBUG=false
+WANT_REMUX_CHECK=false
 for arg in "$@"; do
     case "$arg" in
         -d|--debug) DEBUG=true ;;
+        -r|--remux-check) WANT_REMUX_CHECK=true ;;
     esac
 done
 
@@ -248,12 +250,12 @@ for f in "${files[@]}"; do
     [[ "$vcodec_lc" != "hevc" ]] && needs_convert=true
     (( vbitrate > 2500000 )) && needs_convert=true
     [[ "$status" != "progressive" ]] && needs_convert=true
-
+    debug "Needs convert: $needs_convert"   
     if ! $needs_convert; then
         #####################################################
         # No transcode needed -- check for container problems
         #####################################################
-        if [[ "$acodec" == "aac" ]] && check_container_problem "$f"; then
+        if [[ "$WANT_REMUX_CHECK" == "true" ]] && [[ "$acodec" == "aac" ]] && check_container_problem "$f"; then
             echo "Remuxing $f → container repair"
             tmpfile="$dir/${base_no_ext}[Trans].tmp"
 
