@@ -1,15 +1,40 @@
 #!/bin/bash
 
-trap 'echo "Interrupted -- exiting safely"; exit 1' INT
+###############################################################
+# PRE-FLIGHT CHECKS
+###############################################################
+for tool in ffprobe ffmpeg; do
+    if ! command -v "$tool" &> /dev/null; then
+        echo "ERROR: $tool not found in PATH"
+        echo "Please install or add to PATH before running this script."
+        exit 1
+    fi
+done
+
+###############################################################
+# CLEANUP TRAP FOR INTERRUPTION
+###############################################################
+temp_files=()
+cleanup() {
+    if [[ ${#temp_files[@]} -gt 0 ]]; then
+        debug "\nCleaning up temp files due to interruption..."
+        for file in "${temp_files[@]}"; do
+            rm -f "$file" 2>/dev/null
+        done
+    fi
+}
+trap 'echo "Interrupted -- exiting safely"; cleanup; exit 1' INT TERM EXIT
 
 #####################################################
 # DEBUG MODE
 #####################################################
 
 DEBUG=false
+WANT_REMUX_CHECK=false
 for arg in "$@"; do
     case "$arg" in
         -d|--debug) DEBUG=true ;;
+        -r|--remux-check) WANT_REMUX_CHECK=true ;;
     esac
 done
 
@@ -65,7 +90,7 @@ echo "Scanning for files..."
 
 # Find all video files >= 1GB
 mapfile -t files < <(
-    find . -type f \( -iname "*.mkv" -o -iname "*.mp4" -o -iname "*.ts" \) -size +1G
+    find . -type f \( -iname "*.mkv" -o -iname "*.mp4" -o -iname "*.ts" \) -size +950M
 )
 
 echo "Found ${#files[@]} files."
@@ -119,12 +144,6 @@ for f in "${files[@]}"; do
         continue
     fi
 
-    # Skip 2160p or higher resolution videos (filename match)
-    if [[ "$base_no_ext" =~ 2160[pP]\] ]]; then
-        echo "Skipping $f -- 4K (or higher) video match (filename)"
-        continue
-    fi
-
     #####################################################
     # Skip and delete cleaned/transcoded files
     #####################################################
@@ -152,18 +171,48 @@ for f in "${files[@]}"; do
     debug "ffprobe JSON OK"
 
     #####################################################
-    # Build subtitle map args (ffmpeg 7.x: ? suffix not supported on metadata filters)
+    # Extract video/audio metadata
     #####################################################
 
-    sub_maps=()
-    if jq -e '[.streams[] | select(.codec_type=="subtitle" and (.tags.language? == "eng"))] | length > 0' <<< "$probe" >/dev/null 2>&1; then
-        sub_maps+=(-map "0:s:m:language:eng")
-    fi
-    if jq -e '[.streams[] | select(.codec_type=="subtitle" and (.tags.language? == "und"))] | length > 0' <<< "$probe" >/dev/null 2>&1; then
-        sub_maps+=(-map "0:s:m:language:und")
+    { IFS=$'\t' read -r vcodec vbitrate field_order; read -r acodec; } < <(
+        jq -r '
+          (.streams[]
+            | select(.codec_type=="video" and (.disposition.attached_pic|not))
+            | [.codec_name,
+               (.bit_rate // .tags.BPS // 0 | tonumber),
+               (.field_order // "unknown")]
+            | @tsv),
+          (.streams[]
+            | select(.codec_type=="audio")
+            | .codec_name)
+        ' <<< "$probe"
+    )
+
+    vcodec_lc=$(echo "$vcodec" | tr '[:upper:]' '[:lower:]')
+
+    debug "vcodec=$vcodec_lc vbitrate=$vbitrate field_order=$field_order acodec=$acodec"
+
+    #####################################################
+    # HARD SKIP AV1 (matches PowerShell)
+    #####################################################
+
+    if [[ "$vcodec_lc" =~ ^(av1|av01|libaom-av1|unknown)$ ]]; then
+        echo "Skipping $f -- AV1 or unsupported codec detected ($vcodec_lc)"
+        continue
     fi
 
-    debug "sub_maps: ${sub_maps[*]}"
+    # SKIP: high resolution (> 1100p) -- ffprobe secondary check
+    height=$(jq -r '
+      [.streams[]
+        | select(.codec_type=="video" and (.disposition.attached_pic|not))
+        | .height
+      ] | max
+    ' <<< "$probe")
+
+    if (( height > 1100 )); then
+        echo "Skipping $f -- high-resolution video detected (height=$height)"
+        continue
+    fi
 
     # mov_text → SRT: MP4 text subtitles cannot be stream-copied into MKV
     sub_codec_args=(-c:s copy)
@@ -175,148 +224,44 @@ for f in "${files[@]}"; do
     fi
 
     #####################################################
-    # Extract video/audio metadata
-    #####################################################
-
-    { IFS=$'\t' read -r vcodec vbitrate field_order r_frame_rate; read -r acodec; } < <(
-        jq -r '
-          (.streams[] | select(.codec_type=="video") |
-            [.codec_name, (.bit_rate // 0), (.field_order // "unknown"), (.r_frame_rate // "0/1")] | @tsv),
-          (.streams[] | select(.codec_type=="audio") |
-            .codec_name)
-        ' <<< "$probe"
-    )
-
-    vcodec_lc=$(echo "$vcodec" | tr '[:upper:]' '[:lower:]')
-
-    debug "vcodec=$vcodec_lc vbitrate=$vbitrate field_order=$field_order r_frame_rate=$r_frame_rate acodec=$acodec"
-
-    #####################################################
-    # HARD SKIP AV1 (matches PowerShell)
-    #####################################################
-
-    if [[ "$vcodec_lc" =~ ^(av1|av01|libaom-av1|unknown)$ ]]; then
-        echo "Skipping $f -- AV1 or unsupported codec detected ($vcodec_lc)"
-        continue
-    fi
-
-    # SKIP: high resolution (> 1100p) -- ffprobe secondary check, supplements filename check
-    height=$(jq -r '.streams[] | select(.codec_type=="video") | .height' <<< "$probe")
-    if (( height > 1100 )); then
-        echo "Skipping $f -- high-resolution video detected (height=$height)"
-        continue
-    fi
-
-    #####################################################
-    # Interlace / telecine detection (mirrors PS1 Get-VideoInterlaceStatus)
+    # Interlace / telecine detection (PowerShell parity)
     #####################################################
 
     status="progressive"
 
-    # Fast pass: trust hard field_order flags (mirrors PS1 fast pass)
     if [[ "$field_order" =~ ^(tt|bb|tb|bt)$ ]]; then
-        debug "Fast pass: hard interlace flag ($field_order)"
         status="interlaced"
-    elif [[ "$field_order" == "progressive" ]]; then
-        debug "Fast pass: flagged progressive"
-        status="progressive"
-    else
-        # Slow pass: inspect frames (mirrors PS1 ffprobe -show_frames slow pass)
+    elif [[ "$field_order" != "progressive" ]]; then
         echo "Running deep interlace/telecine scan..."
 
-        # Parse r_frame_rate fraction (used for both NTSC and PAL range checks)
-        fps_num="${r_frame_rate%%/*}"
-        fps_den="${r_frame_rate##*/}"
-        fps_scaled=0
-        if [[ -n "$fps_num" && -n "$fps_den" && "$fps_den" -gt 0 ]]; then
-            fps_scaled=$(( fps_num * 1000 / fps_den ))
-        fi
-
-        is_ntsc_rate=false
-        (( fps_scaled >= 29000 && fps_scaled <= 31000 )) && is_ntsc_rate=true
-
-        debug "r_frame_rate=$r_frame_rate fps_scaled=$fps_scaled is_ntsc_rate=$is_ntsc_rate"
-
-        # Mirror PS1: ffprobe -show_frames at 300s window, fallback to start of file
-        frames_json=$(ffprobe -v quiet -print_format json -show_frames \
-            -select_streams v -read_intervals "300%+200" "$f" 2>/dev/null)
-
-        if [[ -z "$frames_json" ]] || ! jq -e '.frames | length > 0' >/dev/null 2>&1 <<< "$frames_json"; then
-            debug "Slow pass: 300s window empty, retrying from start of file"
-            frames_json=$(ffprobe -v quiet -print_format json -show_frames \
-                -select_streams v -read_intervals "%+200" "$f" 2>/dev/null)
-        fi
-
-        # Determine if this is PAL range (~25fps) - BBC/European broadcast content
-        # often lacks interlaced_frame bitstream flags so needs idet pixel-level fallback
-        is_pal_rate=false
-        if [[ -n "$fps_num" && -n "$fps_den" && "$fps_den" -gt 0 ]]; then
-            if (( fps_scaled >= 24500 && fps_scaled <= 25500 )); then
-                is_pal_rate=true
-            fi
-        fi
-        debug "is_pal_rate=$is_pal_rate"
-
-        if [[ -n "$frames_json" ]] && jq -e '.' >/dev/null 2>&1 <<< "$frames_json"; then
-            total_frames=$(jq '[.frames[]] | length' <<< "$frames_json")
-            interlaced_frames=$(jq '[.frames[] | select(.interlaced_frame==1)] | length' <<< "$frames_json")
-            debug "Slow pass: total=$total_frames interlaced=$interlaced_frames"
-
-            if (( total_frames > 0 && interlaced_frames > 0 )); then
-                ratio=$(( interlaced_frames * 100 / total_frames ))
-                debug "Interlaced frame ratio: ${ratio}%"
-                # Telecine: ~29.97fps source with mixed interlaced/progressive frames
-                # (3:2 pulldown produces ~40-60% interlaced frames; true interlace >= ~80%)
-                if $is_ntsc_rate && (( ratio < 80 )); then
-                    status="telecine"
-                else
-                    status="interlaced"
-                fi
-            else
-                # No interlaced_frame flags found. BBC/PAL broadcast content commonly omits
-                # these flags even when the content is true 50i. Fall through to idet below.
-                status="progressive"
-            fi
-        else
-            # ffprobe frames scan failed - mirror PS1 "unknown" fallback
-            debug "Slow pass: ffprobe frames scan failed"
-            status="unknown"
-        fi
-
-        # idet fallback for PAL-range content that reported no interlaced_frame flags:
-        # BBC 50i is often encoded without bitstream interlace markers so ffprobe misses it.
-        # idet analyzes actual pixel field patterns and reliably catches it.
-        if [[ "$status" == "progressive" ]] && $is_pal_rate; then
-            debug "PAL-range content reported progressive - running idet pixel analysis..."
-            echo "Running idet pixel analysis for PAL content..."
-
-            idet_out=$(ffmpeg -nostdin -hide_banner \
+        idet_output=$(
+            ffmpeg -nostdin -hide_banner \
                 -ss 300 \
+                -noaccurate_seek \
+                -skip_frame nokey \
                 -i "$f" \
-                -vf idet \
-                -frames:v 200 \
-                -an -f null /dev/null 2>&1)
+                -skip_frame default \
+                -filter:v idet \
+                -frames:v 1000 \
+                -an -f null - 2>&1
+        )
 
-            # Parse Multi frame detection counts (more reliable than Single frame)
-            idet_tff=$(echo "$idet_out" | grep -oP 'Multi frame detection: TFF:\s*\K[0-9]+' | tail -n1)
-            idet_bff=$(echo "$idet_out" | grep -oP 'BFF:\s*\K[0-9]+'                       | tail -n1)
-            idet_prog=$(echo "$idet_out" | grep -oP 'Progressive:\s*\K[0-9]+'              | tail -n1)
+        interlaced_count=$(echo "$idet_output" | grep -oP 'Interlaced:\s*\K[0-9]+' | head -n1)
+        progressive_count=$(echo "$idet_output" | grep -oP 'Progressive:\s*\K[0-9]+' | head -n1)
+        tff_count=$(echo "$idet_output" | grep -oP 'TFF:\s*\K[0-9]+' | head -n1)
+        bff_count=$(echo "$idet_output" | grep -oP 'BFF:\s*\K[0-9]+' | head -n1)
 
-            [[ -z "$idet_tff"  ]] && idet_tff=0
-            [[ -z "$idet_bff"  ]] && idet_bff=0
-            [[ -z "$idet_prog" ]] && idet_prog=0
+        [[ -z "$interlaced_count" ]] && interlaced_count=0
+        [[ -z "$tff_count" ]] && tff_count=0
+        [[ -z "$bff_count" ]] && bff_count=0
 
-            idet_interlaced=$(( idet_tff + idet_bff ))
-            idet_total=$(( idet_interlaced + idet_prog ))
-
-            debug "idet multi: TFF=$idet_tff BFF=$idet_bff Progressive=$idet_prog"
-
-            if (( idet_total > 0 && idet_interlaced * 100 / idet_total >= 30 )); then
-                debug "idet detected interlace in PAL content"
-                status="interlaced"
-            else
-                debug "idet confirmed progressive"
-            fi
+        # Telecine detection: strong TFF/BFF counts but low interlaced
+        if (( tff_count > 50 || bff_count > 50 )) && (( interlaced_count < 20 )); then
+            status="telecine"
+        elif (( interlaced_count > 50 )); then
+            status="interlaced"
+        else
+            status="progressive"
         fi
     fi
 
@@ -327,16 +272,15 @@ for f in "${files[@]}"; do
     #####################################################
 
     needs_convert=false
-    [[ "$acodec" != "aac" ]] && needs_convert=true
     [[ "$vcodec_lc" != "hevc" ]] && needs_convert=true
     (( vbitrate > 2500000 )) && needs_convert=true
     [[ "$status" != "progressive" ]] && needs_convert=true
-
+    debug "Needs convert: $needs_convert"
     if ! $needs_convert; then
         #####################################################
         # No transcode needed -- check for container problems
         #####################################################
-        if check_container_problem "$f"; then
+        if [[ "$WANT_REMUX_CHECK" == "true" ]] && [[ "$acodec" == "aac" ]] && check_container_problem "$f"; then
             echo "Remuxing $f → container repair"
             tmpfile="$dir/${base_no_ext}[Trans].tmp"
 
@@ -344,8 +288,7 @@ for f in "${files[@]}"; do
 
             ffmpeg -nostdin -hide_banner -y \
                 -i "$f" \
-                -map 0:v -map 0:a \
-                "${sub_maps[@]}" \
+                -map 0 \
                 -c:v copy -c:a copy \
                 "${sub_codec_args[@]}" \
                 -f matroska \
@@ -371,53 +314,71 @@ for f in "${files[@]}"; do
     fi
 
     #####################################################
-    # Filter chain (PS1 parity)
-    #####################################################
-
-    case "$status" in
-        interlaced)
-            # True interlace: bwdif deinterlace to progressive (mirrors PS1 deinterlace=slower)
-            vf_chain="hwdownload,format=yuv420p,bwdif=mode=send_frame,format=nv12,hwupload"
-            ;;
-        telecine)
-            # 3:2 pulldown (NTSC telecine): IVTC back to original ~23.976fps progressive
-            # fieldmatch reconstructs fields, yadif cleans residual combing, decimate removes duplicates
-            # (mirrors PS1 --detelecine --deinterlace=slower)
-            vf_chain="hwdownload,format=yuv420p,fieldmatch=order=tff:combmatch=full,yadif=deint=interlaced,decimate,format=nv12,hwupload"
-            ;;
-        unknown)
-            # ffprobe scan failed - conservative fallback: bwdif handles both interlaced and
-            # most telecine content safely without risking wrong frame drops
-            vf_chain="hwdownload,format=yuv420p,bwdif=mode=send_frame,format=nv12,hwupload"
-            ;;
-        progressive)
-            vf_chain="hwdownload,format=yuv420p,format=nv12,hwupload"
-            ;;
-    esac
-
-    #####################################################
-    # Transcode
+    # Transcode (enable a fast path for progressive)
     #####################################################
 
     tmpfile="$dir/${base_no_ext}[Trans].tmp"
-
+    temp_files+=("$tmpfile")
     rm -f -- "$tmpfile"
 
+    # Build the correct transcode command based on status
+    case "$status" in
+
+        progressive)
+            debug "Transcode path: PROGRESSIVE → CPU decode + VAAPI encode (fast path)"
+            transcode_cmd=(
+                ffmpeg -nostdin -hide_banner
+                -vaapi_device /dev/dri/renderD128
+                -i "$f"
+                -vf "format=nv12,hwupload"
+                -map 0:v:0 -map 0:a? -map 0:s? -map -0:v:m:attached_pic
+                -c:v:0 hevc_vaapi
+                -qp 28
+                -c:a copy
+                "${sub_codec_args[@]}"
+                -f matroska
+                "$tmpfile"
+            )
+            ;;
+
+        interlaced)
+            debug "Transcode path: INTERLACED → CPU bwdif + VAAPI encode"
+            transcode_cmd=(
+                ffmpeg -nostdin -hide_banner
+                -vaapi_device /dev/dri/renderD128
+                -i "$f"
+                -vf "bwdif=mode=send_frame,format=nv12,hwupload"
+                -map 0:v:0 -map 0:a? -map 0:s? -map -0:v:m:attached_pic
+                -c:v:0 hevc_vaapi
+                -qp 28
+                -c:a copy
+                "${sub_codec_args[@]}"
+                -f matroska
+                "$tmpfile"
+            )
+            ;;
+
+        telecine)
+            debug "Transcode path: TELECINE → CPU pullup/dejudder + VAAPI encode"
+            transcode_cmd=(
+                ffmpeg -nostdin -hide_banner
+                -vaapi_device /dev/dri/renderD128
+                -i "$f"
+                -vf "pullup,dejudder,format=nv12,hwupload"
+                -map 0:v:0 -map 0:a? -map 0:s? -map -0:v:m:attached_pic
+                -c:v:0 hevc_vaapi
+                -qp 28
+                -c:a copy
+                "${sub_codec_args[@]}"
+                -f matroska
+                "$tmpfile"
+            )
+            ;;
+    esac
+
     (
-        ffmpeg -nostdin -hide_banner \
-            -vaapi_device /dev/dri/renderD128 \
-            -hwaccel vaapi \
-            -hwaccel_output_format vaapi \
-            -i "$f" \
-            -map 0:v:0 -map 0:a \
-            "${sub_maps[@]}" \
-            -vf "$vf_chain" \
-            -c:v hevc_vaapi \
-            -qp 24 \
-            -c:a aac -b:a 160k \
-            "${sub_codec_args[@]}" \
-            -f matroska \
-            "$tmpfile"
+        # Run the chosen command
+        "${transcode_cmd[@]}"
 
         if [[ $? -eq 0 ]]; then
             orig_size=$(stat -c%s "$f")
@@ -449,7 +410,7 @@ done
 wait
 
 #####################################################
-# Cleanup (PowerShell‑parity: only remove true leftovers)
+# Cleanup (PowerShell parity: only remove true leftovers)
 #####################################################
 
 echo "Cleaning up leftover [Trans] files..."
@@ -460,4 +421,3 @@ find . -type f -regex '.*\[Trans\]\.jpg$' -delete
 find . -type d -regex '.*\[Trans\]\.trickplay$' -exec rm -rf {} +
 
 echo "All tasks complete."
-
