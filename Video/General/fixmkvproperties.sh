@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 #
 # Unified MKV cleaner + NFO applier
-# Full DEBUG mode with selective temp preservation
+# - Conservative remuxing
+# - UID sanity check
+# - Track renaming by UID
 #
 
 set -uo pipefail
-IFS=$'\n\t'
+IFS=$'\n'
 
 DRYRUN=0
 DEBUG=0
@@ -53,7 +55,7 @@ safe_rm() {
     fi
 }
 
-for cmd in xmlstarlet mkvmerge mkvpropedit mkvextract jq stat touch; do
+for cmd in xmlstarlet mkvmerge mkvpropedit mkvextract jq stat touch ffmpeg; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         echo "ERROR: Required command '$cmd' not found"
         exit 1
@@ -97,8 +99,7 @@ long_patterns=(
 )
 
 junk_patterns=(
-  "\[Erai-raws\]" "\[SubsPlease\]" "\[Judas\]" "\[EMBER\]"
-  "\[SubsPlease\]" "\[Judas\]" "\[EMBER\]" "\[NC-Raws\]" "\[LowPower-Raws\]"
+  "\[Erai-raws\]" "\[SubsPlease\]" "\[Judas\]" "\[EMBER\]" "\[NC-Raws\]" "\[LowPower-Raws\]"
   "Erai-raws" "SubsPlease" "ToonsHub" "Judas" "EMBER"
   "Anime Time" "HorribleSubs" "DeadFish" "AnimeRG"
   "NC-Raws" "LowPower-Raws" "Kirion" "Vodes"
@@ -124,6 +125,37 @@ clean_name() {
     echo "$name"
 }
 
+remux_mkv() {
+    local mkv="$1"
+    local orig_mtime="$2"
+    local reason="$3"
+
+    if [[ ! -f "$mkv" ]]; then
+        echo "ERROR: remux requested but file not found: $mkv"
+        log_audit "ERROR: remux requested but file not found: $mkv (reason: $reason)"
+        return 1
+    fi
+
+    echo "Remuxing MKV ($reason): $mkv"
+    log_audit "Remuxing MKV ($reason): $mkv"
+
+    local fixed="${mkv%.mkv}.tmp"
+
+    ffmpeg -y -i "$mkv" -map 0 -c copy -max_interleave_delta 0 -f matroska "$fixed"
+    local ff_rc=$?
+
+    if [[ $ff_rc -ne 0 ]]; then
+        echo "ERROR: ffmpeg remux failed for $mkv (exit $ff_rc)"
+        log_audit "ERROR: ffmpeg remux failed for $mkv (exit $ff_rc)"
+        safe_rm "$fixed" yes
+        return $ff_rc
+    fi
+
+    mv -f "$fixed" "$mkv"
+    touch -d "$orig_mtime" "$mkv"
+    return 0
+}
+
 echo "Scanning recursively for MKV files..."
 log_audit "=== Unified run started ==="
 
@@ -135,15 +167,85 @@ while IFS= read -r -d '' mkv; do
     echo "Processing MKV: $mkv"
     log_audit "Processing MKV: $mkv"
 
+    if [[ ! -f "$mkv" ]]; then
+        echo "WARNING: File disappeared, skipping: $mkv"
+        log_audit "WARNING: File disappeared, skipping: $mkv"
+        continue
+    fi
+
+    orig_mtime=$(stat -c %y "$mkv")
+
+    # 1) Get JSON, remux once if mkvmerge cannot parse
+    if ! json=$(mkvmerge -J "$mkv" 2>/dev/null); then
+        if remux_mkv "$mkv" "$orig_mtime" "mkvmerge -J failed"; then
+            if ! json=$(mkvmerge -J "$mkv" 2>/dev/null); then
+                echo "ERROR: mkvmerge still fails after remux, skipping: $mkv"
+                log_audit "ERROR: mkvmerge still fails after remux, skipping: $mkv"
+                continue
+            fi
+        else
+            # remux failed
+            continue
+        fi
+    fi
+
+    # 2) UID sanity check (conservative)
+    uid_list=$(echo "$json" | jq -r '.tracks[].properties.uid // "MISSING"')
+
+    force_remux=0
+    declare -A seen_uids=()
+
+    while read -r uid; do
+        # Missing UID
+        if [[ "$uid" == "MISSING" ]]; then
+            force_remux=1
+            continue
+        fi
+
+        # Non-numeric UID
+        if ! [[ "$uid" =~ ^[0-9]+$ ]]; then
+            force_remux=1
+            continue
+        fi
+
+        # Zero UID
+        if [[ "$uid" -eq 0 ]]; then
+            force_remux=1
+            continue
+        fi
+
+        # Duplicate UID
+        if [[ -n "${seen_uids[$uid]+x}" ]]; then
+            force_remux=1
+            continue
+        fi
+
+        seen_uids[$uid]=1
+    done <<< "$uid_list"
+
+    if [[ $force_remux -eq 1 ]]; then
+        if remux_mkv "$mkv" "$orig_mtime" "UID sanity check"; then
+            if ! json=$(mkvmerge -J "$mkv" 2>/dev/null); then
+                echo "ERROR: mkvmerge failed after UID remux, skipping: $mkv"
+                log_audit "ERROR: mkvmerge failed after UID remux, skipping: $mkv"
+                continue
+            fi
+        else
+            continue
+        fi
+    fi
+
+    # 3) NFO handling
     dir=$(dirname "$mkv")
     base=$(basename "$mkv" .mkv)
     nfo="$dir/$base.nfo"
 
     apply_tags=1
+    series=""
+    new_global_title=""
 
     if [[ -f "$nfo" ]]; then
         nfo_clean="$(mktemp /tmp/cleannfo_XXXXXX)"
-
         sed $'1s/^\uFEFF//' "$nfo" > "$nfo_clean"
         sync "$nfo_clean"
         log_debug "Created cleaned NFO: $nfo_clean"
@@ -226,17 +328,24 @@ while IFS= read -r -d '' mkv; do
         continue
     fi
 
+    # 4) Normalize container title (empty)
     norm_tmp="$dir/$base.tmp"
     mkvmerge --title "" -o "$norm_tmp" "$mkv" >/dev/null 2>&1
-    chmod 666 "$norm_tmp"
-    chown 1000:1000 "$norm_tmp"
+    chmod 666 "$norm_tmp" || true
+    chown 1000:1000 "$norm_tmp" 2>/dev/null || true
     mv -f "$norm_tmp" "$mkv"
-    chmod 666 "$mkv"
-    chown 1000:1000 "$mkv"
+    chmod 666 "$mkv" || true
+    chown 1000:1000 "$mkv" 2>/dev/null || true
     log_debug "Normalized MKV"
 
-    json=$(mkvmerge -J "$mkv")
+    # Re-read JSON after normalization (UIDs should be stable, but be explicit)
+    if ! json=$(mkvmerge -J "$mkv" 2>/dev/null); then
+        echo "ERROR: mkvmerge failed after normalization, skipping: $mkv"
+        log_audit "ERROR: mkvmerge failed after normalization, skipping: $mkv"
+        continue
+    fi
 
+    # 5) Track renaming by UID
     v_idx=1
     a_idx=1
     s_idx=1
@@ -253,7 +362,8 @@ while IFS= read -r -d '' mkv; do
             *) continue;;
         esac
 
-        real_name_raw=$(mkvpropedit "$mkv" --edit "$sel" --get name 2>&1 || true)
+        # Get real name from container (if any)
+        real_name_raw=$(mkvpropedit "$mkv" --edit "track:@$uid" --get name 2>&1 || true)
         if [[ "$real_name_raw" == name=* ]]; then
             real_name="${real_name_raw#name=}"
         else
@@ -262,14 +372,15 @@ while IFS= read -r -d '' mkv; do
 
         if [[ "$ttype" == "video" ]]; then
             mkvpropedit "$mkv" \
-                --edit "$sel" --set "name=Video"
+                --edit "track:@$uid" --set "name=Video" >/dev/null 2>&1 || true
+            log_debug "Set video track UID=$uid name=Video"
             continue
+        fi
+
+        if [[ -n "$real_name" ]]; then
+            cleaned_name=$(clean_name "$real_name")
         else
-            if [[ -n "$real_name" ]]; then
-                cleaned_name=$(clean_name "$real_name")
-            else
-                cleaned_name=$(clean_name "$tname")
-            fi
+            cleaned_name=$(clean_name "$tname")
         fi
 
         lang=$(echo "$track" | jq -r '.properties.language // ""')
@@ -295,11 +406,7 @@ while IFS= read -r -d '' mkv; do
         [[ "$cleaned_name" =~ English|Japanese|Chinese|Simplified\ Chinese|Mandarin|Cantonese|Korean|Spanish|French|German ]] && already_has_lang=1
 
         if [[ "$ttype" != "video" ]]; then
-            if [[ $is_sdh -eq 1 ]]; then
-                if [[ $already_has_lang -eq 0 && -n "$lang_name" ]]; then
-                    cleaned_name="$lang_name $cleaned_name"
-                fi
-            elif [[ $is_signs -eq 1 ]]; then
+            if [[ $is_sdh -eq 1 || $is_signs -eq 1 ]]; then
                 if [[ $already_has_lang -eq 0 && -n "$lang_name" ]]; then
                     cleaned_name="$lang_name $cleaned_name"
                 fi
@@ -312,26 +419,30 @@ while IFS= read -r -d '' mkv; do
 
         log_debug "Track UID=$uid type=$ttype lang=$lang_name real='$real_name' tname='$tname' -> '$cleaned_name'"
 
-        if [[ "$ttype" == "video" ]]; then
+        # Ignore subtitle edit errors; they can be noisy
+        if [[ "$ttype" == "subtitles" ]]; then
             mkvpropedit "$mkv" \
-                --edit "$sel" --set "name=Video" >/dev/null 2>&1
+                --edit "track:@$uid" --set "name=$cleaned_name" \
+                --edit "$sel" --set "name=$cleaned_name" >/dev/null 2>&1 || true
         else
             mkvpropedit "$mkv" \
-                --edit "$sel" --set "name=$cleaned_name" >/dev/null 2>&1
+                --edit "track:@$uid" --set "name=$cleaned_name" \
+                --edit "$sel" --set "name=$cleaned_name" >/dev/null 2>&1 || true
         fi
 
     done < <(echo "$json" | jq -c '.tracks[]')
 
+    # 6) Tags + container title
     temp_tags="$dir/$base.tags.tmp"
     build_tags_xml "$temp_tags"
     log_debug "Generated tags XML: $temp_tags"
 
     if [[ $apply_tags -eq 1 ]]; then
         log_debug "Applying container title: $new_global_title"
-        mkvpropedit "$mkv" --edit info --set "title=$new_global_title" >/dev/null 2>&1
+        mkvpropedit "$mkv" --edit info --set "title=$new_global_title" >/dev/null 2>&1 || true
 
         log_debug "Applying tags from: $temp_tags"
-        mkvpropedit "$mkv" --tags all:"$temp_tags" >/dev/null 2>&1
+        mkvpropedit "$mkv" --tags all:"$temp_tags" >/dev/null 2>&1 || true
     fi
 
     safe_rm "$temp_tags" yes
