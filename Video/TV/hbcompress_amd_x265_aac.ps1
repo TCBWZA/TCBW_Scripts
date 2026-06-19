@@ -1,43 +1,49 @@
 <#
 .SYNOPSIS
-    Transcodes TV episode video files to HEVC/AAC using HandBrake with AMD VCE hardware encoding.
+    Video processing and compression script using HandBrakeCLI and ffmpeg.
 
 .DESCRIPTION
-    Recursively scans the current directory for MKV, MP4, and TS files over 1 GB and
-    transcodes them to HEVC (H.265) video with AAC audio using HandBrakeCLI and the
-    AMD VCE (vce_h265) hardware encoder. Files already in the desired format are skipped.
-
-    Features:
-    - Debug mode with timestamped output
-    - MKV container health check with automatic remux repair path
-    - File lock detection before and after encode/move
-    - Atomic replacement with size validation
-    - Deferred interlace detection (runs only when needed)
-    - 4K, AV1, no-video-stream, and no-audio-stream guards
-    - Recursive .skip directory marker support
-    - Per-file .skip_<basename> marker support
-    - English/undefined subtitle stream filtering
+    This script scans the current directory tree for video files and applies
+    processing rules aligned with the companion shell script. It performs
+    container health checks, optional remux operations, interlace and telecine
+    detection, and conditional transcoding using an existing HandBrake preset.
 
 .PARAMETER Debug
-    Enables verbose debug output with timestamps.
+    Enables verbose debug output.
 
-.EXAMPLE
-    PS> .\hbcompress_amd_x265_aac.ps1
-
-.EXAMPLE
-    PS> .\hbcompress_amd_x265_aac.ps1 -Debug
+.PARAMETER RemuxCheck
+    Enables container repair remux operations when a container issue is found
+    and no transcode is required.
 
 .NOTES
-    - Requires PowerShell 7+, HandBrakeCLI, ffprobe, and ffmpeg on PATH.
-    - AMD VCE hardware encoding must be available on the system.
-    - Run from the root directory containing your TV show folders.
-    - Place a .skip file in any directory to exclude it and all subdirectories.
-    - Place a .skip_<basename> file alongside a video to exclude that file.
+    Requirements:
+        - PowerShell 7 or later
+        - ffprobe, ffmpeg, HandBrakeCLI available in PATH
+        - Existing HandBrake preset named "1080p AMD x265"
+        - ASCII-only output and comments
+
+.EXAMPLE
+    .\hbcompress_amd_x265_aac.ps1
+
+.EXAMPLE
+    .\hbcompress_amd_x265_aac.ps1 -Debug
+
+.EXAMPLE
+    .\hbcompress_amd_x265_aac.ps1 -RemuxCheck
 #>
-# Requires PowerShell 7+
+
+# =====================================================================
+# PowerShell 7+ Video Processor
+# Logic aligned with compress_amd_x265_aac.sh
+# =====================================================================
+
+[CmdletBinding()]
 param(
     [Alias("d")]
-    [switch]$Debug
+    [switch]$Debug,
+
+    [Alias("r")]
+    [switch]$RemuxCheck
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,7 +53,7 @@ function Debug {
     param([string]$Message)
     if ($DebugMode) {
         $ts = (Get-Date).ToString("HH:mm:ss.fff")
-        Write-Host "[DEBUG $ts] $Message" -ForegroundColor DarkGray
+        Write-Host "[DEBUG $ts] $Message"
     }
 }
 
@@ -55,53 +61,70 @@ Register-EngineEvent PowerShell.Exiting -Action {
     Write-Host "Interrupted -- exiting safely"
 }
 
-###############################################################
-# MKV CONTAINER HEALTH CHECK
-###############################################################
-function Test-MKVContainerProblem {
+# =====================================================================
+# Pre-flight checks
+# =====================================================================
+
+$requiredTools = @("ffprobe", "ffmpeg", "HandBrakeCLI")
+foreach ($tool in $requiredTools) {
+    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+        Write-Host "ERROR: $tool not found in PATH"
+        exit 1
+    }
+}
+
+$presetName = "1080p AMD x265"
+
+# =====================================================================
+# Container health check
+# =====================================================================
+
+function Test-ContainerProblem {
     param([string]$Path)
 
-    Debug "Checking MKV container health: $Path"
+    Debug "Checking container health: $Path"
 
     try {
         $probeJson = ffprobe -v quiet -print_format json -show_format -show_streams "$Path"
-        $probe = $probeJson | ConvertFrom-Json
+        $probe     = $probeJson | ConvertFrom-Json
     }
     catch {
-        Debug "ffprobe failed during container check"
-        return $true   # treat as problematic
-    }
-
-    # Timestamp issues
-    if ($probe.format.start_time -eq "N/A") {
-        Debug "Container issue: start_time is N/A"
+        Debug "ffprobe failed"
         return $true
     }
 
-    # Corrupt duration
-    if ($probe.format.duration -eq "N/A") {
-        Debug "Container issue: duration is N/A"
-        return $true
-    }
-    if ($probe.format.duration -match '^-?[\d.]+$' -and [double]$probe.format.duration -le 0) {
-        Debug "Container issue: duration is non-positive ($($probe.format.duration))"
+    $startTime = $probe.format.start_time
+    if (-not $startTime -or $startTime -eq "N/A") {
+        Debug "start_time invalid"
         return $true
     }
 
-    # Deeper check: demux pass catches non-monotonic timestamps, truncation, missing moov
-    $ffmpegErrors = & ffmpeg -nostdin -hide_banner -v error -i $Path -f null - 2>&1
+    $duration = $probe.format.duration
+    if (-not $duration -or $duration -eq "N/A") {
+        Debug "duration invalid"
+        return $true
+    }
+
+    if ($duration -match "^-?[0-9.]+$") {
+        if ([double]$duration -le 0) {
+            Debug "duration non-positive"
+            return $true
+        }
+    }
+
+    $ffmpegErrors = & ffmpeg -nostdin -hide_banner -v error -i "$Path" -f null - 2>&1
     if ($ffmpegErrors) {
-        Debug "Container issue: ffmpeg demux errors detected"
+        Debug "ffmpeg demux errors detected"
         return $true
     }
 
     return $false
 }
 
+# =====================================================================
+# File lock detection
+# =====================================================================
 
-###############################################################
-# FILE LOCK DETECTION
-###############################################################
 function Test-FileLocked {
     param([string]$Path)
 
@@ -117,19 +140,16 @@ function Test-FileLocked {
         $fs.Close()
         return $false
     }
-    catch [System.IO.IOException] {
-        Debug "File is locked: $Path"
-        return $true
-    }
     catch {
-        Debug "Unexpected lock-check exception: $($_.Exception.Message)"
+        Debug "File locked"
         return $true
     }
 }
 
-###############################################################
-# ATOMIC REPLACEMENT
-###############################################################
+# =====================================================================
+# Atomic replacement
+# =====================================================================
+
 function Invoke-AtomicReplace {
     param(
         [int]$ExitCode,
@@ -139,573 +159,401 @@ function Invoke-AtomicReplace {
         [bool]$SkipSizeCheck = $false
     )
 
-    Debug "AtomicReplace called: exit=$ExitCode tmp=$TmpFile orig=$OrigFile"
+    Debug "AtomicReplace: exit=$ExitCode tmp=$TmpFile orig=$OrigFile"
 
     if ($ExitCode -ne 0) {
-        Write-Host "Transcode/remux failed. Exit code: $ExitCode"
-        Debug "Exit code non-zero, aborting replacement"
-        if (Test-Path -LiteralPath $TmpFile) {
-            Remove-Item -LiteralPath $TmpFile -Force
-        }
+        Write-Host "Transcode or remux failed. Exit code: $ExitCode"
+        if (Test-Path -LiteralPath $TmpFile) { Remove-Item -LiteralPath $TmpFile -Force }
         return
     }
 
     if (-not (Test-Path -LiteralPath $TmpFile)) {
-        Write-Host "Temp file missing, cannot replace."
-        Debug "Temp file missing"
+        Write-Host "Temp file missing"
         return
     }
 
-    # Ensure temp path is a file, not a directory
-    try {
-        $tmpItem = Get-Item -LiteralPath $TmpFile
-    }
-    catch {
-        Write-Host "ERROR: Unable to stat temp file: $TmpFile"
-        Debug "Get-Item failed for tmpfile: $($_.Exception.Message)"
-        return
-    }
-
+    $tmpItem = Get-Item -LiteralPath $TmpFile
     if ($tmpItem.PSIsContainer) {
-        Write-Host "ERROR: Temp output path is a directory → $TmpFile"
-        Debug "Temp path is directory"
+        Write-Host "ERROR: Temp path is a directory"
         return
     }
 
-    # Lock check on temp file
     if (Test-FileLocked -Path $TmpFile) {
-        Write-Host "Temp file locked → $TmpFile"
-        Debug "Temp file locked inside AtomicReplace"
+        Write-Host "Temp file locked"
         Remove-Item -LiteralPath $TmpFile -Force
         return
     }
 
-    try {
-        $orig = Get-Item -LiteralPath $OrigFile
-    }
-    catch {
-        Write-Host "ERROR: Unable to stat original file: $OrigFile"
-        Debug "Get-Item failed for orig: $($_.Exception.Message)"
-        Remove-Item -LiteralPath $TmpFile -Force
-        return
-    }
-
+    $orig = Get-Item -LiteralPath $OrigFile
     $origSize = $orig.Length
     $newSize  = $tmpItem.Length
 
-    $origMB = [math]::Round($origSize / 1MB, 2)
-    $newMB  = [math]::Round($newSize  / 1MB, 2)
+    if ($newSize -le 0) {
+        Write-Host "ERROR: Temp file zero length"
+        Remove-Item -LiteralPath $TmpFile -Force
+        return
+    }
 
-    Debug "Original size: $origMB MB"
-    Debug "New size: $newMB MB"
+    if (-not $SkipSizeCheck) {
+        if ($newSize -ge $origSize) {
+            Write-Host "Skipped: new file not smaller"
+            if ($SkipFile) { New-Item -LiteralPath $SkipFile -ItemType File -Force | Out-Null }
+            Remove-Item -LiteralPath $TmpFile -Force
+            return
+        }
+    }
+
+    if (Test-FileLocked -Path $OrigFile) {
+        Write-Host "Original file locked"
+        Remove-Item -LiteralPath $TmpFile -Force
+        return
+    }
 
     try {
-        if ($newSize -le 0) {
-            Write-Host "ERROR: Temp file is zero‑length. Deleting it."
-            Debug "Temp file zero-length"
-            Remove-Item -LiteralPath $TmpFile -Force
-            return
-        }
-
-        if (-not $SkipSizeCheck) {
-            if ($newSize -ge $origSize) {
-                Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB)"
-                Debug "New file not smaller, marking skip"
-                New-Item -Path $SkipFile -ItemType File -Force | Out-Null
-                Remove-Item -LiteralPath $TmpFile -Force
-                return
-            }
-        }
-
-        if (Test-FileLocked -Path $OrigFile) {
-            Write-Host "File is locked → $OrigFile"
-            Debug "Original file locked"
-            Remove-Item -LiteralPath $TmpFile -Force
-            return
-        }
-
-        # Apply original timestamp to temp file
-        try {
-            Set-ItemProperty -LiteralPath $TmpFile -Name LastWriteTime -Value $orig.LastWriteTime
-        }
-        catch {
-            Debug "Failed to set LastWriteTime on tmpfile: $($_.Exception.Message)"
-            # Not fatal; continue
-        }
-
-        # Final lock check before deletion
-        if (Test-FileLocked -Path $OrigFile) {
-            Write-Host "Original file locked during commit → $OrigFile"
-            Debug "Original locked at final commit"
-            Remove-Item -LiteralPath $TmpFile -Force
-            return
-        }
-
-        Write-Host "Removing original → $OrigFile"
-        Debug "Removing original"
-        Remove-Item -LiteralPath $OrigFile -Force
-
-        # Final lock check before move
-        if (Test-FileLocked -Path $TmpFile) {
-            Write-Host "Temp file locked during final move → $TmpFile"
-            Debug "Temp locked at final move"
-            Remove-Item -LiteralPath $TmpFile -Force
-            return
-        }
-
-        Write-Host "Committing new file → $OrigFile"
-        Debug "Moving temp file into place"
-        Move-Item -LiteralPath $TmpFile -Destination $OrigFile -Force
-
-        Write-Host "Replaced: ${origMB}MB → ${newMB}MB"
-        Debug "Atomic replacement complete"
+        Set-ItemProperty -LiteralPath $TmpFile -Name LastWriteTime -Value $orig.LastWriteTime
     }
-    catch {
-        Write-Host "ERROR during replacement: $($_.Exception.Message)"
-        Debug "AtomicReplace exception: $($_.Exception.Message)"
-        if (Test-Path -LiteralPath $TmpFile) {
-            Remove-Item -LiteralPath $TmpFile -Force
-        }
+    catch {}
+
+    if (Test-FileLocked -Path $OrigFile) {
+        Write-Host "Original file locked at commit"
+        Remove-Item -LiteralPath $TmpFile -Force
+        return
     }
+
+    Remove-Item -LiteralPath $OrigFile -Force
+
+    if (Test-FileLocked -Path $TmpFile) {
+        Write-Host "Temp file locked at final move"
+        Remove-Item -LiteralPath $TmpFile -Force
+        return
+    }
+
+    Move-Item -LiteralPath $TmpFile -Destination $OrigFile -Force
+    Write-Host "Replaced file"
 }
 
-###############################################################
-# INTERLACE / TELECINE DETECTION (IMPROVED)
-###############################################################
-function Get-VideoInterlaceStatus {
-    param([string]$Path)
+# =====================================================================
+# Interlace / telecine detection (idet parity)
+# =====================================================================
 
-    Debug "Interlace check (fast pass) for: $Path"
+function Get-VideoStatus {
+    param(
+        [string]$Path,
+        [string]$FieldOrder
+    )
 
-    try {
-        $probeJson = ffprobe -v quiet -print_format json -show_streams -select_streams v "$Path"
-        $probe = $probeJson | ConvertFrom-Json
-    }
-    catch {
-        Debug "Interlace fast pass failed"
-        return "unknown"
-    }
-
-    $stream = $probe.streams | Where-Object { $_.codec_type -eq "video" }
-
-    if ($stream.field_order -and $stream.field_order -match "^(tt|bb|tb|bt)$") {
-        Debug "Interlace fast pass: TRUE interlaced"
+    if ($FieldOrder -match "^(tt|bb|tb|bt)$") {
+        Debug "Interlaced by field_order"
         return "interlaced"
     }
-
-    if ($stream.field_order -eq "progressive") {
-        Debug "Interlace fast pass: progressive"
+    elseif ($FieldOrder -eq "progressive") {
+        Debug "Progressive by field_order"
         return "progressive"
     }
 
-    Debug "Interlace fast pass inconclusive, running slow pass..."
+    Write-Host "Running deep interlace scan..."
+    Debug "Running idet..."
 
-    try {
-        $probeJson = ffprobe `
-            -v quiet `
-            -print_format json `
-            -show_frames `
-            -select_streams v `
-            -read_intervals "300%+200" `
-            "$Path"
+    $idetOutput = & ffmpeg -nostdin -hide_banner `
+        -ss 300 `
+        -noaccurate_seek `
+        -skip_frame nokey `
+        -i "$Path" `
+        -skip_frame default `
+        -filter:v idet `
+        -frames:v 1000 `
+        -an -f null - 2>&1
 
-        $probe = $probeJson | ConvertFrom-Json
+    $interlaced = 0
+    $tff = 0
+    $bff = 0
+
+    $m = [regex]::Match($idetOutput, "Interlaced:\s*([0-9]+)")
+    if ($m.Success) { $interlaced = [int]$m.Groups[1].Value }
+
+    $m = [regex]::Match($idetOutput, "TFF:\s*([0-9]+)")
+    if ($m.Success) { $tff = [int]$m.Groups[1].Value }
+
+    $m = [regex]::Match($idetOutput, "BFF:\s*([0-9]+)")
+    if ($m.Success) { $bff = [int]$m.Groups[1].Value }
+
+    if ((($tff -gt 50) -or ($bff -gt 50)) -and ($interlaced -lt 20)) {
+        Debug "Telecine detected"
+        return "telecine"
     }
-    catch {
-        Debug "Interlace slow pass failed"
-        return "unknown"
-    }
-
-    $frames = $probe.frames
-
-    if ($frames.interlaced_frame -contains 1) {
-        Debug "Interlace slow pass: TRUE interlaced"
+    elseif ($interlaced -gt 50) {
+        Debug "Interlaced detected"
         return "interlaced"
     }
-
-    Debug "Interlace slow pass: progressive"
-    return "progressive"
+    else {
+        Debug "Progressive assumed"
+        return "progressive"
+    }
 }
 
-###############################################################
-# STARTUP
-###############################################################
+# =====================================================================
+# Startup
+# =====================================================================
+
 Write-Host "Starting up..."
 Write-Host "Scanning for files..."
-Debug "Debug mode ENABLED"
 
 $root = (Get-Location).ProviderPath
-Debug "Root directory: $root"
 
-$files = [System.IO.Directory]::EnumerateFiles(
-    $root,
-    "*.*",
-    [System.IO.SearchOption]::AllDirectories
-) | Where-Object {
-    $_ -match '\.(mkv|mp4|ts)$'
-} | ForEach-Object {
-    Get-Item -LiteralPath $_
+# Fast .NET enumeration
+$files = foreach ($path in [System.IO.Directory]::EnumerateFiles($root, "*", "AllDirectories")) {
+
+    if ($path.EndsWith(".mkv", [System.StringComparison]::OrdinalIgnoreCase) -or
+        $path.EndsWith(".mp4", [System.StringComparison]::OrdinalIgnoreCase) -or
+        $path.EndsWith(".ts",  [System.StringComparison]::OrdinalIgnoreCase)) {
+
+        $info = [System.IO.FileInfo]::new($path)
+
+        if ($info.Length -ge 950MB) {
+            $info
+        }
+    }
 }
 
 Write-Host "Found $($files.Count) files."
-Debug "Enumerated $($files.Count) media files"
-
 Write-Host "Beginning processing..."
 
-###############################################################
-# MAIN LOOP
-###############################################################
+# =====================================================================
+# Main loop
+# =====================================================================
+
 foreach ($f in $files) {
 
     Debug "---------------------------------------------"
-    Debug "Processing file: $($f.FullName)"
+    Debug "Processing: $($f.FullName)"
 
-    Write-Host "$([char]0x1B)]0;$($f.Name)`a"
+    $base = $f.BaseName
+    $dir  = $f.DirectoryName
 
-    # SKIP: SIZE < 1GB
-    if ($f.Length -lt 1GB) {
-        Debug "Skipping (size < 1GB): $($f.Length)"
-        continue
-    }
+    # Directory .skip check
+    $scan = Get-Item -LiteralPath $dir
+    $skip = $false
 
-    $baseNoExt = $f.BaseName
-    $dir       = $f.DirectoryName
-
-    Debug "Base name: $baseNoExt"
-    Debug "Directory: $dir"
-
-    # SKIP: DIRECTORY .skip (walk upward)
-    $cur     = $f.Directory
-    $skipDir = $false
-
-    while ($null -ne $cur -and $cur.FullName -ne $root) {
-        $skipFile = Join-Path $cur.FullName ".skip"
-        if (Test-Path -LiteralPath $skipFile) {
-            Write-Host "Skipping $($f.FullName) -- .skip found in $($cur.FullName)"
-            Debug "Directory skip triggered by: $skipFile"
-            $skipDir = $true
+    while ($scan -and $scan.FullName.StartsWith($root)) {
+        $marker = Join-Path $scan.FullName ".skip"
+        if (Test-Path -LiteralPath $marker) {
+            Debug ".skip found at $($scan.FullName)"
+            $skip = $true
             break
         }
-        $cur = $cur.Parent
+        if (-not $scan.Parent) { break }
+        $scan = $scan.Parent
     }
 
-    if ($skipDir) { continue }
+    if ($skip) { continue }
 
-    # SKIP: PER-FILE .skip_<basename>
-    $fileSkip = Join-Path $dir ".skip_$baseNoExt"
-
+    # Per-file skip
+    $fileSkip = Join-Path $dir (".skip_$base")
     if (Test-Path -LiteralPath $fileSkip) {
-        Write-Host "Skipping $($f.FullName) -- file marked with $(Split-Path $fileSkip -Leaf)"
-        Debug "Per-file skip triggered: $fileSkip"
+        Write-Host "Skipping $($f.FullName) -- file marked skip"
         continue
     }
 
-    # SKIP: 2160p or higher resolution (filename match)
-    if ($baseNoExt -imatch '2160[pP]\]') {
-        Write-Host "Skipping $($f.FullName) -- 4K (or higher) video match (filename)"
-        Debug "4K (or higher) video match (filename)"
-        continue
-    }
-
-    # SKIP: Already processed
-    if ($baseNoExt -match '\[Cleaned\]|\[Trans\]') {
-        Debug "Already processed marker found, deleting original"
+    # Delete leftover cleaned/transcoded
+    if ($base -match "\[Cleaned\]|\[Trans\]") {
+        Debug "Deleting leftover processed file"
         Remove-Item -LiteralPath $f.FullName -Force
         continue
     }
 
-    Write-Host "`nChecking $($f.FullName)"
-    Debug "Running ffprobe..."
+    Write-Host "Checking $($f.FullName)"
 
-    # ffprobe JSON (streams only)
+        # ffprobe JSON (hardened)
     try {
-        $probeJson = ffprobe -v quiet -print_format json -show_streams $f.FullName
+        $probeJson = ffprobe -v quiet -print_format json -show_streams "$($f.FullName)"
         $probe     = $probeJson | ConvertFrom-Json
-        Debug "ffprobe succeeded"
     }
     catch {
         Write-Host "Skipping $($f.FullName) -- ffprobe JSON invalid"
-        Debug "ffprobe failed"
         continue
     }
 
-    $videoStream = ($probe.streams | Where-Object { $_.codec_type -eq "video" })[0]
-
-    if (-not $videoStream) {
-        Write-Host "Skipping $($f.FullName) -- no video stream found"
-        Debug "No video stream found"
+    # Ensure streams exist
+    if (-not $probe.streams) {
+        Write-Host "Skipping $($f.FullName) -- no streams found"
         continue
     }
 
-    $width  = $videoStream.width
-    $height = $videoStream.height
+    # Select video stream (ignore attached pictures)
+    $video = $probe.streams |
+        Where-Object { $_.codec_type -eq "video" -and -not $_.disposition.attached_pic } |
+        Select-Object -First 1
 
-    Debug "Video codec: $($videoStream.codec_name)"
-    Debug "Video bitrate: $($videoStream.bit_rate)"
-    Debug "Resolution: ${width}x${height}"
-
-    # SKIP: high resolution (> 1100p) -- ffprobe secondary check, supplements filename check
-    if ($height -gt 1100) {
-        Write-Host "Skipping $($f.FullName) -- high-resolution video detected (height=$height)"
-        Debug "High-resolution (> 1100p) detected, skipping file"
+    if (-not $video) {
+        Write-Host "Skipping $($f.FullName) -- no usable video stream"
         continue
     }
 
-    # AUDIO STREAMS
-    $audioStreams = $probe.streams | Where-Object { $_.codec_type -eq "audio" }
+    # Select audio stream
+    $audio = $probe.streams |
+        Where-Object { $_.codec_type -eq "audio" } |
+        Select-Object -First 1
 
-    if ($audioStreams.Count -eq 0) {
-        Write-Host "Skipping $($f.FullName) -- no audio detected"
-        Debug "No audio streams found"
+    if (-not $audio) {
+        Write-Host "Skipping $($f.FullName) -- no audio stream"
         continue
     }
 
-    $audioCodecs = $audioStreams.codec_name
-    Debug "Audio codecs: $($audioCodecs -join ', ')"
+    # Safe extraction helpers
+    function ConvertTo-Safe-String { param($v) if ($null -eq $v) { "" } else { "$v" } }
+    function ConvertTo-Safe-Int    { param($v) if ($v -match "^[0-9]+$") { [int]$v } else { 0 } }
 
-    $hasAAC = $audioCodecs -contains "aac"
-    Debug "Has AAC: $hasAAC"
+    # Extract fields safely
+    $vcodec_raw = ConvertTo-Safe-String $video.codec_name
+    $vcodec_lc  = $vcodec_raw.ToLowerInvariant()
 
-    # Build per-track audio arguments for HandBrake
-    $audioCount    = $audioStreams.Count
-    $hb_audio      = (1..$audioCount) -join ","
-    $hb_aencoder   = (@("av_aac") * $audioCount) -join ","
-    $hb_ab         = (@("160")    * $audioCount) -join ","
-    Debug "Audio tracks: $hb_audio"
-    Debug "Audio encoders: $hb_aencoder"
+    $height_raw = ConvertTo-Safe-String $video.height
+    $height     = ConvertTo-Safe-Int $height_raw
 
-    $vcodec   = $videoStream.codec_name
-    $vbitrate = [int]($videoStream.bit_rate ?? 0)
+    $field_raw  = ConvertTo-Safe-String $video.field_order
+    $field      = $field_raw.ToLowerInvariant()
 
-    ###############################################################
+    $acodec_raw = ConvertTo-Safe-String $audio.codec_name
+    $acodec     = $acodec_raw.ToLowerInvariant()
+
+    # Bitrate: try bit_rate, then tags.BPS, else 0
+    $vbitrate_raw = $video.bit_rate
+    if (-not $vbitrate_raw -and $video.tags -and $video.tags.BPS) {
+        $vbitrate_raw = $video.tags.BPS
+    }
+    $vbitrate = ConvertTo-Safe-Int $vbitrate_raw
+
+    Debug "vcodec=$vcodec_lc vbitrate=$vbitrate height=$height field_order=$field acodec=$acodec"
+
+
     # Skip AV1
-    ###############################################################
-    if ($vcodec -eq "av1") {
-        Write-Host "Skipping $($f.FullName) -- AV1 video detected"
-        Debug "Skipping due to AV1 codec"
+    if ($vcodec_lc -in @("av1","av01","libaom-av1","unknown")) {
+        Write-Host "Skipping $($f.FullName) -- AV1 or unsupported codec"
         continue
     }
 
-
-    # Check non-interlace conversion criteria first
-    $needs_convert = $false
-    if ($vcodec -ne "hevc") { $needs_convert = $true }
-    if ($vbitrate -gt 2500000) { $needs_convert = $true }
-    if (-not $hasAAC) { $needs_convert = $true }
-    Debug "Needs convert (pre-interlace): $needs_convert"
-
-    ###############################################################
-    # INTERLACE DETECTION
-    ###############################################################
-    if ($vcodec -eq "hevc") {
-
-        # If ffprobe reports progressive, trust it
-        if ($videoStream.field_order -eq "progressive") {
-            Debug "HEVC flagged progressive → skipping interlace detection"
-            $status = "progressive"
-        }
-        # If ffprobe reports known interlace patterns, treat as interlaced
-        elseif ($videoStream.field_order -match "^(tt|bb|tb|bt)$") {
-            Debug "HEVC flagged interlaced → running full detection"
-            $status = Get-VideoInterlaceStatus $f.FullName
-        }
-        # If field_order is missing or weird, run slow detection
-        else {
-            Debug "HEVC field_order unknown → running slow interlace/telecine detection"
-            $status = Get-VideoInterlaceStatus $f.FullName
-        }
+    # Skip UHD-ish
+    if ($height -gt 1100) {
+        Write-Host "Skipping $($f.FullName) -- high resolution"
+        continue
     }
-    else {
-        # Non-HEVC → always run full detection
-        $status = Get-VideoInterlaceStatus $f.FullName
-    }
-    Debug "Interlace status: $status"
 
-    if ($status -ne "progressive") { $needs_convert = $true }
-    Debug "Needs convert: $needs_convert"
+    # Interlace detection
+    $status = Get-VideoStatus -Path $f.FullName -FieldOrder $field
+    Write-Host "Detected: $status"
 
-    ###############################################################
-    # REMUX LOGIC
-    ###############################################################
-    $canRemux = $false
+    # Needs convert
+    $needs = $false
+    if ($vcodec_lc -ne "hevc") { $needs = $true }
+    if ($vbitrate -gt 2500000) { $needs = $true }
+    if ($status -ne "progressive") { $needs = $true }
 
-    # Only MKV is eligible for container-repair remux
-    if ($f.Extension -ieq ".mkv") {
+    # Remux logic
+    if (-not $needs -and $RemuxCheck -and $acodec -eq "aac") {
+        if (Test-ContainerProblem -Path $f.FullName) {
+            Write-Host "Remuxing $($f.FullName) for container repair"
 
-        # Only remux if transcoding is NOT needed
-        if (-not $needs_convert) {
+            $tmp = Join-Path $dir ($base + "[Trans].tmp")
+            if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force }
 
-            # Only remux if MKV container is problematic
-            if (Test-MKVContainerProblem -Path $f.FullName) {
-                $canRemux = $true
+            if (Test-FileLocked -Path $f.FullName) {
+                Write-Host "Skipping $($f.FullName) -- locked"
+                continue
             }
+
+            & ffmpeg -nostdin -hide_banner -y `
+                -i "$($f.FullName)" `
+                -map 0 `
+                -c:v copy -c:a copy -c:s copy `
+                -f matroska `
+                "$tmp"
+
+            $exit = $LASTEXITCODE
+
+            if (Test-FileLocked -Path $tmp) {
+                Write-Host "Temp file locked"
+                Remove-Item -LiteralPath $tmp -Force
+                continue
+            }
+
+            Invoke-AtomicReplace -ExitCode $exit -TmpFile $tmp -OrigFile $f.FullName -SkipFile $fileSkip -SkipSizeCheck $true
+            continue
         }
     }
 
-    if ($canRemux) {
-        Write-Host "Remuxing $($f.FullName) → container repair"
-        Debug "Container-repair remux triggered"
-
-        $tmpfile = Join-Path $dir ($baseNoExt + '[Trans].tmp')
-
-        if (Test-Path -LiteralPath $tmpfile) {
-            Debug "Removing existing temp file"
-            Remove-Item -LiteralPath $tmpfile -Force
-        }
-
-        if (Test-FileLocked -Path $f.FullName) {
-            Write-Host "Skipping $($f.FullName) -- file is locked"
-            Debug "File locked before remux"
-            continue
-        }
-
-        ffmpeg -y -i "$($f.FullName)" -c copy -f matroska "$tmpfile"
-        $exit = $LASTEXITCODE
-        Debug "ffmpeg remux exit code: $exit"
-
-        if (Test-FileLocked -Path $tmpfile) {
-            Write-Host "Temp file locked → $tmpfile"
-            Debug "Temp file locked after remux"
-            Remove-Item -LiteralPath $tmpfile -Force
-            continue
-        }
-
-        Invoke-AtomicReplace -ExitCode $exit -TmpFile $tmpfile -OrigFile $f.FullName -SkipFile $fileSkip -SkipSizeCheck $true
-        continue
-    }
-
-    ###############################################################
-    # SKIP IF NO CONVERT NEEDED (correct location)
-    ###############################################################
-    if (-not $needs_convert) {
+    if (-not $needs) {
         Write-Host "Skipping $($f.FullName) -- already in desired format"
         continue
     }
 
-
-    ###############################################################
-    # FILTER SELECTION
-    ###############################################################
+    # HandBrake filter selection
+    $hbFilters = @()
     switch ($status) {
         "interlaced" {
-            $hb_filter = "--deinterlace=slower"
-            Write-Host "Detected: TRUE INTERLACE → Applying deinterlace=slower"
+            Write-Host "Applying deinterlace"
+            $hbFilters = @("--deinterlace=slower")
         }
-        "progressive" {
-            $hb_filter = ""
-            Write-Host "Detected: PROGRESSIVE → No deinterlace"
+        "telecine" {
+            Write-Host "Applying detelecine + deinterlace"
+            $hbFilters = @("--detelecine","--deinterlace=slower")
         }
-        "unknown" {
-            $hb_filter = "--detelecine --deinterlace=slower"
-            Write-Host "Detected: UNKNOWN / TELECINE → Applying detelecine + deinterlace=slower"
+        default {
+            Write-Host "Progressive: no filters"
+            $hbFilters = @()
         }
     }
 
-    Debug "HandBrake filter: $hb_filter"
+    # Temp output
+    $tmp = Join-Path $dir ($base + "[Trans].tmp")
+    if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force }
 
-    ###############################################################
-    # ANIMATION-SPECIFIC ENCODER SETTINGS
-    ###############################################################
-    $hb_animation = @(
-        "--quality 20",
-        "--encoder-preset slow"
-    ) -join " "
+    Write-Host "Input: $($f.FullName)"
+    Write-Host "Temp:  $tmp"
 
-    ###############################################################
-    # TEMP OUTPUT
-    ###############################################################
-    $tmpfile = Join-Path $dir ($baseNoExt + '[Trans].tmp')
-    Debug "Temp output file: $tmpfile"
-
-    if (Test-Path -LiteralPath $tmpfile) {
-        Debug "Removing existing temp file"
-        Remove-Item -LiteralPath $tmpfile -Force
-    }
-
-    Write-Host "Input    : $($f.FullName)"
-    Write-Host "Temp Out : $tmpfile"
-    Write-Host "Filters  : $hb_filter"
-    Write-Host "AnimTune : $hb_animation"
-
-    ###############################################################
-    # RUN HANDBRAKE
-    ###############################################################
-    Debug "Running HandBrakeCLI..."
-
-    # Lock check before encode
     if (Test-FileLocked -Path $f.FullName) {
-        Write-Host "Skipping $($f.FullName) -- file is locked"
-        Debug "File locked before encode"
+        Write-Host "Skipping $($f.FullName) -- locked"
         continue
     }
 
-    if ($hb_filter -eq "") {
-        HandBrakeCLI `
-            --input "$($f.FullName)" `
-            --output "$tmpfile" `
-            --format mkv `
-            --encoder vce_h265 `
-            --encoder-preset balance `
-            --quality 24 `
-            --maxHeight 2160 `
-            --audio $hb_audio `
-            --aencoder $hb_aencoder `
-            --ab $hb_ab `
-            --subtitle-lang-list eng,und --subtitle-default=1 `
-    }
-    else {
-        HandBrakeCLI `
-            --input "$($f.FullName)" `
-            --output "$tmpfile" `
-            --format mkv `
-            --encoder vce_h265 `
-            --quality 24 `
-            --encoder-preset balance `
-            --maxHeight 2160 `
-            --audio $hb_audio `
-            --aencoder $hb_aencoder `
-            --ab $hb_ab `
-            --subtitle-lang-list eng,und --subtitle-default=1 `
-            $hb_filter
-    }
+    # HandBrakeCLI
+    $hbArgs = @(
+        "--preset", $presetName,
+        "--input",  $f.FullName,
+        "--output", $tmp
+    ) + $hbFilters
 
+    & HandBrakeCLI @hbArgs
     $exit = $LASTEXITCODE
-    Debug "HandBrake exit code: $exit"
 
-    # Lock check after encode
-    if (Test-FileLocked -Path $tmpfile) {
-        Write-Host "Temp file locked → $tmpfile"
-        Debug "Temp file locked after encode"
-        Remove-Item -LiteralPath $tmpfile -Force
+    if (Test-FileLocked -Path $tmp) {
+        Write-Host "Temp file locked"
+        Remove-Item -LiteralPath $tmp -Force
         continue
     }
 
-    Invoke-AtomicReplace -ExitCode $exit -TmpFile $tmpfile -OrigFile $f.FullName -SkipFile $fileSkip
+    Invoke-AtomicReplace -ExitCode $exit -TmpFile $tmp -OrigFile $f.FullName -SkipFile $fileSkip
 }
 
-###############################################################
-# CLEANUP
-###############################################################
-Write-Host "Cleaning up leftover [Trans] files..."
-Debug "Running cleanup..."
+# =====================================================================
+# Cleanup
+# =====================================================================
 
-Get-ChildItem -Recurse -File |
+Write-Host "Cleaning up leftover Trans files..."
+
+Get-ChildItem -LiteralPath $root -Recurse -File |
     Where-Object {
-        $_.Name -match '\[Trans\]\.tmp' -or
-        $_.Name -match '\[Trans\]\.nfo' -or
-        $_.Name -match '\[Trans\]\.jpg'
+        $_.Name -match "\[Trans\]\.tmp" -or
+        $_.Name -match "\[Trans\]\.nfo" -or
+        $_.Name -match "\[Trans\]\.jpg"
     } |
     ForEach-Object {
-        Debug "Removing leftover file: $($_.FullName)"
         Remove-Item -LiteralPath $_.FullName -Force
     }
 
-Get-ChildItem -Recurse -Directory |
-    Where-Object { $_.Name -match '\[Trans\]\.trickplay' } |
+Get-ChildItem -LiteralPath $root -Recurse -Directory |
+    Where-Object { $_.Name -match "\[Trans\]\.trickplay" } |
     ForEach-Object {
-        Debug "Removing leftover directory: $($_.FullName)"
         Remove-Item -LiteralPath $_.FullName -Recurse -Force
     }
 
 Write-Host "All tasks complete."
-Debug "Script finished"
