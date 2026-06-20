@@ -20,7 +20,6 @@
         - PowerShell 7 or later
         - ffprobe, ffmpeg, HandBrakeCLI available in PATH
         - Existing HandBrake preset named "1080p AMD x265"
-        - ASCII-only output and comments
 
 .EXAMPLE
     .\hbcompress_amd_x265_aac.ps1
