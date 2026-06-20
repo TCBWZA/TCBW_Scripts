@@ -216,3 +216,76 @@ Recursively sets ownership and permissions on a directory tree. Intended to run 
 # Apply to current directory
 ./setperm.sh
 ```
+
+---
+
+### sync_main_backups.sh
+
+Rsyncs primary host-level backup targets to the `nmedia` storage. Use this when you want to run a focused backup pass of the main backup sets without invoking the full `sync.sh` orchestrator.
+
+```bash
+./sync_main_backups.sh
+```
+
+**Requirements:** `rsync`
+
+---
+
+### sync_sysdocker_maindocker.sh
+
+Syncs system Docker and main Docker data to the `nmedia` store. Useful for making sure Docker volumes and related system docker data are replicated to the backup mount. Aborts if `/mnt/nmedia` is not mounted.
+
+```bash
+./sync_sysdocker_maindocker.sh
+```
+
+**Requirements:** `rsync`, `pct` (when interacting with LXC-managed Docker containers)
+
+---
+
+### lxc-upgrade.sh
+
+Performs package upgrades for one or more LXC containers. This helper can be used to run `apt update`/`apt upgrade` inside containers from the Proxmox host. Run with a container ID or `all` to target multiple containers.
+
+```bash
+./lxc-upgrade.sh <container-id|all>
+```
+
+**Requirements:** `pct` (Proxmox host)
+
+---
+
+### shrinkvol.sh
+
+Utility that performs safe volume shrinking steps for specified logical volumes or filesystems. This script is potentially destructive; read the script and take backups before running.
+
+```bash
+./shrinkvol.sh <volume-or-device>
+```
+
+**Requirements:** `lvm2`, `resize2fs` or tool appropriate to the filesystem in use; run as root.
+
+---
+
+### showswap.sh
+
+Displays current swap usage and swap device information on the host. Handy for quick health checks while performing memory- or disk-related maintenance.
+
+```bash
+./showswap.sh
+```
+
+---
+
+### usb-poweroff.sh / usb-poweron.sh
+
+Small helpers to toggle USB-powered devices (power off / power on). They typically wrap a USB hub control tool and require root permissions. Check the script header for supported hardware and required utilities. You will need to update them to point to the correct USB hub device on your system. This is done this way to support AMD USB controller quirks that can cause issues with some USB hubs.
+
+These should be on your path e.g. `/usr/local/sbin`
+
+```bash
+./usb-poweroff.sh
+./usb-poweron.sh
+```
+
+**Requirements:** hardware-specific USB hub control tool (e.g. `uhubctl`), `sudo` or root privileges
