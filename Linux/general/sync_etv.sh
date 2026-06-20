@@ -16,6 +16,8 @@ if ! grep -qs "/mnt/emedia" /proc/mounts; then
     echo "ERROR: /mnt/emedia did not mount. Aborting."
     exit 1
 fi
-# Deletes files in destination that no longer exist in source
-# parameters are to support copying to cifs mounted exFAT
-rsync -avh --size-only --no-times --no-perms --no-owner --no-group --no-times --omit-dir-times  --itemize-changes --progress --delete "$SOURCE" "$DEST"
+
+rsync -avh --size-only --no-times --no-perms --no-owner --no-group --omit-dir-times  --itemize-changes --progress --delete --inplace "$SOURCE" "$DEST"
+
+echo "Flushing write buffers..."
+sync

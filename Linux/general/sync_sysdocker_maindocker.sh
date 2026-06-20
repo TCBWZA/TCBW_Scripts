@@ -62,6 +62,7 @@ log "Destination ZFS dataset is mounted."
 ### --- RSYNC --- ###
 log "Starting rsync from $SOURCE to $DEST..."
 rsync -avh --itemize-changes --progress --delete "$SOURCE" "$DEST"
+sync
 log "Sync complete."
 
 ### --- RESTORE CONTAINER STATE --- ###
