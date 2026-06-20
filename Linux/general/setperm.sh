@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
-# Usage: ./fix-perms.sh [-n] [target_dir]
+# Usage: ./setperm.sh [-n] [target_dir]
 # -n : dry-run (show what would be done)
-# target_dir : directory to operate on (default is current directory)
+# target_dir : directory to operate on (default: /main/media/Video)
 
 DRY_RUN=false
-TARGET="."
+TARGET="/main/media/Video"
 
 while getopts "n" opt; do
   case "$opt" in
@@ -25,15 +25,15 @@ if [ ! -d "$TARGET" ]; then
   exit 1
 fi
 
-# Ensure user and group exist
-if ! id -u 1000 >/dev/null 2>&1; then
-  echo "Error: user '1000' does not exist on this system." >&2
-  exit 1
+# Ensure UID/GID 1000 exist (warn if not)
+# We prefer numeric UID/GID 1000 so the script can be run inside containers
+# where the unprivileged user maps to UID 1000.
+if ! getent passwd | awk -F: '$3==1000 {exit 0} END{exit 1}'; then
+  echo "Warning: no local user has UID 1000; numeric UID 1000 will be used." >&2
 fi
 
-if ! getent group 1000 >/dev/null 2>&1; then
-  echo "Error: group '1000' does not exist on this system." >&2
-  exit 1
+if ! getent group | awk -F: '$3==1000 {exit 0} END{exit 1}'; then
+  echo "Warning: no local group has GID 1000; numeric GID 1000 will be used." >&2
 fi
 
 # Print or run a command safely
