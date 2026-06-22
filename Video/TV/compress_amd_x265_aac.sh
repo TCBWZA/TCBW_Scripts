@@ -83,7 +83,15 @@ check_container_problem() {
     return 1
 }
 
-MAX_JOBS=2
+#####################################################
+# Allow nice to be used without breaking exit code
+#####################################################
+run_ffmpeg() {
+    nice -n 10 ionice -c3 ffmpeg "$@"
+    return $?
+}
+
+MAX_JOBS=1
 
 echo "Starting up..."
 echo "Scanning for files..."
@@ -235,7 +243,7 @@ for f in "${files[@]}"; do
         echo "Running deep interlace/telecine scan..."
 
         idet_output=$(
-            ffmpeg -nostdin -hide_banner \
+            run_ffmpeg -nostdin -hide_banner -threads 2 \
                 -ss 300 \
                 -noaccurate_seek \
                 -skip_frame nokey \
@@ -286,7 +294,7 @@ for f in "${files[@]}"; do
 
             rm -f -- "$tmpfile"
 
-            ffmpeg -nostdin -hide_banner -y \
+            run_ffmpeg -nostdin -hide_banner -threads 2 -y \
                 -i "$f" \
                 -map 0 \
                 -c:v copy -c:a copy \
@@ -327,7 +335,10 @@ for f in "${files[@]}"; do
         progressive)
             debug "Transcode path: PROGRESSIVE → CPU decode + VAAPI encode (fast path)"
             transcode_cmd=(
-                ffmpeg -nostdin -hide_banner
+                run_ffmpeg
+                -nostdin
+                -hide_banner
+                -threads 2
                 -vaapi_device /dev/dri/renderD128
                 -i "$f"
                 -vf "format=nv12,hwupload"
@@ -344,7 +355,10 @@ for f in "${files[@]}"; do
         interlaced)
             debug "Transcode path: INTERLACED → CPU bwdif + VAAPI encode"
             transcode_cmd=(
-                ffmpeg -nostdin -hide_banner
+                run_ffmpeg 
+                -nostdin
+                -hide_banner
+                -threads 2
                 -vaapi_device /dev/dri/renderD128
                 -i "$f"
                 -vf "bwdif=mode=send_frame,format=nv12,hwupload"
@@ -361,7 +375,10 @@ for f in "${files[@]}"; do
         telecine)
             debug "Transcode path: TELECINE → CPU pullup/dejudder + VAAPI encode"
             transcode_cmd=(
-                ffmpeg -nostdin -hide_banner
+                run_ffmpeg
+                -nostdin
+                -hide_banner
+                -threads 2
                 -vaapi_device /dev/dri/renderD128
                 -i "$f"
                 -vf "pullup,dejudder,format=nv12,hwupload"
@@ -384,7 +401,8 @@ for f in "${files[@]}"; do
             orig_size=$(stat -c%s "$f")
             new_size=$(stat -c%s "$tmpfile")
 
-            if (( new_size < orig_size )); then
+            # Require new file to be at least 10% smaller
+            if (( new_size * 10 < orig_size * 9 )); then
                 touch -r "$f" "$tmpfile"
                 rm -f -- "$f"
                 mv -- "$tmpfile" "$f"
