@@ -3,7 +3,7 @@
 ###############################################################
 # PRE-FLIGHT CHECKS
 ###############################################################
-for tool in ffprobe ffmpeg; do
+for tool in ffprobe ffmpeg jq bc; do
     if ! command -v "$tool" &> /dev/null; then
         echo "ERROR: $tool not found in PATH"
         echo "Please install or add to PATH before running this script."
@@ -81,6 +81,14 @@ check_container_problem() {
     fi
 
     return 1
+}
+
+#####################################################
+# Allow nice to be used without breaking exit code
+#####################################################
+run_ffmpeg() {
+    nice -n 10 ionice -c3 ffmpeg "$@"
+    return $?
 }
 
 MAX_JOBS=2
@@ -171,7 +179,7 @@ for f in "${files[@]}"; do
     debug "ffprobe JSON OK"
 
     #####################################################
-    # Extract allowed audio/subtitle streams (eng/jpn/kor/unk)
+    # Extract allowed audio/subtitle streams (eng/und/unk)
     #####################################################
 
     # Primary video stream (first non-attached video)
@@ -198,9 +206,7 @@ for f in "${files[@]}"; do
               lang: ((.tags.language // .tags.LANGUAGE // "unk") | ascii_downcase)
             }
           | select(.lang == "eng" or .lang == "en" or
-                   .lang == "jpn" or .lang == "ja" or
-                   .lang == "kor" or .lang == "ko" or
-                   .lang == "unk")
+                   .lang == "und" or .lang == "unk")
           | .idx
         ' <<< "$probe"
     )
@@ -215,12 +221,16 @@ for f in "${files[@]}"; do
               lang: ((.tags.language // .tags.LANGUAGE // "unk") | ascii_downcase)
             }
           | select(.lang == "eng" or .lang == "en" or
-                   .lang == "jpn" or .lang == "ja" or
-                   .lang == "kor" or .lang == "ko" or
-                   .lang == "unk")
+                   .lang == "und" or .lang == "unk")
           | .idx
         ' <<< "$probe"
     )
+
+    if [[ ${#audio_indices[@]} -eq 0 ]]; then
+        echo "Skipping $f -- no allowed audio stream found"
+        touch "$file_skip_file"
+        continue
+    fi
 
     debug "Audio indices (filtered): ${audio_indices[*]}"
     debug "Subtitle indices (filtered): ${subtitle_indices[*]}"
@@ -243,6 +253,12 @@ for f in "${files[@]}"; do
             | .codec_name)
         ' <<< "$probe"
     )
+
+    if [[ -z "$vcodec" || -z "$acodec" ]]; then
+        echo "Skipping $f -- missing required video or audio stream"
+        touch "$file_skip_file"
+        continue
+    fi
 
     vcodec_lc=$(echo "$vcodec" | tr '[:upper:]' '[:lower:]')
 
@@ -270,7 +286,7 @@ for f in "${files[@]}"; do
         continue
     fi
 
-    # mov_text → SRT: MP4 text subtitles cannot be stream-copied into MKV
+    # mov_text -> SRT: MP4 text subtitles cannot be stream-copied into MKV
     sub_codec_args=(-c:s copy)
     if [[ "$f" == *.mp4 ]]; then
         if jq -e '[.streams[] | select(.codec_type=="subtitle" and .codec_name=="mov_text")] | length > 0' <<< "$probe" >/dev/null 2>&1; then
@@ -337,12 +353,12 @@ for f in "${files[@]}"; do
         # No transcode needed -- check for container problems
         #####################################################
         if [[ "$WANT_REMUX_CHECK" == "true" ]] && [[ "$acodec" == "aac" ]] && check_container_problem "$f"; then
-            echo "Remuxing $f → container repair"
+            echo "Remuxing $f -> container repair"
             tmpfile="$dir/${base_no_ext}[Trans].tmp"
 
             rm -f -- "$tmpfile"
 
-            ffmpeg -nostdin -hide_banner -y \
+            run_ffmpeg -nostdin -hide_banner -threads 2 -y \
                 -i "$f" \
                 -map 0 \
                 -c:v copy -c:a copy \
@@ -358,7 +374,7 @@ for f in "${files[@]}"; do
                 mv -- "$tmpfile" "$f"
                 chown 1000:1000 "$f"
                 chmod 666 "$f"
-                echo "Replaced (remux): $((orig_size/1024/1024))MB → $((new_size/1024/1024))MB"
+                echo "Replaced (remux): $((orig_size/1024/1024))MB -> $((new_size/1024/1024))MB"
             else
                 rm -f -- "$tmpfile"
             fi
@@ -401,7 +417,7 @@ for f in "${files[@]}"; do
     case "$status" in
 
         progressive)
-            debug "Transcode path: PROGRESSIVE → CPU decode + VAAPI encode (fast path)"
+            debug "Transcode path: PROGRESSIVE -> CPU decode + VAAPI encode (fast path)"
             transcode_cmd=(
                 ffmpeg -nostdin -hide_banner
                 -vaapi_device /dev/dri/renderD128
@@ -418,7 +434,7 @@ for f in "${files[@]}"; do
             ;;
 
         interlaced)
-            debug "Transcode path: INTERLACED → CPU bwdif + VAAPI encode"
+            debug "Transcode path: INTERLACED -> CPU bwdif + VAAPI encode"
             transcode_cmd=(
                 ffmpeg -nostdin -hide_banner
                 -vaapi_device /dev/dri/renderD128
@@ -435,7 +451,7 @@ for f in "${files[@]}"; do
             ;;
 
         telecine)
-            debug "Transcode path: TELECINE → CPU pullup/dejudder + VAAPI encode"
+            debug "Transcode path: TELECINE -> CPU pullup/dejudder + VAAPI encode"
             transcode_cmd=(
                 ffmpeg -nostdin -hide_banner
                 -vaapi_device /dev/dri/renderD128
@@ -460,13 +476,13 @@ for f in "${files[@]}"; do
             orig_size=$(stat -c%s "$f")
             new_size=$(stat -c%s "$tmpfile")
 
-            if (( new_size < orig_size )); then
+            if (( new_size * 10 < orig_size * 9 )); then
                 touch -r "$f" "$tmpfile"
                 rm -f -- "$f"
                 mv -- "$tmpfile" "$f"
                 chown 1000:1000 "$f"
                 chmod 666 "$f"
-                echo "Replaced: $((orig_size/1024/1024))MB → $((new_size/1024/1024))MB"
+                echo "Replaced: $((orig_size/1024/1024))MB -> $((new_size/1024/1024))MB"
             else
                 echo "Skipped: new file not smaller"
                 touch "$file_skip_file"
