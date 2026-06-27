@@ -8,65 +8,90 @@ TCBW_Scripts/
 ├── LICENSE
 ├── Linux/
 │   ├── general/
-│   │   ├── backup_docker.sh           - Stops LXC container, backs up Docker data volume, restarts container
-│   │   ├── backup_etc.sh              - Archives /etc to a network mount
-│   │   ├── backup_root.sh             - Archives /root to a network mount
-│   │   ├── sync.sh                    - Orchestrator that invokes all sync scripts
-│   │   ├── sync_backups.sh            - Rsyncs backup data to a network mount
-│   │   ├── sync_books.sh              - Rsyncs book library to a network mount
-│   │   ├── sync_docker.sh             - Stops LXC container, syncs Docker data to network mount, restarts container
-│   │   ├── sync_movies.sh             - Rsyncs movie library to a network mount
-│   │   └── sync_tv.sh                 - Rsyncs TV library to a network mount
+│   │   ├── backup_docker.sh              - Stops LXC container, backs up Docker data volume, restarts container
+│   │   ├── backup_etc.sh                 - Archives /etc to a network mount
+│   │   ├── backup_root.sh                - Archives /root to a network mount
+│   │   ├── lxc-upgrade.sh                - Updates Proxmox host and all LXC containers in parallel (with autoremove)
+│   │   ├── setperm.sh                    - Sets permissions on media directories
+│   │   ├── showswap.sh                   - Displays swap usage
+│   │   ├── shrinkvol.sh                  - Shrinks a ZFS volume
+│   │   ├── sync.sh                       - Orchestrator: powers on USB, runs all sync tasks, powers off
+│   │   ├── sync_anime.sh                 - Rsyncs anime library to /mnt/nmedia/Media/Video/Anime (local USB)
+│   │   ├── sync_audiobooks.sh            - Rsyncs audiobook library to /mnt/nmedia/Media/audiobooks (local USB)
+│   │   ├── sync_backups.sh               - Rsyncs /mnt/sysdata_backups to /mnt/nmedia/DATA/sysdata_backups (local USB)
+│   │   ├── sync_books.sh                 - Rsyncs book library to /mnt/nmedia/Media/books (local USB)
+│   │   ├── sync_docker.sh                - Stops LXC container, syncs Docker data to /mnt/nmedia, restarts container
+│   │   ├── sync_etv.sh                   - Rsyncs TV library to /mnt/emedia/Media/Video/TV (manual-only trigger)
+│   │   ├── sync_main_backups.sh          - Rsyncs /mnt/sysdata_backups to /mnt/main_backups (ZFS dataset)
+│   │   ├── sync_movies.sh                - Rsyncs movie library to /mnt/nmedia/Media/Video/Movies (local USB)
+│   │   ├── sync_sysdocker_maindocker.sh  - Rsyncs /mnt/sysdata_docker to /mnt/main_docker (ZFS dataset)
+│   │   ├── sync_tv.sh                    - Rsyncs TV library to /mnt/nmedia/Media/Video/TV (local USB)
+│   │   ├── usb-poweroff.sh               - Safely powers off the USB external drive
+│   │   └── usb-poweron.sh                - Powers on the USB external drive
 │   └── lxc/
-│       └── lxc-upgrade.sh             - Updates Proxmox host and all LXC containers in parallel (with autoremove)
+│       ├── lxc-upgrade.sh                - Updates Proxmox host and LXC containers (also in Linux/general/)
+│       └── shrinkvol.sh                  - Shrinks a ZFS volume (also in Linux/general/)
 ├── Video/
-│   ├── Foreign/                        - Compression scripts for foreign language content
+│   ├── Foreign/                          - Compression scripts for foreign language content
 │   │   ├── README.md
-│   │   ├── compress_amd_x265_aac.sh   - AMD GPU VAAPI x265 compression (bash)
-│   │   ├── compress_qsv_x265_aac.ps1  - Intel QSV x265 compression (PowerShell)
-│   │   ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE x265 compression (PowerShell)
-│   │   ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV x265 compression (PowerShell)
-│   │   └── dedup.ps1                  - Duplicate removal (PowerShell)
-│   ├── General/                        - Shared utility scripts used across all video content types
+│   │   ├── compress_amd_x265_aac.sh      - AMD GPU VAAPI x265 compression (bash)
+│   │   ├── compress_qsv_x265_aac.ps1     - Intel QSV x265 compression (PowerShell)
+│   │   ├── dedup.ps1                     - Duplicate removal (PowerShell)
+│   │   ├── hbcompress_amd_x265_aac.ps1   - HandBrake AMD VCE x265 compression (PowerShell)
+│   │   └── hbcompress_qsv_x265_aac.ps1   - HandBrake Intel QSV x265 compression (PowerShell)
+│   ├── General/                          - Shared utility scripts used across all video content types
 │   │   ├── README.md
-│   │   ├── fixSpecials.ps1            - Renames Specials folders to Season 00, merging if needed (PowerShell)
-│   │   ├── dircleanup.sh              - Removes orphaned trickplay dirs, stale .skip markers, and dangling NFOs (bash)
-│   │   ├── dircleanup.ps1             - Removes orphaned trickplay dirs, stale .skip markers, and dangling NFOs (PowerShell)
-│   │   ├── organize-chapters.sh       - Moves *_chapters.xml files into chapters/ subdirectory (bash)
-│   │   ├── organize-chapters.ps1      - Moves *_chapters.xml files into chapters/ subdirectory (PowerShell)
-│   │   ├── setairdate.sh              - NFO air date to file timestamp setter for TV episodes (bash)
-│   │   ├── setairdate.ps1             - NFO air date to file timestamp setter for TV episodes (PowerShell)
-│   │   ├── setreleasedate.sh          - NFO release date to file timestamp setter for movies (bash)
-│   │   └── setreleasedate.ps1         - NFO release date to file timestamp setter for movies (PowerShell)
-│   ├── Movies/                         - Compression, deduplication, and maintenance scripts for movies
+│   │   ├── apply-metadata.sh             - NFO metadata writer to MKV tags (bash)
+│   │   ├── compress_amd_x265_aac.sh      - AMD GPU VAAPI x265 compression (bash)
+│   │   ├── dircleanup.sh                 - Removes orphaned trickplay dirs, stale .skip markers, dangling NFOs (bash)
+│   │   ├── dircleanup.ps1                - Removes orphaned trickplay dirs, stale .skip markers, dangling NFOs (PowerShell)
+│   │   ├── fixSpecials.ps1               - Renames Specials folders to Season 00, merging if needed (PowerShell)
+│   │   ├── fixmkvproperties.sh           - Fixes MKV container properties (bash)
+│   │   ├── hb 1080 profile.json          - HandBrake 1080p user preset (import into HandBrake)
+│   │   ├── listuhd.sh                    - Lists UHD files in a directory (bash)
+│   │   ├── metadata-cleanup.sh           - Cleans metadata sidecar files (bash)
+│   │   ├── organize-chapters.sh          - Moves *_chapters.xml files into chapters/ subdirectory (bash)
+│   │   ├── organize-chapters.ps1         - Moves *_chapters.xml files into chapters/ subdirectory (PowerShell)
+│   │   ├── setairdate.sh                 - NFO air date to file timestamp setter for TV episodes (bash)
+│   │   ├── setairdate.ps1                - NFO air date to file timestamp setter for TV episodes (PowerShell)
+│   │   ├── setreleasedate.sh             - NFO release date to file timestamp setter for movies (bash)
+│   │   ├── setreleasedate.ps1            - NFO release date to file timestamp setter for movies (PowerShell)
+│   │   └── sync_robo.ps1                 - Robocopy-based sync helper (PowerShell)
+│   ├── Movies/                           - Compression, deduplication, and maintenance scripts for movies
 │   │   ├── README.md
-│   │   ├── Handbrake AV1 4K preset.json - HandBrake AV1 4K user preset (import into HandBrake)
-│   │   ├── compress_amd_x265_aac.sh   - AMD GPU VAAPI x265 compression (bash)
-│   │   ├── compress_amd_x265_aac.ps1  - AMD GPU x265 compression (PowerShell)
-│   │   ├── compress_qsv_x265_aac.ps1  - Intel QSV x265 compression (PowerShell)
-│   │   ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE x265 compression (PowerShell)
-│   │   ├── hbcompress_amd_av1_4k.ps1  - HandBrake AMD VCE AV1 4K compression (PowerShell)
-│   │   ├── remuxmp4.sh                - MP4 to MKV container remux with Radarr integration (bash)
-│   │   ├── apply-movie-metadata.sh    - NFO metadata writer to MKV tags (bash)
-│   │   ├── Apply-MovieMetadata.ps1    - NFO metadata writer to MKV tags (PowerShell)
-│   │   ├── dedup.ps1                  - Duplicate removal (PowerShell)
-│   │   └── findcorrupt.ps1            - Corrupt MKV detection with Radarr integration (PowerShell)
-│   └── TV/                             - Compression, deduplication, and maintenance scripts for TV shows
+│   │   ├── Handbrake AV1 4K preset.json  - HandBrake AV1 4K user preset (import into HandBrake)
+│   │   ├── apply-movie-metadata.sh       - NFO metadata writer to MKV tags (bash)
+│   │   ├── Apply-MovieMetadata.ps1       - NFO metadata writer to MKV tags (PowerShell)
+│   │   ├── compress_amd_x265_aac.sh      - AMD GPU VAAPI x265 compression (bash)
+│   │   ├── compress_amd_x265_aac.ps1     - AMD GPU x265 compression (PowerShell)
+│   │   ├── compress_qsv_x265_aac.ps1     - Intel QSV x265 compression (PowerShell)
+│   │   ├── dedup.ps1                     - Duplicate removal (PowerShell)
+│   │   ├── findcorrupt.ps1               - Corrupt MKV detection with Radarr integration (PowerShell)
+│   │   ├── hbcompress_amd_av1_4k.ps1     - HandBrake AMD VCE AV1 4K compression (PowerShell)
+│   │   ├── hbcompress_amd_x265_aac.ps1   - HandBrake AMD VCE x265 compression (PowerShell)
+│   │   └── remuxmp4.sh                   - MP4 to MKV container remux with Radarr integration (bash)
+│   └── TV/                               - Compression, deduplication, and maintenance scripts for TV shows
 │       ├── README.md
-│       ├── compress_amd_x265_aac.sh    - AMD VAAPI x265 compression (bash)
-│       ├── compress_amd_x265_aac.ps1   - AMD GPU x265 compression (PowerShell)
-│       ├── compress_qsv_x265_aac.ps1   - Intel QSV x265 compression (PowerShell)
-│       ├── hbcompress_amd_x265_aac.ps1 - HandBrake AMD VCE x265 compression (PowerShell)
-│       ├── hbcompress_qsv_x265_aac.ps1 - HandBrake Intel QSV x265 compression (PowerShell)
-│       ├── remux.ps1                   - Container-repair remux without re-encoding (PowerShell)
-│       ├── dedup.ps1                   - Duplicate episode removal and priority-based selection (PowerShell)
-│       ├── findforeign.sh              - Foreign-audio detection (bash)
-│       ├── findforeign.ps1             - Foreign-audio detection with Sonarr integration (PowerShell)
-│       ├── findcorrupt.ps1             - Corrupt MKV detection with Sonarr integration (PowerShell)
-│       ├── apply-episode-metadata.sh   - NFO metadata writer to MKV tags (bash)
-│       └── Apply-EpisodeMetadata.ps1   - NFO metadata writer to MKV tags (PowerShell)
-└── Files/
-    └── (legacy or additional files)
+│       ├── apply-episode-metadata.sh     - NFO metadata writer to MKV tags (bash)
+│       ├── Apply-EpisodeMetadata.ps1     - NFO metadata writer to MKV tags (PowerShell)
+│       ├── compress_amd_x265_aac.sh      - AMD VAAPI x265 compression (bash)
+│       ├── compress_amd_x265_aac.ps1     - AMD GPU x265 compression (PowerShell)
+│       ├── compress_lang_amd_x265_aac.sh - Language-specific AMD VAAPI x265 compression (bash)
+│       ├── compress_qsv_x265_aac.ps1     - Intel QSV x265 compression (PowerShell)
+│       ├── dedup.ps1                     - Duplicate episode removal and priority-based selection (PowerShell)
+│       ├── findcorrupt.ps1               - Corrupt MKV detection with Sonarr integration (PowerShell)
+│       ├── findforeign.ps1               - Foreign-audio detection with Sonarr integration (PowerShell)
+│       ├── findforeign.sh                - Foreign-audio detection (bash)
+│       ├── hbcompress_amd_x265_aac.ps1   - HandBrake AMD VCE x265 compression (PowerShell)
+│       ├── hbcompress_qsv_x265_aac.ps1   - HandBrake Intel QSV x265 compression (PowerShell)
+│       └── remux.ps1                     - Container-repair remux without re-encoding (PowerShell)
+├── Windows/
+│   └── General/
+│       └── sync_robo.ps1                 - Robocopy-based sync helper for Windows (PowerShell)
+└── audio/
+    └── books/
+        ├── listcorrupt.ps1               - Scans for zero-byte audiobook files and optionally deletes directories (PowerShell)
+        └── listcorrupt.sh                - Scans for zero-byte audiobook files (bash)
 ```
 
 ## Linux
@@ -81,7 +106,7 @@ The settings in use work for me. You need to make sure things like bitrate meet 
 
 ### Overview
 
-A comprehensive collection of powerful video transcoding, compression, and deduplication scripts optimized for batch processing of video media. These scripts leverage hardware-accelerated encoding to efficiently convert interlaced video content to modern formats with reduced file sizes, and provide intelligent duplicate detection and removal.
+A comprehensive collection of video transcoding, compression, and deduplication scripts optimized for batch processing of video media. These scripts leverage hardware-accelerated encoding to efficiently convert interlaced video content to modern formats with reduced file sizes, and provide intelligent duplicate detection and removal.
 
 ### Video Folder Organization
 
@@ -108,7 +133,7 @@ This dual-machine approach ensures reliable batch processing despite the Debian 
 
 ### Compression Scripts
 
-- **Hardware-Accelerated Encoding**: Support for AMD VAAPI and Intel Quick Sync Video (QSV) encoders
+- **Hardware-Accelerated Encoding**: Support for AMD VAAPI, Intel Quick Sync Video (QSV), and HandBrake VCE encoders
 - **Batch Processing**: Parallel encoding with configurable concurrent jobs (bash scripts)
 - **Smart Format Detection**: Automatically detects interlacing, telecine (NTSC 3:2 pulldown), and PAL broadcast content; decides whether conversion is needed
 - **Optimized Frame Analysis**: Skips first 5 minutes of video (intros/credits) when analyzing for interlacing; falls back to start of file for shorter content
@@ -119,14 +144,14 @@ This dual-machine approach ensures reliable batch processing despite the Debian 
 - **File Lock Detection**: Skips files currently open by other processes (media players, Plex, etc.)
 - **Atomic Replacement**: Writes to a temp file and swaps atomically; originals are only replaced when output is smaller and valid
 - **Format Guards**: Automatically skips 4K (UHD) and AV1-encoded files
-- **Subtitle Filtering**: TV and Movies hbcompress scripts retain only English and undefined-language subtitle tracks. Foreign scripts copy all subtitle tracks without filtering.
+- **Subtitle Filtering**: TV, Movies, and Foreign hbcompress scripts retain only English and undefined-language subtitle tracks. Foreign scripts copy all subtitle tracks without filtering.
 
 ### Maintenance & Quality Assurance Scripts
 
-- **Corrupt File Detection**: `findcorrupt.ps1` scans for unreadable MKV files and optionally triggers Sonarr replacement; `find_corrupt.ps1` does the same for movies with Radarr integration
+- **Corrupt File Detection**: `findcorrupt.ps1` scans for unreadable MKV files and optionally triggers Sonarr or Radarr replacement
 - **Foreign Audio Detection**: `findforeign.ps1` / `findforeign.sh` flag episodes with no English or undetermined audio tracks
 - **Container Repair**: `remux.ps1` fixes MKV structural anomalies without re-encoding
-- **Metadata Sync**: `Apply-EpisodeMetadata.ps1` / `apply-episode-metadata.sh` write episode metadata from NFO sidecar files into MKV container tags
+- **Metadata Sync**: `Apply-EpisodeMetadata.ps1` / `apply-episode-metadata.sh` write episode metadata from NFO sidecar files into MKV container tags. `Apply-MovieMetadata.ps1` / `apply-movie-metadata.sh` do the same for movies.
 
 ### Deduplication Scripts
 
@@ -139,7 +164,7 @@ This dual-machine approach ensures reliable batch processing despite the Debian 
 ### General
 
 - **Multi-Platform**: PowerShell scripts for Windows, shell scripts for Unix-like systems
-- **Organized Structure**: Separate handling for Movies, TV Shows, and Foreign content
+- **Organized Structure**: Separate handling for Movies, TV Shows, Foreign content, and Linux utilities
 - **Extensive Documentation**: Detailed README files for each content category
 
 ## Prerequisites
@@ -189,39 +214,76 @@ This dual-machine approach ensures reliable batch processing despite the Debian 
 **Compression:**
 
 ```powershell
-# TV Content - AMD GPU compression (ffmpeg)
-.\Video\TV\compress_amd_x265_aac.ps1
-
 # TV Content - Intel QSV compression (ffmpeg)
-.\Video\TV\compress_qsv_x265_aac.ps1
+./Video/TV/compress_qsv_x265_aac.ps1
 
 # TV Content - AMD VCE compression (HandBrake)
-.\Video\TV\hbcompress_amd_x265_aac.ps1
+./Video/TV/hbcompress_qsv_x265_aac.ps1
 
-# TV Content - Intel QSV compression (HandBrake)
-.\Video\TV\hbcompress_qsv_x265_aac.ps1
+# TV Content - AMD GPU compression (ffmpeg)
+./Video/TV/compress_amd_x265_aac.ps1
 
 # Movies - Intel QSV compression
-.\Video\Movies\compress_qsv_x265_aac.ps1
+./Video/Movies/compress_qsv_x265_aac.ps1
+
+# Movies - HandBrake AMD VCE compression
+./Video/Movies/hbcompress_amd_x265_aac.ps1
+
+# Movies - HandBrake AMD VCE AV1 4K compression
+./Video/Movies/hbcompress_amd_av1_4k.ps1
 
 # Foreign - Intel QSV compression
-.\Video\Foreign\compress_qsv_x265_aac.ps1
+./Video/Foreign/compress_qsv_x265_aac.ps1
 ```
 
 **Deduplication:**
 
 ```powershell
 # TV Content - Audit mode (preview only)
-.\Video\TV\dedup.ps1 -Audit
+./Video/TV/dedup.ps1 -Audit
 
 # TV Content - Perform deduplication
-.\Video\TV\dedup.ps1
+./Video/TV/dedup.ps1
 
 # Movies - Audit mode (preview only)
-.\Video\Movies\dedup.ps1 -Audit
+./Video/Movies/dedup.ps1 -Audit
 
 # Movies - Perform deduplication
-.\Video\Movies\dedup.ps1
+./Video/Movies/dedup.ps1
+
+# Foreign - Audit mode (preview only)
+./Video/Foreign/dedup.ps1 -Audit
+
+# Foreign - Perform deduplication
+./Video/Foreign/dedup.ps1
+```
+
+**Maintenance:**
+
+```powershell
+# Find corrupt TV episodes (Sonarr integration)
+./Video/TV/findcorrupt.ps1
+
+# Find corrupt movies (Radarr integration)
+./Video/Movies/findcorrupt.ps1
+
+# Find foreign audio TV episodes
+./Video/TV/findforeign.ps1
+
+# Write episode metadata from NFO to MKV tags
+./Video/TV/Apply-EpisodeMetadata.ps1
+
+# Write movie metadata from NFO to MKV tags
+./Video/Movies/Apply-MovieMetadata.ps1
+
+# Repair MKV containers without re-encoding
+./Video/TV/remux.ps1
+
+# Rename Specials folders
+./Video/General/fixSpecials.ps1
+
+# Scan for corrupt audiobook files
+./audio/books/listcorrupt.ps1
 ```
 
 ### Unix-like Systems (Bash)
@@ -232,6 +294,9 @@ This dual-machine approach ensures reliable batch processing despite the Debian 
 # TV Content - AMD GPU compression
 bash ./Video/TV/compress_amd_x265_aac.sh
 
+# TV Content - Language-specific AMD GPU compression
+bash ./Video/TV/compress_lang_amd_x265_aac.sh
+
 # Movies - AMD GPU compression
 bash ./Video/Movies/compress_amd_x265_aac.sh
 
@@ -239,17 +304,68 @@ bash ./Video/Movies/compress_amd_x265_aac.sh
 bash ./Video/Foreign/compress_amd_x265_aac.sh
 ```
 
+**Maintenance:**
+
+```bash
+# Find foreign audio TV episodes
+bash ./Video/TV/findforeign.sh
+
+# MP4 to MKV container remux
+bash ./Video/Movies/remuxmp4.sh
+
+# System sync utilities (run from top-level directory)
+bash ./Linux/general/sync.sh               # Powers on USB, runs all sync tasks, powers off
+bash ./Linux/general/sync_tv.sh            # TV to /mnt/nmedia/Media/Video/TV
+bash ./Linux/general/sync_movies.sh        # Movies to /mnt/nmedia/Media/Video/Movies
+bash ./Linux/general/sync_anime.sh         # Anime to /mnt/nmedia/Media/Video/Anime
+bash ./Linux/general/sync_audiobooks.sh    # Audiobooks to /mnt/nmedia/Media/audiobooks
+bash ./Linux/general/sync_books.sh         # Books to /mnt/nmedia/Media/books
+bash ./Linux/general/sync_etv.sh           # TV to /mnt/emedia/Media/Video/TV (manual trigger)
+bash ./Linux/general/sync_backups.sh       # Backups to /mnt/nmedia/DATA/sysdata_backups
+bash ./Linux/general/sync_docker.sh        # Docker data to /mnt/nmedia (stops/starts container)
+bash ./Linux/general/sync_main_backups.sh  # Backups to /mnt/main_backups (ZFS dataset)
+bash ./Linux/general/sync_sysdocker_maindocker.sh  # Docker data to /mnt/main_docker (ZFS dataset)
+
+# Windows sync helper (PowerShell)
+bash ./Windows/General/sync_robo.ps1  # PowerShell version available
+```
+
+**System Utilities:**
+
+```bash
+# Linux system maintenance
+bash ./Linux/general/lxc-upgrade.sh
+bash ./Linux/general/setperm.sh
+bash ./Linux/general/showswap.sh
+bash ./Linux/general/shrinkvol.sh
+
+# USB drive power management
+bash ./Linux/general/usb-poweroff.sh
+bash ./Linux/general/usb-poweron.sh
+
+# Directory and metadata cleanup
+bash ./Video/General/dircleanup.sh
+bash ./Video/General/metadata-cleanup.sh
+bash ./Video/General/listuhd.sh
+bash ./Video/General/fixmkvproperties.sh
+bash ./Video/General/organize-chapters.sh
+bash ./Video/General/setairdate.sh
+bash ./Video/General/setreleasedate.sh
+```
+
 For detailed usage instructions and script options, see the README files in each folder:
 
+- [Linux/README.md](Linux/README.md)
 - [Video/TV/](Video/TV/README.md)
 - [Video/Movies/](Video/Movies/README.md)
 - [Video/Foreign/](Video/Foreign/README.md)
+- [Video/General/](Video/General/README.md)
 
 ## How It Works
 
 ### Compression Scripts
 
-1. **File Scanning**: Recursively scans for `.mkv`, `.mp4`, and `.ts` files in the script directory
+1. **File Scanning**: Recursively scans for .mkv, .mp4, and .ts files in the script directory or specified path
 2. **Smart Filtering**: Skips files smaller than 1GB and previously processed files.
 3. **Format Analysis**: Uses ffprobe to detect:
    - Video codec and bitrate
@@ -261,18 +377,18 @@ For detailed usage instructions and script options, see the README files in each
    - Video is interlaced (not progressive)
    - Note: audio codec is a conversion trigger for Movies and TV scripts (not already AAC) but not for Foreign hbcompress scripts (all audio is always copied)
 5. **Interlace Detection**: Three-stage analysis:
-   - Fast pass: `field_order` metadata (hard interlace flags resolve immediately)
-   - Slow pass: `ffprobe -show_frames` frame-level scan at the 5-minute mark; classifies as `interlaced`, `telecine` (NTSC 3:2 pulldown at ~29.97 fps), or `unknown`
-   - PAL idet fallback: for ~25 fps content that reports no interlace flags, runs `ffmpeg -vf idet` pixel-level analysis to catch BBC and other European broadcast 50i content
-6. **Deinterlacing**: Applies appropriate filter per detection result - `bwdif` for interlaced/unknown, `fieldmatch+yadif+decimate` (IVTC) for telecine, no filter for progressive
-7. **Parallel Processing**: Encodes multiple files simultaneously (configurable via `$MaxJobs`)
+   - Fast pass: field_order metadata (hard interlace flags resolve immediately)
+   - Slow pass: ffprobe -show_frames frame-level scan at the 5-minute mark; classifies as interlaced, telecine (NTSC 3:2 pulldown at ~29.97 fps), or unknown
+   - PAL idet fallback: for ~25 fps content that reports no interlace flags, runs ffmpeg -vf idet pixel-level analysis to catch BBC and other European broadcast 50i content
+6. **Deinterlacing**: Applies appropriate filter per detection result - bwdif for interlaced/unknown, fieldmatch+yadif+decimate (IVTC) for telecine, no filter for progressive
+7. **Parallel Processing**: Encodes multiple files simultaneously (configurable via $MaxJobs or MAX_JOBS)
 8. **Output**: Creates new files with quality preservation while reducing file size
 
 ### Deduplication Scripts
 
 1. **Pattern Detection**: Scans files for episode codes (S##E##, ##x##, etc.)
 2. **Grouping**: Groups potential duplicates by episode code within each directory
-3. **Priority Selection**: Applies priority: File Type (MKV > MP4 > TS > AVI) → File Size (largest)
+3. **Priority Selection**: Applies priority: File Type (MKV > MP4 > TS > AVI) -> File Size (largest)
 4. **Cleanup**: Removes all sidecar files associated with deleted episodes
 5. **Reporting**: Generates detailed summary of actions taken
 
@@ -280,7 +396,7 @@ For detailed usage instructions and script options, see the README files in each
 
 Edit the script header to customize:
 
-**PowerShell Compression Scripts (`compress_qsv_x265_aac.ps1`)**:
+**PowerShell Compression Scripts (compress_qsv_x265_aac.ps1, hbcompress_qsv_x265_aac.ps1, hbcompress_amd_x265_aac.ps1):**
 
 ```powershell
 $MaxJobs = 2                    # Number of parallel encoding jobs
@@ -288,13 +404,13 @@ $TempDir = "D:\fasttemp"        # Temporary directory for intermediate files
                                 # Use "" to keep files in source directory
 ```
 
-**Bash Compression Scripts (`compress_amd_x265_aac.sh`)**:
+**Bash Compression Scripts (compress_amd_x265_aac.sh):**
 
 ```bash
 MAX_JOBS=2                      # Number of parallel encoding jobs
 ```
 
-**PowerShell Deduplication (`dedup.ps1`)**:
+**PowerShell Deduplication (dedup.ps1):**
 
 ```powershell
 # Run with -Audit flag for preview mode
@@ -302,32 +418,38 @@ MAX_JOBS=2                      # Number of parallel encoding jobs
 ./dedup.ps1                     # Perform actual deduplication
 ```
 
+**PowerShell Foreign Audio (findforeign.ps1):**
+
+```powershell
+./findforeign.ps1 -Root "D:\Media" -CsvFile "D:\Logs\foreign.csv"
+```
+
 ## Encoder Selection
 
 ### Intel QSV (Quick Sync Video)
 
-- **Files**: `compress_qsv_x265_aac.ps1`, `hbcompress_qsv_x265_aac.ps1`, `clean_compress_qsv_x265_aac.ps1`
+- **Files**: compress_qsv_x265_aac.ps1, hbcompress_qsv_x265_aac.ps1
 - **Best For**: Intel processors with integrated graphics
 - **Performance**: Excellent power efficiency
 - **Compatibility**: Works with most modern Intel CPUs
 
 ### AMD VAAPI
 
-- **Files**: `compress_amd_x265_aac.sh`, `compress_amd_x265_aac.ps1`
+- **Files**: compress_amd_x265_aac.sh, compress_amd_x265_aac.ps1
 - **Best For**: AMD GPUs (Radeon RX series)
 - **Performance**: High throughput with parallel encoding
-- **Compatibility**: Requires compatible AMD hardware with VAAPI support (`/dev/dri/renderD128`)
+- **Compatibility**: Requires compatible AMD hardware with VAAPI support (/dev/dri/renderD128)
 
 ### HandBrake Integration
 
-- **Files**: `hbcompress_amd_x265_aac.ps1` (Windows with AMD VCE), `hbcompress_qsv_x265_aac.ps1` (Windows with Intel QSV)
+- **Files**: hbcompress_amd_x265_aac.ps1 (Windows with AMD VCE), hbcompress_qsv_x265_aac.ps1 (Windows with Intel QSV), hbcompress_amd_av1_4k.ps1 (Windows with AMD VCE AV1)
 - **Best For**: HandBrake encoding workflows with hardware acceleration
 - **Features**: Container repair, file lock detection, atomic replacement, deferred interlace detection, 4K/AV1 guards, subtitle language filtering
 
 ## Performance Tips
 
-1. **Adjust $MaxJobs**: Start with 2-3 concurrent jobs; increase on powerful systems with more VRAM
-2. **Use Fast SSD**: Place `$TempDir` on the fastest available drive
+1. **Adjust $MaxJobs / MAX_JOBS**: Start with 2-3 concurrent jobs; increase on powerful systems with more VRAM
+2. **Use Fast SSD**: Place $TempDir on the fastest available drive
 3. **Monitor Temperature**: GPU encoding generates heat; ensure proper cooling
 4. **Schedule Off-Peak**: Run during off-peak hours to avoid system impact
 5. **Test First**: Run on a small subset of files to verify output quality
@@ -337,10 +459,11 @@ MAX_JOBS=2                      # Number of parallel encoding jobs
 | Issue | Solution |
 |-------|----------|
 | "ffmpeg not found" | Ensure FFmpeg is installed and in your PATH |
-| Slow encoding | Reduce `$MaxJobs` or check GPU utilization |
+| Slow encoding | Reduce $MaxJobs or check GPU utilization |
 | Poor output quality | Verify input file format; try with different encoder |
-| Out of disk space | Increase `$TempDir` capacity or reduce `$MaxJobs` |
-| GPU not being used | Verify hardware encoder support; check FFmpeg codecs with `ffmpeg -codecs` |
+| Out of disk space | Increase $TempDir capacity or reduce $MaxJobs |
+| GPU not being used | Verify hardware encoder support; check FFmpeg codecs with ffmpeg -codecs |
+| File timestamps not updating after edit | Samba directory caching issue with ZFS; see smb.conf section for [main] share |
 
 ## Requirements Summary
 
@@ -369,6 +492,6 @@ For questions, issues, or feature requests, please open an issue on the project 
 
 ---
 
-**Author**: TCBW  
-**Last Updated**: April 2026  
-**Version**: 2.0
+**Author**: TCBW
+**Last Updated**: June 2026
+**Version**: 2.1
