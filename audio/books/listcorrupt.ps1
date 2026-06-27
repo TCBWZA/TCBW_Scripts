@@ -1,15 +1,16 @@
 <#
 .SYNOPSIS
-    Scans a directory tree for zero-byte audiobook files (.mp3 / .m4b).
+    Scans a directory tree for zero-byte audiobook files (.mp3 / .m4b) and
+    optionally deletes the offending directories.
 
 .DESCRIPTION
     This script recursively scans the specified base directory (default: current directory)
     and checks each subdirectory for zero-byte audio files (.mp3 or .m4b).
 
     When a zero-byte file is found:
-        • The directory is reported once.
-        • If --delete is specified, the entire directory is removed.
-        • If --debug is specified, detailed diagnostic output is shown.
+        * The directory is reported once.
+        * If -Delete is specified, the entire directory is removed.
+        * If -Debug is specified, detailed diagnostic output is shown.
 
 .PARAMETER BaseDir
     The starting directory for the scan.
@@ -22,15 +23,15 @@
     Enables verbose diagnostic output showing directory traversal and matched files.
 
 .EXAMPLE
-    .\scan.ps1
+    .\listcorrupt.ps1
     Scans the current directory for zero-byte audiobook files.
 
 .EXAMPLE
-    .\scan.ps1 --debug ./audiobooks
+    .\listcorrupt.ps1 -Debug -BaseDir "D:\Media\Audiobooks"
     Scans with verbose output.
 
 .EXAMPLE
-    .\scan.ps1 --delete ./audiobooks
+    .\listcorrupt.ps1 -Delete -BaseDir "D:\Media\Audiobooks"
     Deletes directories containing zero-byte audio files.
 
 .NOTES
