@@ -200,13 +200,13 @@ foreach ($mkv in $mkvs) {
     }
 
     # Merge plots:
-    # Part 1 – Plot1
-    # Part 2 – Plot2
+    # Part 1 - Plot1
+    # Part 2 - Plot2
     # ...
     $mergedPlot = ""
     for ($i = 0; $i -lt $plots.Count; $i++) {
         $partNum = $i + 1
-        $mergedPlot += "Part $partNum – $($plots[$i])"
+        $mergedPlot += "Part $partNum - $($plots[$i])"
         if ($i -lt $plots.Count - 1) { $mergedPlot += "`n" }
     }
 
