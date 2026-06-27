@@ -21,7 +21,7 @@ apt install pigz
 apt install zstd
 ```
 
-`pct` is part of Proxmox VE and is already present on any Proxmox host. `tar`, `gzip`, `find`, and standard coreutils (`chown`, `chmod`) are pre-installed on Debian/Ubuntu.
+`pct` is part of Proxmox VE and is already present on any Proxmox host. `tar`, `gzip`, `find`, and standard coreutils (`chown`, `chmod`) are pre-installed on Debian/Ubuntu. `lsblk`, `blockdev`, and `mountpoint` are part of `util-linux`, which is pre-installed on Debian/Ubuntu. `lvm2` is required by `shrinkvol.sh` (run `apt install lvm2`).
 
 ---
 
@@ -29,13 +29,15 @@ apt install zstd
 
 All `sync_*.sh` and `backup_*.sh` scripts skip files with a `.tmp` extension (`--exclude='*.tmp'` for rsync; `--exclude='*.tmp'` for tar).
 
+The media/video sync scripts use local Promox paths (`/main/media/...`) for sources and `/mnt/nmedia` mount for destinations, running on the Proxmox host.
+
 ---
 
 ## Scripts
 
 ### sync.sh
 
-Orchestrator that calls all nmedia sync scripts in sequence. Run this instead of the individual sync scripts when doing a full backup pass to nmedia.
+Orchestrator that calls media and system sync scripts in sequence. Run this instead of the individual scripts when doing a full backup pass. Also wraps a USB power-off cycle around the sync jobs.
 
 ```bash
 ./sync.sh
@@ -48,25 +50,26 @@ Scripts called (in order):
 4. `sync_audiobooks.sh`
 5. `sync_books.sh`
 6. `sync_movies.sh`
-7. `sync_tv.sh`
+7. `sync_sysdocker_maindocker.sh`
+8. `sync_tv.sh`
 
 ---
 
 ### sync_tv.sh
 
-Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/nmedia/Media/Video/TV`. Aborts if `/mnt/nmedia` is not mounted.
+Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/nmedia/Media/Video/TV`. Checks that `/mnt/nmedia` is mounted before syncing. Uses rsync `--inplace`. Flushes write buffers on the backing block device for `/mnt/nmedia` before returning.
 
 ```bash
 ./sync_tv.sh
 ```
 
-**Requirements:** `rsync`
+**Requirements:** `rsync`, `util-linux` (`lsblk`, `blockdev`)
 
 ---
 
 ### sync_etv.sh
 
-Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/emedia/Media/Video/TV`. Secondary/emergency backup to the emedia mount. Aborts if `/mnt/emedia` is not mounted. Not included in the `sync.sh` orchestrator; run manually when syncing to emedia.
+Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/emedia/Media/Video/TV`. Secondary/emergency backup to the emedia mount. Checks that `/mnt/emedia` is mounted before syncing. Not included in the `sync.sh` orchestrator; run manually when syncing to emedia.
 
 ```bash
 ./sync_etv.sh
@@ -78,67 +81,55 @@ Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/emedia/Media/Video/T
 
 ### sync_movies.sh
 
-Rsyncs the movie library from `/main/media/Video/Movies/` to `/mnt/nmedia/media/Video/Movies`. Aborts if `/mnt/nmedia` is not mounted.
+Rsyncs the movie library from `/main/media/Video/Movies/` to `/mnt/nmedia/Media/Video/Movies`. Checks that `/mnt/nmedia` is mounted and flushes the backing block device before returning.
 
 ```bash
 ./sync_movies.sh
 ```
 
-**Requirements:** `rsync`
+**Requirements:** `rsync`, `util-linux` (`lsblk`, `blockdev`)
 
 ---
 
 ### sync_anime.sh
 
-Rsyncs the anime library from `/main/media/Video/Anime/` to `/mnt/nmedia/Media/Video/Anime`. Aborts if `/mnt/nmedia` is not mounted.
+Rsyncs the anime library from `/main/media/Video/Anime/` to `/mnt/nmedia/Media/Video/Anime`. Checks that `/mnt/nmedia` is mounted and flushes the backing block device before returning.
 
 ```bash
 ./sync_anime.sh
 ```
 
-**Requirements:** `rsync`
+**Requirements:** `rsync`, `util-linux` (`lsblk`, `blockdev`)
 
 ---
 
 ### sync_audiobooks.sh
 
-Rsyncs the audiobook library from `/main/media/audiobooks/` to `/mnt/nmedia/Media/audiobooks`. Aborts if `/mnt/nmedia` is not mounted.
+Rsyncs the audiobook library from `/main/media/audiobooks/` to `/mnt/nmedia/Media/audiobooks`. Checks that `/mnt/nmedia` is mounted and flushes the backing block device before returning.
 
 ```bash
 ./sync_audiobooks.sh
 ```
 
-**Requirements:** `rsync`
+**Requirements:** `rsync`, `util-linux` (`lsblk`, `blockdev`)
 
 ---
 
 ### sync_books.sh
 
-Rsyncs the book library from `/main/media/books/` to `/mnt/nmedia/Media/books`. Aborts if `/mnt/nmedia` is not mounted.
+Rsyncs the book library from `/main/media/books/` to `/mnt/nmedia/Media/books`. Checks that `/mnt/nmedia` is mounted and flushes the backing block device before returning.
 
 ```bash
 ./sync_books.sh
 ```
 
-**Requirements:** `rsync`
-
----
-
-### sync_backups.sh
-
-Rsyncs system backup data from `/mnt/sysdata_backups/` to `/mnt/nmedia/DATA/sysdata_backups/`. Aborts if `/mnt/nmedia` is not mounted.
-
-```bash
-./sync_backups.sh
-```
-
-**Requirements:** `rsync`
+**Requirements:** `rsync`, `util-linux` (`lsblk`, `blockdev`)
 
 ---
 
 ### sync_docker.sh
 
-Stops LXC container 100 (if running), rsyncs the Docker data volume from `/mnt/sysdata_docker/` to `/mnt/nmedia/DATA/sysdata_docker/`, then restarts the container if it was originally running. Aborts if `/mnt/nmedia` is not mounted.
+Stops LXC container 100 (if running), rsyncs the Docker data volume from `/mnt/sysdata_docker/` to `/mnt/nmedia/DATA/sysdata_docker/`, then restarts the container if it was originally running. Checks that `/mnt/nmedia` is mounted before syncing. Uses rsync `--inplace` with `--hard-links`. Flushes block device buffers on `/mnt/nmedia` before returning.
 
 ```bash
 ./sync_docker.sh
@@ -148,17 +139,34 @@ Stops LXC container 100 (if running), rsyncs the Docker data volume from `/mnt/s
 
 ---
 
+### sync_backups.sh
+
+Rsyncs system backup data from `/mnt/sysdata_backups/` to `/mnt/nmedia/DATA/sysdata_backups/`. Checks that `/mnt/nmedia` is mounted. Flushes block device buffers on `/mnt/nmedia` before returning.
+
+```bash
+./sync_backups.sh
+```
+
+**Requirements:** `rsync`, `util-linux` (`lsblk`, `blockdev`)
+
+---
+
 ### backup_docker.sh
 
-Stops LXC container 100 (if running), compresses `/mnt/sysdata_docker` into a tar archive on `/mnt/nmedia/pve/`, then restarts the container if it was originally running. Moves any previous backup to a `hold/` subfolder before writing the new one.
-
-Supports three compressors - configure the `COMPRESSOR` variable at the top of the script:
+Stops LXC container 100 (if running), compresses `/mnt/sysdata_docker/` into a tar archive on `/mnt/nmedia/pve/`, then restarts the container if it was originally running. Moves any previous backup archive to a `hold/` subfolder before writing the new one. Supports three compressors via the `COMPRESSOR` variable at the top of the script.
 
 | Value | Tool | Notes |
 |---|---|---|
 | `pigz` | pigz | Parallel gzip; recommended. Requires `pigz` to be installed. |
 | `zstd` | zstd | Best compression ratio. Requires `zstd`. |
 | `gzip` | gzip | Standard; no extra dependencies. |
+
+Archive output names:
+- pigz -> `/mnt/nmedia/pve/docker-backup.tar.gz`
+- zstd -> `/mnt/nmedia/pve/docker-backup.tar.zst`
+- gzip -> `/mnt/nmedia/pve/docker-backup.tar.gz`
+
+All compressor paths use `ionice -c3 nice -n 19` to minimize system impact during backup.
 
 ```bash
 ./backup_docker.sh
@@ -182,6 +190,8 @@ Archives `/etc` to `/mnt/nmedia/pve/etc-backup.tar.gz` using `tar`. Aborts if `/
 ./backup_etc.sh
 ```
 
+**Requirements:** `tar` (pre-installed on Debian/Ubuntu)
+
 ---
 
 ### backup_root.sh
@@ -191,6 +201,8 @@ Archives `/root` to `/mnt/nmedia/pve/root-backup.tar.gz` using `tar`. Aborts if 
 ```bash
 ./backup_root.sh
 ```
+
+**Requirements:** `tar` (pre-installed on Debian/Ubuntu)
 
 ---
 
@@ -221,65 +233,76 @@ Recursively sets ownership and permissions on a directory tree. Intended to run 
 
 ### sync_main_backups.sh
 
-Rsyncs primary host-level backup targets to the `nmedia` storage. Use this when you want to run a focused backup pass of the main backup sets without invoking the full `sync.sh` orchestrator.
+Rsyncs primary host-level backup targets from `/mnt/sysdata_backups/` to `/mnt/main_backups/`. Checks that the destination ZFS dataset is mounted before syncing. Use this when you want a focused backup pass without triggering the full media sync sequence.
 
 ```bash
 ./sync_main_backups.sh
 ```
 
-**Requirements:** `rsync`
+**Requirements:** `rsync`, ZFS dataset mounted at `/mnt/main_backups/`
 
 ---
 
 ### sync_sysdocker_maindocker.sh
 
-Syncs system Docker and main Docker data to the `nmedia` store. Useful for making sure Docker volumes and related system docker data are replicated to the backup mount. Aborts if `/mnt/nmedia` is not mounted.
+Stops LXC container 100 (if running), rsyncs system Docker data from `/mnt/sysdata_docker/` to `/mnt/main_docker/`, then restarts the container if it was originally running. Checks that the ZFS destination dataset at `/mnt/main_docker/` is mounted before syncing. Waits for LXC mount-namespace teardown before accessing container volumes.
 
 ```bash
 ./sync_sysdocker_maindocker.sh
 ```
 
-**Requirements:** `rsync`, `pct` (when interacting with LXC-managed Docker containers)
+**Requirements:** `rsync`, `pct` (Proxmox host only), ZFS dataset mounted at `/mnt/main_docker/`
 
 ---
 
 ### lxc-upgrade.sh
 
-Performs package upgrades for one or more LXC containers. This helper can be used to run `apt update`/`apt upgrade` inside containers from the Proxmox host. Run with a container ID or `all` to target multiple containers.
+Performs package upgrades for all running or stopped LXC containers on the Proxmox host. Stops any running containers, detects the package manager inside each container (apt, apk, dnf, yum, pacman, or xbps), runs the appropriate update command, and restarts any containers it started. Containers detected as needing an APT reboot are rebooted in place. Runs container updates in parallel with up to **3 concurrent jobs** at once.
 
 ```bash
-./lxc-upgrade.sh <container-id|all>
+./lxc-upgrade.sh
 ```
 
-**Requirements:** `pct` (Proxmox host)
+**Requirements:** `pct` (Proxmox host), log output saved to `/var/log/lxc-update-<CTID>.log`
 
 ---
 
 ### shrinkvol.sh
 
-Utility that performs safe volume shrinking steps for specified logical volumes or filesystems. This script is potentially destructive; read the script and take backups before running.
+Interactive utility that performs safe volume shrinking steps for a specified LXC container logical volume. Prompts for the container VMID and the new size. Potentially destructive; read the script and take backups before running.
+
+- Stops the container if running
+- Finds and activates the logical volume (`vm-<VMID>-disk-0`)
+- Runs `lvreduce -r` to simultaneously reduce the LV and resize the filesystem
+- Deactivates the LV, updates `/etc/pve/lxc/<VMID>.conf`, and optionally restarts the container
 
 ```bash
-./shrinkvol.sh <volume-or-device>
+./shrinkvol.sh
 ```
 
-**Requirements:** `lvm2`, `resize2fs` or tool appropriate to the filesystem in use; run as root.
+**Requirements:** `lvm2` (`lvdisplay`, `lvreduce`, `lvchange`), `resize2fs` or the filesystem's resize tool, `pct` (Proxmox host), run as root. The script is fully interactive and requires terminal input.
 
 ---
 
 ### showswap.sh
 
-Displays current swap usage and swap device information on the host. Handy for quick health checks while performing memory- or disk-related maintenance.
+Displays the top 10 processes consuming swap, sorted by swap usage (descending). Outputs PID, command name, and swap usage in MB per process.
 
 ```bash
 ./showswap.sh
 ```
 
+**Requirements:** none (reads `/proc/<pid>/status` directly)
+
 ---
 
 ### usb-poweroff.sh / usb-poweron.sh
 
-Small helpers to toggle USB-powered devices (power off / power on). They typically wrap a USB hub control tool and require root permissions. Check the script header for supported hardware and required utilities. You will need to update them to point to the correct USB hub device on your system. This is done this way to support AMD USB controller quirks that can cause issues with some USB hubs.
+Small helpers to toggle USB-powered devices (power off / power on). `usb-poweroff.sh` unmounts `/mnt/nmedia` and calls `udisksctl power-off` on `/dev/sdk`.
+
+`usb-poweron.sh` performs a logical reset of the AMD XHCI PCI controller (`0000:30:00.4`), waits for the block device with UUID `5422D89122D87986` to reappear (up to 20 seconds), then mounts it back to `/mnt/nmedia`. This reset sequence handles AMD USB controller quirks with certain USB hubs.
+
+You will need to update the `DEVICE`, `UUID`, and `XHCI` variables in each script to match your system hardware.
 
 These should be on your path e.g. `/usr/local/sbin`
 
@@ -288,4 +311,4 @@ These should be on your path e.g. `/usr/local/sbin`
 ./usb-poweron.sh
 ```
 
-**Requirements:** hardware-specific USB hub control tool (e.g. `uhubctl`), `sudo` or root privileges
+**Requirements:** `udisksctl` or equivalent, `sudo` or root privileges, write access to `/sys/bus/pci/drivers/xhci_hcd/*` (Proxmox host)
