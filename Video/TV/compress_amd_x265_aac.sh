@@ -3,7 +3,7 @@
 ###############################################################
 # PRE-FLIGHT CHECKS
 ###############################################################
-for tool in ffprobe ffmpeg; do
+for tool in ffprobe ffmpeg jq bc; do
     if ! command -v "$tool" &> /dev/null; then
         echo "ERROR: $tool not found in PATH"
         echo "Please install or add to PATH before running this script."
@@ -195,6 +195,12 @@ for f in "${files[@]}"; do
             | .codec_name)
         ' <<< "$probe"
     )
+
+    if [[ -z "$vcodec" || -z "$acodec" ]]; then
+        echo "Skipping $f -- missing required video or audio stream"
+        touch "$file_skip_file"
+        continue
+    fi
 
     vcodec_lc=$(echo "$vcodec" | tr '[:upper:]' '[:lower:]')
 
