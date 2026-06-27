@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# Usage: ./setperm.sh [-n] [target_dir]
-# -n : dry-run (show what would be done)
-# target_dir : directory to operate on (default: /main/media/Video)
-
 DRY_RUN=false
 TARGET="/main/media/Video"
 
@@ -19,62 +15,69 @@ if [ $# -ge 1 ]; then
   TARGET="$1"
 fi
 
-# Ensure target exists
+# Safety guard
+case "$TARGET" in
+  "/"|"/main"|"/main/media")
+    echo "Refusing to operate on unsafe directory: $TARGET" >&2
+    exit 1
+    ;;
+esac
+
 if [ ! -d "$TARGET" ]; then
   echo "Error: target directory '$TARGET' does not exist." >&2
   exit 1
 fi
 
-# Ensure UID/GID 1000 exist (warn if not)
-# We prefer numeric UID/GID 1000 so the script can be run inside containers
-# where the unprivileged user maps to UID 1000.
-if ! getent passwd | awk -F: '$3==1000 {exit 0} END{exit 1}'; then
-  echo "Warning: no local user has UID 1000; numeric UID 1000 will be used." >&2
+# Ensure UID/GID 1000 exist
+if ! id -u 1000 >/dev/null 2>&1; then
+  echo "Error: UID 1000 does not exist on this system." >&2
+  exit 1
 fi
 
-if ! getent group | awk -F: '$3==1000 {exit 0} END{exit 1}'; then
-  echo "Warning: no local group has GID 1000; numeric GID 1000 will be used." >&2
+if ! getent group 1000 >/dev/null 2>&1; then
+  echo "Error: GID 1000 does not exist on this system." >&2
+  exit 1
 fi
-
-# Print or run a command safely
-run_or_print() {
-  # $1 = command name (e.g., chown, chmod)
-  # $2 = mode/owner (e.g., 1000:1000 or 666)
-  # $3 = path
-  local cmd="$1"
-  local arg="$2"
-  local path="$3"
-
-  if [ "$DRY_RUN" = true ]; then
-    # Use printf '%q' to show a safely quoted representation of the path
-    printf '+ %s %s -- %s\n' "$cmd" "$arg" "$(printf '%q' "$path")"
-  else
-    # Execute the command without eval
-    "$cmd" "$arg" -- "$path"
-  fi
-}
 
 echo "Target directory: $TARGET"
+$DRY_RUN && echo "Dry-run mode enabled."
+
+#############################################
+# 1) Ownership (dirs + non-.sh files)
+#############################################
+
 if [ "$DRY_RUN" = true ]; then
-  echo "Dry-run mode enabled. No changes will be made."
+  ionice -c3 nice -n 19 find "$TARGET" \
+    \( -type d -o \( -type f ! -name '*.sh' \) \) -print0 |
+  xargs -0 -P 2 -I{} printf '+ chown 1000:1000 %q\n' "{}"
+else
+  ionice -c3 nice -n 19 find "$TARGET" \
+    \( -type d -o \( -type f ! -name '*.sh' \) \) -print0 |
+  xargs -0 -P 2 -I{} chown 1000:1000 "{}"
 fi
 
-# 1) Change ownership for directories and for files except *.sh
-find "$TARGET" \( -type d -o \( -type f ! -name '*.sh' \) \) -print0 \
-  | while IFS= read -r -d '' item; do
-      run_or_print chown 1000:1000 "$item"
-    done
+#############################################
+# 2) File perms (666)
+#############################################
 
-# 2) Set file permissions to 666 for files except *.sh
-find "$TARGET" -type f ! -name '*.sh' -print0 \
-  | while IFS= read -r -d '' file; do
-      run_or_print chmod 666 "$file"
-    done
+if [ "$DRY_RUN" = true ]; then
+  ionice -c3 nice -n 19 find "$TARGET" -type f ! -name '*.sh' -print0 |
+  xargs -0 -P 2 -I{} printf '+ chmod 666 %q\n' "{}"
+else
+  ionice -c3 nice -n 19 find "$TARGET" -type f ! -name '*.sh' -print0 |
+  xargs -0 -P 2 -I{} chmod 666 "{}"
+fi
 
-# 3) Set directory permissions to 777
-find "$TARGET" -type d -print0 \
-  | while IFS= read -r -d '' dir; do
-      run_or_print chmod 777 "$dir"
-    done
+#############################################
+# 3) Directory perms (777)
+#############################################
+
+if [ "$DRY_RUN" = true ]; then
+  ionice -c3 nice -n 19 find "$TARGET" -type d -print0 |
+  xargs -0 -P 2 -I{} printf '+ chmod 777 %q\n' "{}"
+else
+  ionice -c3 nice -n 19 find "$TARGET" -type d -print0 |
+  xargs -0 -P 2 -I{} chmod 777 "{}"
+fi
 
 echo "Done."
