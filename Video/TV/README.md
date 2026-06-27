@@ -19,11 +19,13 @@ Use at your own risk. These scripts perform destructive operations on video file
 - `jq`: JSON query utility (Bash scripts only).
   - Linux: `sudo apt install jq`
   - Windows: `scoop install jq` or `choco install jq`
+- `bc`: basic calculator (Bash scripts that branch on numeric thresholds).
+  - Linux: `sudo apt install bc`
 
-### Bash Scripts (AMD GPU)
+### Bash Scripts (AMD/Intel GPU)
 
 - Linux/Unix with Bash 5+
-- AMD GPU with VAAPI support (`/dev/dri/renderD128` must be accessible)
+- AMD/Intel GPU with VAAPI support (`/dev/dri/renderD128` must be accessible)
 
 ### PowerShell Scripts
 
@@ -53,34 +55,37 @@ Scripts automatically create a `.skip_<basename>` marker when a transcode produc
 
 ### compress_amd_x265_aac.sh
 
-Batch video compression script using AMD GPU hardware acceleration (VAAPI) via `ffmpeg`. Targets `.mkv`, `.mp4`, and `.ts` files that are 1 GB or larger.
+Batch video compression script using AMD/Intel GPU hardware acceleration (VAAPI) via `ffmpeg`. Targets `.mkv`, `.mp4`, and `.ts` files that are 950 MB or larger.
 
 **What it does:**
 
-- Inspects each file with `ffprobe` (single JSON call via `jq`) to determine video codec, audio codec, video bitrate, field order, and frame rate.
-- Skips AV1-encoded files entirely.
-- Container repair remux: files already in the desired format (HEVC+AAC under 2.5 Mbps, progressive) are checked for container anomalies (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors). Broken containers are remuxed (stream copy) into a clean MKV; clean files are skipped without re-encoding.
-- Converts remaining files that are not HEVC+AAC or that exceed 2.5 Mbps video bitrate.
-- Three-stage interlace and telecine detection:
+- Pre-flight checks for `ffprobe`, `ffmpeg`, `jq`, and `bc`.
+- Inspects each file with `ffprobe` (single JSON call via `jq`) to determine video codec, audio codec, video bitrate, field order, and height.
+- Skips files encoded as AV1 or with height > 1100p.
+- Skips files with no video stream or no audio stream, creating a `.skip_<basename>` marker.
+- Deletes legacy files already tagged `[Cleaned]` or `[Trans]`.
+- Uses `.skip` directory markers and `.skip_<basename>` per-file markers to opt out of processing.
+- Container repair remux: files already in the desired format (HEVC+AAC, under 2.5 Mbps, progressive) are checked for container anomalies (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors). Broken containers are remuxed (stream copy) into a clean MKV; clean files are skipped without re-encoding. Enabled with `--remux-check`.
+- Converts remaining files that are not HEVC+AAC or that exceed 2.5 Mbps video bitrate or are interlaced/telecine.
+- Interlace / telecine detection:
   - **Fast pass**: reads `field_order` from stream metadata. Hard interlace flags (`tt`, `bb`, `tb`, `bt`) resolve immediately to `interlaced`; `progressive` flag resolves immediately to `progressive`.
-  - **Slow pass** (when metadata is inconclusive): runs `ffprobe -show_frames` on a 200-frame window at the 5-minute mark (falls back to start of file for shorter content). Counts frames with `interlaced_frame=1`. If mixed interlaced/progressive frames are found at a ~29.97 fps source rate the file is classified as `telecine` (NTSC 3:2 pulldown); otherwise `interlaced`. If the frames scan fails entirely the status is `unknown`.
-  - **PAL idet fallback**: if the slow pass reports `progressive` but the source frame rate is in the PAL range (~25 fps), runs `ffmpeg -vf idet` for 200 frames and analyses the Multi Frame Detection pixel-level counts. If the TFF+BFF ratio is 30% or greater the file is reclassified as `interlaced`. This catches BBC and other European broadcast content that is encoded without bitstream interlace flags.
+  - **Slow pass** (when metadata is inconclusive): runs `ffmpeg -vf idet` on ~1000 frames starting at the 5-minute mark and counts interlaced/TFF/BFF frames. Strong TFF/BFF with low interlaced count = `telecine`; otherwise `interlaced` if interlaced count is high.
 - Applies the appropriate filter chain for each detection result:
-  - `interlaced`: `bwdif=mode=send_frame` - deinterlaces to progressive
-  - `telecine`: `fieldmatch=order=tff:combmatch=full,yadif=deint=interlaced,decimate` - inverse telecine (IVTC) restoring original ~23.976 fps progressive frames
-  - `unknown`: `bwdif=mode=send_frame` - conservative fallback
+  - `interlaced`: `bwdif=mode=send_frame`
+  - `telecine`: `pullup,dejudder`
   - `progressive`: no filter
-- Encodes with `hevc_vaapi` at QP 24, audio re-encoded as AAC at 160 kbps, subtitle streams filtered to English (`eng`) and undefined (`und`).
-- Replaces original only if the new file is smaller; otherwise creates a `.skip_<basename>` marker.
+- Encodes with `hevc_vaapi` at QP 28, audio and subtitle streams are copied without modification (`-c:a copy`). MP4 files with `mov_text` subtitles are converted to `srt` before muxing into MKV.
+- Runs at low scheduling priority (`nice -n 10`, `ionice -c 3`).
+- Writes to `[Trans].tmp`; replaces the original only if the new file is at least 10% smaller. Otherwise creates a `.skip_<basename>` marker.
 - Sets ownership to `1000:1000` and permissions to `666` after each replacement.
-- Supports recursive `.skip` directory markers and per-file `.skip_<basename>` markers.
-- Runs up to 2 parallel encoding jobs.
+- Runs 1 encoding job at a time.
 
 **Parameters:**
 
 | Parameter | Description |
 |---|---|
-| `-d` / `--debug` | Enable verbose debug output |
+| `-d` / `--debug` | Enable verbose debug output. |
+| `-r` / `--remux-check` | Enable container repair remux for compliant files. |
 
 **Execution:**
 
@@ -91,6 +96,42 @@ cd /mnt/media/TV
 
 # With debug output
 ./compress_amd_x265_aac.sh --debug
+```
+
+---
+
+### compress_lang_amd_x265_aac.sh
+
+Batch video compression script using AMD/Intel GPU hardware acceleration (VAAPI) via `ffmpeg` with language-based stream filtering. Targets `.mkv`, `.mp4`, and `.ts` files that are 950 MB or larger.
+
+**What it does:**
+
+- Pre-flight checks for `ffprobe`, `ffmpeg`, `jq`, and `bc`.
+- Uses `jq` to filter audio and subtitle streams to allowed languages: English (`eng`/`en`), undefined (`und`), and unknown (`unk`). Unmatched language tracks are dropped from the output.
+- Inspects each file with `ffprobe` to determine video codec, audio codec, video bitrate, and field order.
+- Skips AV1-encoded files and high-resolution content (`> 1100p`).
+- Detects interlacing / telecine using `ffmpeg -vf idet` on ~1000 frames starting at the 5-minute mark.
+- Applies `bwdif=mode=send_frame` for interlaced content, `pullup,dejudder` for telecine.
+- Encodes with `hevc_vaapi` at QP 28, audio is copied, and subtitles are copied or converted from `mov_text` to `srt` for MP4 inputs.
+- Replaces the original only if the new file is at least 10% smaller; otherwise creates a `.skip_<basename>` marker.
+- Runs up to 2 parallel encoding jobs.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-d` / `--debug` | Enable verbose debug output. |
+| `-r` / `--remux-check` | Enable container repair remux for compliant files. |
+
+**Execution:**
+
+```bash
+# Run from within the TV directory
+cd /mnt/media/TV
+./compress_lang_amd_x265_aac.sh
+
+# With debug output
+./compress_lang_amd_x265_aac.sh --debug
 ```
 
 ---
@@ -584,7 +625,7 @@ PowerShell equivalent of `apply-episode-metadata.sh`. Reads episode metadata fro
 | Video codec (AMD/VAAPI) | `hevc_vaapi` |
 | Video codec (Intel QSV via HandBrake) | `qsv_h265` |
 | Video codec (AMD via HandBrake) | `vce_h265` |
-| Quality (ffmpeg) | QP 24 |
+| Quality (ffmpeg) | QP 24/QP 28 |
 | Quality (HandBrake) | RF 24 |
 | Video bitrate target | 1800 kbps |
 | Video bitrate max | 2000 kbps |
