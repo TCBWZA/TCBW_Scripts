@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Removes duplicate TV episodes and associated sidecar files.
 
@@ -121,7 +121,7 @@ function Get-EpisodeCode {
         return "S${season}E${episode}"
     }
 
-    # Match 1–2 digits x 2+ digits (1x01, 01x01, 1x123, etc.)
+    # Match 1-2 digits x 2+ digits (1x01, 01x01, 1x123, etc.)
     if ($Filename -match '(\d{1,2})[xX](\d{2,})') {
         $season  = $matches[1].PadLeft(2, '0')
         $episode = $matches[2].PadLeft(3, '0')
