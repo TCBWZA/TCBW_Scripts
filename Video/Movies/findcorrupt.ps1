@@ -48,10 +48,10 @@
     Alias for -? to show help.
 
 .EXAMPLE
-    PS> .\findcorrupt-movies.ps1 -Root "Z:\media\Movies" -Audit
+    PS> .\findcorrupt.ps1 -Root "Z:\media\Movies" -Audit
 
 .EXAMPLE
-    PS> .\findcorrupt-movies.ps1 -Root "Z:\media\Movies" -CsvFile corrupt.csv
+    PS> .\findcorrupt.ps1 -Root "Z:\media\Movies" -CsvFile corrupt.csv
 
 .NOTES
     - Requires ffprobe to be available in PATH.
@@ -103,7 +103,7 @@ if ($Help -or $ShowHelp -or $HelpShort) {
     Write-Host "MKV Movie Corruption Scanner + Radarr Replacement" -ForegroundColor Cyan
     Write-Host "------------------------------------------------------------"
     Write-Host "Usage:"
-    Write-Host "  findcorrupt-movies.ps1 -Root <path> [-CsvFile <file>] [-Append]"
+    Write-Host "  findcorrupt.ps1 -Root <path> [-CsvFile <file>] [-Append]"
     Write-Host "                         [-Audit] [-RadarrUrl <url>] [-RadarrLogFile <file>]"
     Write-Host "                         [-MissingMovieLog <file>]"
     Write-Host ""
@@ -118,8 +118,8 @@ if ($Help -or $ShowHelp -or $HelpShort) {
     Write-Host "  -Help / -ShowHelp / -?    Show this help message"
     Write-Host ""
     Write-Host "Examples:"
-    Write-Host "  findcorrupt-movies.ps1 -Root Z:\media\Movies -Audit"
-    Write-Host "  findcorrupt-movies.ps1 -Root Z:\media\Movies -CsvFile corrupt.csv"
+    Write-Host "  findcorrupt.ps1 -Root Z:\media\Movies -Audit"
+    Write-Host "  findcorrupt.ps1 -Root Z:\media\Movies -CsvFile corrupt.csv"
     Write-Host ""
     exit 0
 }
