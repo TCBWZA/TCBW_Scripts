@@ -1,14 +1,14 @@
 <#
 .SYNOPSIS
-    Scans MKV files for foreign-only audio tracks and optionally triggers
-    Sonarr episode replacement. Supports optional CSV logging.
+    Finds TV episode MKVs that contain only foreign audio tracks (no eng/und)
+    and optionally removes them or triggers Sonarr episode replacement.
 
 .DESCRIPTION
-    This script recursively scans a root directory for MKV files, extracts
-    audio language metadata using ffprobe, and identifies files that contain
-    no allowed languages (default: eng, und). When a file is foreign-only,
-    the script can:
+    Recursively scans a root directory for MKV files, extracts audio language
+    metadata using ffprobe, and identifies files that contain no allowed
+    languages (default: eng, und). When a file is foreign-only, the script can:
         - Log results to a CSV file (if CsvFile is provided)
+        - Remove the episode file directly (RemoveFile switch)
         - Trigger Sonarr to delete and re-search the episode file (enabled by default)
 
     The script includes full audit-safe parameter validation to prevent
@@ -29,6 +29,10 @@
     Appends to the existing CSV file instead of overwriting it.
     Requires CsvFile to be specified.
 
+.PARAMETER RemoveFile
+    When set, deletes the foreign-only MKV directly without Sonarr.
+    Mutually exclusive with Sonarr replacement when NoSonarr is not set.
+
 .PARAMETER NoSonarr
     Disables Sonarr integration. Sonarr is enabled by default.
 
@@ -39,27 +43,26 @@
     Path to the Sonarr action log file. Directory must exist if Sonarr is enabled.
 
 .EXAMPLE
-    PS> .\Scan-ForeignAudio.ps1 -Root "D:\Media"
+    PS> .\findforeign.ps1 -Root "D:\Media"
 
     Scans for foreign-only audio tracks with Sonarr enabled and no CSV logging.
 
 .EXAMPLE
-    PS> .\Scan-ForeignAudio.ps1 -Root "D:\Media" -CsvFile "D:\Logs\foreign.csv"
+    PS> .\findforeign.ps1 -Root "D:\Media" -CsvFile "D:\Logs\foreign.csv"
 
     Scans and logs results to the specified CSV file.
 
 .EXAMPLE
-    PS> .\Scan-ForeignAudio.ps1 -Root "D:\Media" -CsvFile "D:\Logs\foreign.csv" -Append
+    PS> .\findforeign.ps1 -Root "D:\Media" -CsvFile "D:\Logs\foreign.csv" -Append
 
     Appends results to an existing CSV file.
 
 .EXAMPLE
-    PS> .\Scan-ForeignAudio.ps1 -Root "D:\Media" -NoSonarr
+    PS> .\findforeign.ps1 -Root "D:\Media" -NoSonarr
 
     Scans with Sonarr disabled.
 
 .NOTES
-    Author: Duncan
     Version: 1.1.0
     Requires: ffprobe, PowerShell 5.1+ or PowerShell 7+
 #>
