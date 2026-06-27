@@ -126,11 +126,11 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
 
     if (-not $NeedsConvert) {
         if (Test-ContainerProblem -Path $File) {
-            Write-Host "Remuxing $File → container repair"
+            Write-Host "Remuxing $File -> container repair"
             $Tmp = Join-Path $Dir "$Base`[Trans`].tmp"
             if (Test-Path $Tmp) { Remove-Item $Tmp -Force }
 
-            # mov_text → SRT: MP4 text subtitles cannot be stream-copied into MKV
+            # mov_text -> SRT: MP4 text subtitles cannot be stream-copied into MKV
             $RemuxSubArgs = @('-c:s', 'copy')
             if ([System.IO.Path]::GetExtension($File).ToLower() -eq '.mp4') {
                 $subInfo = ffprobe -v quiet -print_format json -show_streams "$File" | ConvertFrom-Json
@@ -150,7 +150,7 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
                 Remove-Item -LiteralPath $File -Force
                 Move-Item -LiteralPath $Tmp -Destination $File -Force
                 (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
-                Write-Host "Replaced (remux): ${origMB}MB → ${newMB}MB"
+                Write-Host "Replaced (remux): ${origMB}MB -> ${newMB}MB"
             } else {
                 if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Force }
             }
@@ -176,7 +176,7 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
         $vf = ""
     }
 
-    # mov_text → SRT: MP4 text subtitles cannot be stream-copied into MKV
+    # mov_text -> SRT: MP4 text subtitles cannot be stream-copied into MKV
     $SubArgs = @('-c:s', 'copy')
     if ([System.IO.Path]::GetExtension($File).ToLower() -eq '.mp4') {
         $subInfo = ffprobe -v quiet -print_format json -show_streams "$File" | ConvertFrom-Json
@@ -251,12 +251,12 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
                 (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
                 $origMB = [math]::Round($origSize / 1MB, 2)
                 $newMB = [math]::Round($newSize / 1MB, 2)
-                Write-Host "Replaced: ${origMB}MB → ${newMB}MB"
+                Write-Host "Replaced: ${origMB}MB -> ${newMB}MB"
             }
             else {
                 $origMB = [math]::Round($origSize / 1MB, 2)
                 $newMB = [math]::Round($newSize / 1MB, 2)
-                Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_<basename> marker"
+                Write-Host "Skipped: new file not smaller (${origMB}MB -> ${newMB}MB) - creating .skip_<basename> marker"
                 $skipFile = Join-Path (Split-Path -LiteralPath $File) ".skip_$([System.IO.Path]::GetFileNameWithoutExtension($File))"
                 New-Item -LiteralPath $skipFile -ItemType File -Force | Out-Null
                 Remove-Item -LiteralPath $Tmp -Force
