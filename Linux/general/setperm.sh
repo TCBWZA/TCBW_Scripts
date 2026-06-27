@@ -48,11 +48,13 @@ $DRY_RUN && echo "Dry-run mode enabled."
 
 if [ "$DRY_RUN" = true ]; then
   ionice -c3 nice -n 19 find "$TARGET" \
-    \( -type d -o \( -type f ! -name '*.sh' \) \) -print0 |
+  \( ! -uid 1000 -o ! -gid 1000 \) \
+  \( -type d -o \( -type f ! -name '*.sh' ! -name '*.tmp' \) \) -print0 |
   xargs -0 -P 2 -I{} printf '+ chown 1000:1000 %q\n' "{}"
 else
   ionice -c3 nice -n 19 find "$TARGET" \
-    \( -type d -o \( -type f ! -name '*.sh' \) \) -print0 |
+  \( ! -uid 1000 -o ! -gid 1000 \) \
+  \( -type d -o \( -type f ! -name '*.sh' ! -name '*.tmp' \) \) -print0 |
   xargs -0 -P 2 -I{} chown 1000:1000 "{}"
 fi
 
@@ -61,10 +63,10 @@ fi
 #############################################
 
 if [ "$DRY_RUN" = true ]; then
-  ionice -c3 nice -n 19 find "$TARGET" -type f ! -name '*.sh' -print0 |
+  ionice -c3 nice -n 19 find "$TARGET" -type f ! -perm 666 ! -name '*.sh' ! -name '*.tmp' -print0 |
   xargs -0 -P 2 -I{} printf '+ chmod 666 %q\n' "{}"
 else
-  ionice -c3 nice -n 19 find "$TARGET" -type f ! -name '*.sh' -print0 |
+  ionice -c3 nice -n 19 find "$TARGET" -type f ! -perm 666 ! -name '*.sh' ! -name '*.tmp' -print0 |
   xargs -0 -P 2 -I{} chmod 666 "{}"
 fi
 
@@ -73,10 +75,10 @@ fi
 #############################################
 
 if [ "$DRY_RUN" = true ]; then
-  ionice -c3 nice -n 19 find "$TARGET" -type d -print0 |
+  ionice -c3 nice -n 19 find "$TARGET" -type d ! -perm 777 -print0 |
   xargs -0 -P 2 -I{} printf '+ chmod 777 %q\n' "{}"
 else
-  ionice -c3 nice -n 19 find "$TARGET" -type d -print0 |
+  ionice -c3 nice -n 19 find "$TARGET" -type d ! -perm 777 -print0 |
   xargs -0 -P 2 -I{} chmod 777 "{}"
 fi
 
