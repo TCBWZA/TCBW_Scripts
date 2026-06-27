@@ -163,14 +163,14 @@ function Invoke-AtomicReplace {
     }
 
     if ($tmpItem.PSIsContainer) {
-        Write-Host "ERROR: Temp output path is a directory → $TmpFile"
+        Write-Host "ERROR: Temp output path is a directory -> $TmpFile"
         Debug "Temp path is directory"
         return
     }
 
     # Lock check on temp file
     if (Test-FileLocked -Path $TmpFile) {
-        Write-Host "Temp file locked → $TmpFile"
+        Write-Host "Temp file locked -> $TmpFile"
         Debug "Temp file locked inside AtomicReplace"
         Remove-Item -LiteralPath $TmpFile -Force
         return
@@ -205,7 +205,7 @@ function Invoke-AtomicReplace {
 
         if (-not $SkipSizeCheck) {
             if ($newSize -ge $origSize) {
-                Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB)"
+                Write-Host "Skipped: new file not smaller (${origMB}MB -> ${newMB}MB)"
                 Debug "New file not smaller, marking skip"
                 New-Item -Path $SkipFile -ItemType File -Force | Out-Null
                 Remove-Item -LiteralPath $TmpFile -Force
@@ -214,7 +214,7 @@ function Invoke-AtomicReplace {
         }
 
         if (Test-FileLocked -Path $OrigFile) {
-            Write-Host "File is locked → $OrigFile"
+            Write-Host "File is locked -> $OrigFile"
             Debug "Original file locked"
             Remove-Item -LiteralPath $TmpFile -Force
             return
@@ -231,29 +231,29 @@ function Invoke-AtomicReplace {
 
         # Final lock check before deletion
         if (Test-FileLocked -Path $OrigFile) {
-            Write-Host "Original file locked during commit → $OrigFile"
+            Write-Host "Original file locked during commit -> $OrigFile"
             Debug "Original locked at final commit"
             Remove-Item -LiteralPath $TmpFile -Force
             return
         }
 
-        Write-Host "Removing original → $OrigFile"
+        Write-Host "Removing original -> $OrigFile"
         Debug "Removing original"
         Remove-Item -LiteralPath $OrigFile -Force
 
         # Final lock check before move
         if (Test-FileLocked -Path $TmpFile) {
-            Write-Host "Temp file locked during final move → $TmpFile"
+            Write-Host "Temp file locked during final move -> $TmpFile"
             Debug "Temp locked at final move"
             Remove-Item -LiteralPath $TmpFile -Force
             return
         }
 
-        Write-Host "Committing new file → $OrigFile"
+        Write-Host "Committing new file -> $OrigFile"
         Debug "Moving temp file into place"
         Move-Item -LiteralPath $TmpFile -Destination $OrigFile -Force
 
-        Write-Host "Replaced: ${origMB}MB → ${newMB}MB"
+        Write-Host "Replaced: ${origMB}MB -> ${newMB}MB"
         Debug "Atomic replacement complete"
     }
     catch {
@@ -427,7 +427,7 @@ foreach ($f in $files) {
     }
 
     if ($canRemux) {
-        Write-Host "Remuxing $($f.FullName) → container repair"
+        Write-Host "Remuxing $($f.FullName) -> container repair"
         Debug "Container-repair remux triggered"
 
         $tmpfile = Join-Path $dir ($baseNoExt + '[Trans].tmp')
@@ -448,7 +448,7 @@ foreach ($f in $files) {
         Debug "ffmpeg remux exit code: $exit"
 
         if (Test-FileLocked -Path $tmpfile) {
-            Write-Host "Temp file locked → $tmpfile"
+            Write-Host "Temp file locked -> $tmpfile"
             Debug "Temp file locked after remux"
             Remove-Item -LiteralPath $tmpfile -Force
             continue
@@ -510,7 +510,7 @@ foreach ($f in $files) {
 
     # Lock check after encode
     if (Test-FileLocked -Path $tmpfile) {
-        Write-Host "Temp file locked → $tmpfile"
+        Write-Host "Temp file locked -> $tmpfile"
         Debug "Temp file locked after encode"
         Remove-Item -LiteralPath $tmpfile -Force
         continue
