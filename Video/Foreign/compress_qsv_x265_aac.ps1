@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Transcodes foreign-language video files to HEVC/AAC using ffmpeg with Intel QSV hardware encoding.
 
@@ -74,7 +74,7 @@ $cleanupTrap = {
 }
 Register-EngineEvent PowerShell.Exiting -Action $cleanupTrap | Out-Null
 
-Write-Host "Starting up…"
+Write-Host "Starting up..."
 Write-Host "Scanning for files..."
 
 ###############################################################
@@ -222,7 +222,7 @@ $AllFiles | ForEach-Object -Parallel {
     if (-not $NeedsConvert -and $vbitrate -match '^\d+$' -and [int]$vbitrate -gt $MinBitrate) { $NeedsConvert = $true }
     if (-not $NeedsConvert -and $field -ne "progressive") { $NeedsConvert = $true }
 
-    # mov_text → SRT: MP4 text subtitles cannot be stream-copied into MKV
+    # mov_text -> SRT: MP4 text subtitles cannot be stream-copied into MKV
     $SubArgs = @('-c:s', 'copy')
     if ([System.IO.Path]::GetExtension($File).ToLower() -eq '.mp4') {
         $subInfo = ffprobe -v quiet -print_format json -show_streams "$File" | ConvertFrom-Json
@@ -238,7 +238,7 @@ $AllFiles | ForEach-Object -Parallel {
         #####################################################
         $hasContainerProblem = & $using:ContainerCheckSB $File
         if ($hasContainerProblem) {
-            Write-Host "Remuxing $File → container repair"
+            Write-Host "Remuxing $File -> container repair"
             if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Force }
 
             ffmpeg -nostdin -hide_banner -y `
@@ -257,7 +257,7 @@ $AllFiles | ForEach-Object -Parallel {
                 Remove-Item -LiteralPath $File -Force
                 Move-Item -LiteralPath $Tmp -Destination $File -Force
                 (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
-                Write-Host "Replaced (remux): ${origMB}MB → ${newMB}MB"
+                Write-Host "Replaced (remux): ${origMB}MB -> ${newMB}MB"
             }
             else {
                 if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Force }
@@ -325,12 +325,12 @@ $AllFiles | ForEach-Object -Parallel {
                 (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
                 $origMB = [math]::Round($origSize / 1MB, 2)
                 $newMB = [math]::Round($newSize / 1MB, 2)
-                Write-Host "Replaced: ${origMB}MB → ${newMB}MB"
+                Write-Host "Replaced: ${origMB}MB -> ${newMB}MB"
             }
             else {
                 $origMB = [math]::Round($origSize / 1MB, 2)
                 $newMB = [math]::Round($newSize / 1MB, 2)
-                Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_$Base"
+                Write-Host "Skipped: new file not smaller (${origMB}MB -> ${newMB}MB) - creating .skip_$Base"
                 New-Item -Path $episode_skip_file -ItemType File -Force | Out-Null
                 Remove-Item -LiteralPath $Tmp -Force
             }
