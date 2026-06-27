@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Removes duplicate episodes and associated sidecar files from video folders.
 
@@ -16,7 +16,7 @@
 
     Supported video extensions: .mkv, .mp4, .avi, .ts
 
-    Dedupe priority (highest to lowest): MKV → MP4 → TS → AVI
+    Dedupe priority (highest to lowest): MKV -> MP4 -> TS -> AVI
 
 .PARAMETER Audit
     Run in safe mode - shows what would be removed without deleting anything.
@@ -129,7 +129,7 @@ function Get-EpisodeCode {
         return "S${season}E${episode}"
     }
 
-    # Match 1–2 digits x 2+ digits (1x01, 01x01, 1x123, etc.)
+    # Match 1-2 digits x 2+ digits (1x01, 01x01, 1x123, etc.)
     if ($Filename -match '(\d{1,2})[xX](\d{2,})') {
         $season  = $matches[1].PadLeft(2, '0')
         $episode = $matches[2].PadLeft(3, '0')
