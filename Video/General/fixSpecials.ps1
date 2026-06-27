@@ -71,9 +71,9 @@ function Get-RealItems {
         }
 }
 
-Write-Audit "=== Starting Specials → Season 00 processing ==="
+Write-Audit "=== Starting Specials -> Season 00 processing ==="
 Write-Audit "Base path: $BasePath"
-if ($DryRun) { Write-Audit "DRY RUN ENABLED — no changes will be made" }
+if ($DryRun) { Write-Audit "DRY RUN ENABLED -- no changes will be made" }
 
 # Enumerate directories literally
 $allDirs = Get-ChildItem -LiteralPath $BasePath -Directory -Recurse
@@ -96,22 +96,22 @@ foreach ($dir in $allDirs) {
     Write-Audit "Processing Specials folder: $specialsPath"
 
     #
-    # If Season 00 does not exist → rename Specials → Season 00
+    # If Season 00 does not exist -> rename Specials -> Season 00
     #
     if (-not (Test-Path -LiteralPath $season00Path)) {
 
-        Write-Audit "Season 00 does not exist. Will rename Specials → Season 00"
+        Write-Audit "Season 00 does not exist. Will rename Specials -> Season 00"
 
         if (-not $DryRun) {
             Rename-Item -LiteralPath $specialsPath -NewName "Season 00"
         }
 
-        Write-Audit "Renamed: $specialsPath → $season00Path (or would rename in dry-run)"
+        Write-Audit "Renamed: $specialsPath -> $season00Path (or would rename in dry-run)"
         continue
     }
 
     #
-    # Season 00 exists → move files and directories
+    # Season 00 exists -> move files and directories
     #
     Write-Audit "Season 00 exists at: $season00Path"
     Write-Audit "Moving files and directories from Specials into Season 00"
@@ -123,7 +123,7 @@ foreach ($dir in $allDirs) {
 
     foreach ($file in $files) {
         $dest = "$season00Path\$($file.Name)"
-        Write-Audit "Moving file: $($file.FullName) → $dest (overwrite)"
+        Write-Audit "Moving file: $($file.FullName) -> $dest (overwrite)"
 
         if (-not $DryRun) {
             Move-Item -LiteralPath $file.FullName -Destination $dest -Force
@@ -140,20 +140,20 @@ foreach ($dir in $allDirs) {
 
         if (-not (Test-Path -LiteralPath $destDir)) {
 
-            Write-Audit "Moving directory: $($subdir.FullName) → $destDir"
+            Write-Audit "Moving directory: $($subdir.FullName) -> $destDir"
 
             if (-not $DryRun) {
                 Move-Item -LiteralPath $subdir.FullName -Destination $destDir -Force
             }
         }
         else {
-            Write-Audit "Directory exists: $destDir — merging contents"
+            Write-Audit "Directory exists: $destDir -- merging contents"
 
             $subItems = Get-ChildItem -LiteralPath $subdir.FullName -Force
 
             foreach ($item in $subItems) {
                 $dest = "$destDir\$($item.Name)"
-                Write-Audit "  Moving: $($item.FullName) → $dest (overwrite)"
+                Write-Audit "  Moving: $($item.FullName) -> $dest (overwrite)"
 
                 if (-not $DryRun) {
                     Move-Item -LiteralPath $item.FullName -Destination $dest -Force
@@ -190,5 +190,5 @@ foreach ($dir in $allDirs) {
     }
 }
 
-Write-Audit "=== Completed Specials → Season 00 processing ==="
+Write-Audit "=== Completed Specials -> Season 00 processing ==="
 Write-Audit "Audit log saved to: $logPath"
