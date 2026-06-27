@@ -203,12 +203,12 @@ Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
                 (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
                 $origMB = [math]::Round($origSize / 1MB, 2)
                 $newMB = [math]::Round($newSize / 1MB, 2)
-                Write-Host "Replaced: ${origMB}MB → ${newMB}MB"
+                Write-Host "Replaced: ${origMB}MB -> ${newMB}MB"
             }
             else {
                 $origMB = [math]::Round($origSize / 1MB, 2)
                 $newMB = [math]::Round($newSize / 1MB, 2)
-                Write-Host "Skipped: new file not smaller (${origMB}MB → ${newMB}MB) - creating .skip_<basename> marker"
+                Write-Host "Skipped: new file not smaller (${origMB}MB -> ${newMB}MB) - creating .skip_<basename> marker"
                 $skipFile = Join-Path (Split-Path -LiteralPath $File) ".skip_$([System.IO.Path]::GetFileNameWithoutExtension($File))"
                 New-Item -LiteralPath $skipFile -ItemType File -Force | Out-Null
                 Remove-Item -LiteralPath $Tmp -Force
