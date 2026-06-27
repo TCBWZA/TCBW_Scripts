@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-set -uo pipefail
 
+# Usage: ./setperm.sh [-n] [target_dir]
+# -n : dry-run (show what would be done)
+# target_dir : directory to operate on (default: /main/media/Video)
+
+set -uo pipefail
 DRY_RUN=false
 TARGET="/main/media/Video"
 
