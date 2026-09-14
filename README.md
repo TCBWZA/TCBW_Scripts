@@ -84,7 +84,8 @@ TCBW_Scripts/
 |       |--  findforeign.sh                - Foreign-audio detection (bash)
 |       |--  hbcompress_amd_x265_aac.ps1   - HandBrake AMD VCE x265 compression (PowerShell)
 |       |--  hbcompress_qsv_x265_aac.ps1   - HandBrake Intel QSV x265 compression (PowerShell)
-|       \--  remux.ps1                     - Container-repair remux without re-encoding (PowerShell)
+|       |--  remux.ps1                     - Container-repair remux without re-encoding (PowerShell)
+|       \--  repack_mkv_lang.sh            - Track-filtering MKV remux without re-encoding (bash)
 |--  Windows/
 |   \--  General/
 |       \--  sync_robo.ps1                 - Robocopy-based sync helper for Windows (PowerShell)
@@ -144,7 +145,7 @@ The two machines keep batch processing reliable despite the Debian FFmpeg bug, a
 - **File Lock Detection**: Skips files currently open by other processes (media players, Plex, etc.)
 - **Atomic Replacement**: Writes to a temp file and swaps atomically; originals are only replaced when the new file is at least 10% smaller and valid
 - **Format Guards**: Automatically skips 4K (UHD) and AV1-encoded files
-- **Subtitle Filtering**: TV and Movies hbcompress scripts retain only English (`eng`) and undefined (`und`) subtitle tracks. Foreign hbcompress scripts copy all subtitle tracks without filtering. The TV `compress_lang` bash script drops streams in languages other than English/undefined/unknown when an English audio track exists, and keeps all tracks when it does not (foreign-only content).
+- **Subtitle Filtering**: TV and Movies hbcompress scripts retain only English (`eng`) and undefined (`und`) subtitle tracks. Foreign hbcompress scripts copy all subtitle tracks without filtering. The TV `compress_lang` bash script drops streams in languages other than English/undefined/unknown when an English audio track exists, and keeps all tracks when it does not (foreign-only content). `repack_mkv_lang.sh` applies the same language rules when remuxing MKV files without re-encoding.
 
 ### Maintenance & Quality Assurance Scripts
 
@@ -312,6 +313,9 @@ bash ./Video/TV/findforeign.sh
 
 # MP4 to MKV container remux
 bash ./Video/Movies/remuxmp4.sh
+
+# Track-filtering MKV remux (keeps eng/und/unk when English audio present)
+bash ./Video/TV/repack_mkv_lang.sh
 
 # System sync utilities (run from top-level directory)
 bash ./Linux/general/sync.sh               # Powers on USB, runs all sync tasks, powers off
