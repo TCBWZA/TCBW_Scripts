@@ -178,14 +178,14 @@ for f in "${files[@]}"; do
 
     debug "ffprobe JSON OK"
 
-    #####################################################
-    # Extract allowed audio/subtitle streams (eng/und/unk)
-    #####################################################
+#####################################################
+     # Extract audio/subtitle streams (eng/und/unk; keep all if no such audio)
+     #####################################################
 
     # Primary video stream (first non-attached video)
     v_index=$(jq -r '
       (.streams[]
-        | select(.codec_type=="video" and (.disposition.attached_pic|not))
+        | select(.codec_type=="video" and (.disposition.attached_pic != 1))
         | .index) | first
     ' <<< "$probe")
 
@@ -196,44 +196,68 @@ for f in "${files[@]}"; do
 
     debug "Primary video stream index: $v_index"
 
-    # Audio streams matching allowed languages
-    mapfile -t audio_indices < <(
+    # All audio streams (index + language pairs, flattened)
+    audio_streams=()
+    while IFS=$'\t' read -r idx lang; do
+        audio_streams+=("$idx" "$lang")
+    done < <(
         jq -r '
           .streams[]
           | select(.codec_type=="audio")
-          | {
-              idx: .index,
-              lang: ((.tags.language // .tags.LANGUAGE // "unk") | ascii_downcase)
-            }
-          | select(.lang == "eng" or .lang == "en" or
-                   .lang == "und" or .lang == "unk")
-          | .idx
+          | [.index, ((.tags.language // .tags.LANGUAGE // "unk") | ascii_downcase)] | @tsv
         ' <<< "$probe"
     )
 
-    # Subtitle streams matching allowed languages
-    mapfile -t subtitle_indices < <(
+    # All subtitle streams (index + language pairs, flattened)
+    subtitle_streams=()
+    while IFS=$'\t' read -r idx lang; do
+        subtitle_streams+=("$idx" "$lang")
+    done < <(
         jq -r '
           .streams[]
           | select(.codec_type=="subtitle")
-          | {
-              idx: .index,
-              lang: ((.tags.language // .tags.LANGUAGE // "unk") | ascii_downcase)
-            }
-          | select(.lang == "eng" or .lang == "en" or
-                   .lang == "und" or .lang == "unk")
-          | .idx
+          | [.index, ((.tags.language // .tags.LANGUAGE // "unk") | ascii_downcase)] | @tsv
         ' <<< "$probe"
     )
 
-    if [[ ${#audio_indices[@]} -eq 0 ]]; then
-        echo "Skipping $f -- no allowed audio stream found"
+    if [[ ${#audio_streams[@]} -eq 0 ]]; then
+        echo "Skipping $f -- no audio stream found"
         touch "$file_skip_file"
         continue
     fi
 
-    debug "Audio indices (filtered): ${audio_indices[*]}"
-    debug "Subtitle indices (filtered): ${subtitle_indices[*]}"
+    # Prefer English/unknown audio. If present, strip non-English audio+subs.
+    # If absent, keep all tracks so foreign-only content is not gutted.
+    has_eng_audio=false
+    for ((i = 1; i < ${#audio_streams[@]}; i += 2)); do
+        if [[ "${audio_streams[$i]}" =~ ^(eng|en|und|unk)$ ]]; then
+            has_eng_audio=true
+            break
+        fi
+    done
+
+    audio_indices=()
+    for ((i = 0; i < ${#audio_streams[@]}; i += 2)); do
+        idx="${audio_streams[$i]}"
+        lang="${audio_streams[$((i + 1))]}"
+        if $has_eng_audio && [[ ! "$lang" =~ ^(eng|en|und|unk)$ ]]; then
+            continue
+        fi
+        audio_indices+=("$idx")
+    done
+
+    subtitle_indices=()
+    for ((i = 0; i < ${#subtitle_streams[@]}; i += 2)); do
+        idx="${subtitle_streams[$i]}"
+        lang="${subtitle_streams[$((i + 1))]}"
+        if $has_eng_audio && [[ ! "$lang" =~ ^(eng|en|und|unk)$ ]]; then
+            continue
+        fi
+        subtitle_indices+=("$idx")
+    done
+
+    debug "Audio indices (selected): ${audio_indices[*]}"
+    debug "Subtitle indices (selected): ${subtitle_indices[*]}"
 
 
     #####################################################
@@ -243,7 +267,7 @@ for f in "${files[@]}"; do
     { IFS=$'\t' read -r vcodec vbitrate field_order; read -r acodec; } < <(
         jq -r '
           (.streams[]
-            | select(.codec_type=="video" and (.disposition.attached_pic|not))
+            | select(.codec_type=="video" and (.disposition.attached_pic != 1))
             | [.codec_name,
                (.bit_rate // .tags.BPS // 0 | tonumber),
                (.field_order // "unknown")]
@@ -276,7 +300,7 @@ for f in "${files[@]}"; do
     # SKIP: high resolution (> 1100p) -- ffprobe secondary check
     height=$(jq -r '
       [.streams[]
-        | select(.codec_type=="video" and (.disposition.attached_pic|not))
+        | select(.codec_type=="video" and (.disposition.attached_pic != 1))
         | .height
       ] | max
     ' <<< "$probe")
@@ -398,15 +422,15 @@ for f in "${files[@]}"; do
     #####################################################
 
     map_args=(
-        -map "0:v:${v_index}"
+        -map "0:${v_index}"
     )
 
     for ai in "${audio_indices[@]}"; do
-        map_args+=( -map "0:a:${ai}" )
+        map_args+=( -map "0:${ai}" )
     done
 
     for si in "${subtitle_indices[@]}"; do
-        map_args+=( -map "0:s:${si}" )
+        map_args+=( -map "0:${si}" )
     done
 
     # Drop attached pictures (safe for VAAPI)

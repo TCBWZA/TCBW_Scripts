@@ -185,7 +185,7 @@ for f in "${files[@]}"; do
     { IFS=$'\t' read -r vcodec vbitrate field_order; read -r acodec; } < <(
         jq -r '
           (.streams[]
-            | select(.codec_type=="video" and (.disposition.attached_pic|not))
+            | select(.codec_type=="video" and (.disposition.attached_pic != 1))
             | [.codec_name,
                (.bit_rate // .tags.BPS // 0 | tonumber),
                (.field_order // "unknown")]
@@ -218,7 +218,7 @@ for f in "${files[@]}"; do
     # SKIP: high resolution (> 1100p) -- ffprobe secondary check
     height=$(jq -r '
       [.streams[]
-        | select(.codec_type=="video" and (.disposition.attached_pic|not))
+        | select(.codec_type=="video" and (.disposition.attached_pic != 1))
         | .height
       ] | max
     ' <<< "$probe")

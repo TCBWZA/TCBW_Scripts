@@ -6,12 +6,14 @@
     Recursively scans the current directory for MKV, MP4, and TS files 1 GB or larger
     and re-encodes files that are not already HEVC+AAC or exceed 2.5 Mbps video
     bitrate. Encoding uses hevc_qsv via Intel Quick Sync hardware acceleration.
-    Interlace detection is performed with ffprobe/idet. The original file is
-    replaced only when the new file is smaller. Up to $MaxJobs parallel encoding
-    jobs run at once.
+    Interlace and telecine detection is performed with ffprobe/idet. The original file
+    is replaced only when the new file is smaller, and AVC/AV1 streams are always
+    transcoded. QSV-compatible filter chains are used per detection result
+    (bwdif / pullup+dejudder / scale_qsv). Up to $MaxJobs parallel encoding jobs run
+    at once.
 
 .NOTES
-    - Edit $MaxJobs and $TempDir at the top of the script.
+    - Edit $MaxJobs at the top of the script.
     - Requires ffmpeg and ffprobe on PATH.
     - Requires an Intel CPU or GPU with Quick Sync Video support.
     - Files tagged [Cleaned] or [Trans] are deleted automatically.
@@ -56,7 +58,7 @@ function Test-ContainerProblem {
     return $false
 }
 
-$MaxJobs = 2
+$MaxJobs = 1
 
 Get-ChildItem -Recurse | Where-Object { $_.Extension -in '.mkv', '.mp4', '.ts' } | ForEach-Object {
 
@@ -126,39 +128,47 @@ Get-ChildItem -Recurse | Where-Object { $_.Extension -in '.mkv', '.mp4', '.ts' }
 
     Write-DebugLog "vcodec=$vcodec vbitrate=$vbitrate acodec=$acodec field=$field NeedsConvert=$NeedsConvert"
 
-    if (-not $NeedsConvert) {
-        if (Test-ContainerProblem -Path $File) {
-            Write-Host "Remuxing $File -- container repair"
-            $Tmp = Join-Path $Dir "$Base`[Trans`].tmp"
-            if (Test-Path $Tmp) { Remove-Item $Tmp -Force }
+    # Check for container problems before any skip/no-skip decision
+    if (Test-ContainerProblem -Path $File) {
+        Write-Host "Remuxing $File -- container repair"
+        $Tmp = Join-Path $Dir "$Base`[Trans`].tmp"
+        if (Test-Path $Tmp) { Remove-Item $Tmp -Force }
 
-            # mov_text -> SRT: MP4 text subtitles cannot be stream-copied into MKV
-            $RemuxSubArgs = @('-c:s', 'copy')
-            if ([System.IO.Path]::GetExtension($File).ToLower() -eq '.mp4') {
-                $subInfo = ffprobe -v quiet -print_format json -show_streams "$File" | ConvertFrom-Json
-                if ($subInfo.streams | Where-Object { $_.codec_type -eq 'subtitle' -and $_.codec_name -eq 'mov_text' }) {
-                    Write-Host "Subtitle: mov_text detected in MP4 -- converting to SRT"
-                    $RemuxSubArgs = @('-c:s', 'srt')
-                }
+        # mov_text -> SRT: MP4 text subtitles cannot be stream-copied into MKV
+        $RemuxSubArgs = @('-c:s', 'copy')
+        if ([System.IO.Path]::GetExtension($File).ToLower() -eq '.mp4') {
+            $subInfo = ffprobe -v quiet -print_format json -show_streams "$File" | ConvertFrom-Json
+            if ($subInfo.streams | Where-Object { $_.codec_type -eq 'subtitle' -and $_.codec_name -eq 'mov_text' }) {
+                Write-Host "Subtitle: mov_text detected in MP4 -- converting to SRT"
+                $RemuxSubArgs = @('-c:s', 'srt')
             }
-
-            ffmpeg -hide_banner -y -i "$File" -c:v copy -c:a copy @RemuxSubArgs -f matroska "$Tmp"
-
-            if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $Tmp)) {
-                $origFile = Get-Item -LiteralPath $File
-                $timestamp = $origFile.LastWriteTime
-                $origMB = [math]::Round($origFile.Length / 1MB, 2)
-                $newMB  = [math]::Round((Get-Item -LiteralPath $Tmp).Length / 1MB, 2)
-                Remove-Item -LiteralPath $File -Force
-                Move-Item -LiteralPath $Tmp -Destination $File -Force
-                (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
-                Write-Host "Replaced (remux): ${origMB}MB -> ${newMB}MB"
-            } else {
-                if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Force }
-            }
-        } else {
-            Write-Host "Skipping $File -- already in desired format"
         }
+
+        ffmpeg -hide_banner -nostdin -threads 2 -y `
+            -i "$File" `
+            -map 0 `
+            -c:v copy -c:a copy `
+            @RemuxSubArgs `
+            -f matroska `
+            "$Tmp"
+
+        if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $Tmp)) {
+            $origFile = Get-Item -LiteralPath $File
+            $timestamp = $origFile.LastWriteTime
+            $origSize = $origFile.Length
+            $newSize  = (Get-Item -LiteralPath $Tmp).Length
+            Remove-Item -LiteralPath $File -Force
+            Move-Item -LiteralPath $Tmp -Destination $File -Force
+            (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
+            Write-Host "Replaced (remux): $([math]::Round($origSize/1MB, 2))MB -> $([math]::Round($newSize/1MB, 2))MB"
+        } else {
+            if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Force }
+        }
+        return
+    }
+
+    if (-not $NeedsConvert) {
+        Write-Host "Skipping $File -- already in desired format"
         return
     }
 
@@ -167,16 +177,34 @@ Get-ChildItem -Recurse | Where-Object { $_.Extension -in '.mkv', '.mp4', '.ts' }
 
     if (Test-Path $Tmp) { Remove-Item $Tmp -Force }
 
-    # Detect interlacing using idet, skipping first 5 minutes to avoid credits/intros, then check 200 frames
-    $idet = ffmpeg -hide_banner -ss 300 -filter:v idet -frames:v 200 -an -f null - "$File" 2>&1
-    $interlaceMatch = $idet | Select-String -Pattern "Interlaced:\s*(\d+)" -AllMatches
-    $InterlacedCount = if ($interlaceMatch) { [int]$interlaceMatch.Matches.Groups[1].Value } else { 0 }
+    $status = "progressive"
 
-    if ([int]$InterlacedCount -gt 0) {
-        $vf = "deinterlace_qsv"
-    } else {
-        $vf = ""
+    if ($field -match "^(tt|bb|tb|bt)$") {
+        $status = "interlaced"
+    } elseif ($field -ne "progressive") {
+        Write-Host "Running deep interlace/telecine scan..."
+
+        $idet = ffmpeg -hide_banner -nostdin -threads 2 -ss 300 -noaccurate_seek -skip_frame nokey -i "$File" -skip_frame default -filter:v idet -frames:v 1000 -an -f null - 2>&1
+        $interlaceMatch  = $idet | Select-String -Pattern "Interlaced:\s*(\d+)" -AllMatches
+        $progMatch       = $idet | Select-String -Pattern "Progressive:\s*(\d+)" -AllMatches
+        $tffMatch        = $idet | Select-String -Pattern "TFF:\s*(\d+)" -AllMatches
+        $bffMatch        = $idet | Select-String -Pattern "BFF:\s*(\d+)" -AllMatches
+
+        $InterlacedCount = if ($interlaceMatch)  { [int]$interlaceMatch.Matches.Groups[1].Value }  else { 0 }
+        $ProgressiveCount = if ($progMatch)     { [int]$progMatch.Matches.Groups[1].Value }       else { 0 }
+        $TffCount        = if ($tffMatch)       { [int]$tffMatch.Matches.Groups[1].Value }        else { 0 }
+        $BffCount        = if ($bffMatch)       { [int]$bffMatch.Matches.Groups[1].Value }        else { 0 }
+
+        if (($TffCount -gt 50 -or $BffCount -gt 50) -and $InterlacedCount -lt 20) {
+            $status = "telecine"
+        } elseif ($InterlacedCount -gt 50) {
+            $status = "interlaced"
+        } else {
+            $status = "progressive"
+        }
     }
+
+    Write-Host "Detected: $status"
 
     # mov_text -> SRT: MP4 text subtitles cannot be stream-copied into MKV
     $SubArgs = @('-c:s', 'copy')
@@ -197,39 +225,31 @@ Get-ChildItem -Recurse | Where-Object { $_.Extension -in '.mkv', '.mp4', '.ts' }
 
     # Start encoding job
     Start-Job -ScriptBlock {
-        param($File, $Tmp, $vf, $SubArgs)
+        param($File, $Tmp, $SubArgs, $Status)
 
         # Clean temp file immediately before ffmpeg runs
         if (Test-Path -LiteralPath $Tmp) {
             Remove-Item -LiteralPath $Tmp -Force -ErrorAction SilentlyContinue
         }
 
-        if ([string]::IsNullOrEmpty($vf)) {
-            ffmpeg -hide_banner `
-                -hwaccel qsv -hwaccel_output_format qsv `
-                -i "$File" `
-                -map 0 `
-                -c:v hevc_qsv `
-                -b:v 1800k -maxrate 2000k -bufsize 4000k `
-                -c:a copy `
-                @SubArgs `
-                -f matroska `
-                "$Tmp"
-        } else {
-            ffmpeg -hide_banner `
-                -hwaccel qsv -hwaccel_output_format qsv `
-                -i "$File" `
-                -map 0 `
-                -vf "$vf" `
-                -c:v hevc_qsv `
-                -b:v 1800k -maxrate 2000k -bufsize 4000k `
-                -c:a copy `
-                @SubArgs `
-                -f matroska `
-                "$Tmp"
+        $ffmpegArgs = @('-hide_banner', '-nostdin', '-threads', '2', '-y', '-i', $File)
+
+        $filterGraph = switch ($Status) {
+            'interlaced' { "bwdif=mode=send_frame,format=nv12,hwupload" }
+            'telecine'   { "pullup,dejudder,format=nv12,hwupload" }
+            default      { "scale_qsv=format=nv12" }
         }
 
-        $ffmpegExitCode = $LASTEXITCODE
+        $ffmpegArgs += @('-filter:v', $filterGraph)
+        $ffmpegArgs += @('-map', '0:v:0', '-map', '0:a?', '-map', '0:s?', '-map', '-0:v:m:attached_pic')
+        $ffmpegArgs += @('-c:v', 'hevc_qsv', '-qp', '28')
+        $ffmpegArgs += @('-c:a', 'copy')
+        $ffmpegArgs += $SubArgs
+        $ffmpegArgs += @('-f', 'matroska')
+        $ffmpegArgs += $Tmp
+
+        $p = Start-Process -FilePath 'ffmpeg' -ArgumentList $ffmpegArgs -NoNewWindow -Wait -PassThru
+        $ffmpegExitCode = $p.ExitCode
 
         # Verify output file and is not empty
         if ($ffmpegExitCode -ne 0 -or -not (Test-Path -LiteralPath $Tmp)) {
@@ -271,7 +291,7 @@ Get-ChildItem -Recurse | Where-Object { $_.Extension -in '.mkv', '.mp4', '.ts' }
             }
         }
 
-    } -ArgumentList $File, $Tmp, $vf, $SubArgs
+    } -ArgumentList $File, $Tmp, $SubArgs, $status
 
 }
 
