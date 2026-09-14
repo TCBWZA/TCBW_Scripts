@@ -3,7 +3,7 @@
 ###############################################################
 # PRE-FLIGHT CHECKS
 ###############################################################
-for tool in ffprobe ffmpeg; do
+for tool in ffprobe ffmpeg jq bc; do
     if ! command -v "$tool" &> /dev/null; then
         echo "ERROR: $tool not found in PATH"
         echo "Please install or add to PATH before running this script."
@@ -185,7 +185,7 @@ for f in "${files[@]}"; do
     { IFS=$'\t' read -r vcodec vbitrate field_order; read -r acodec; } < <(
         jq -r '
           (.streams[]
-            | select(.codec_type=="video" and (.disposition.attached_pic|not))
+            | select(.codec_type=="video" and (.disposition.attached_pic != 1))
             | [.codec_name,
                (.bit_rate // .tags.BPS // 0 | tonumber),
                (.field_order // "unknown")]
@@ -195,6 +195,12 @@ for f in "${files[@]}"; do
             | .codec_name)
         ' <<< "$probe"
     )
+
+    if [[ -z "$vcodec" || -z "$acodec" ]]; then
+        echo "Skipping $f -- missing required video or audio stream"
+        touch "$file_skip_file"
+        continue
+    fi
 
     vcodec_lc=$(echo "$vcodec" | tr '[:upper:]' '[:lower:]')
 
@@ -212,7 +218,7 @@ for f in "${files[@]}"; do
     # SKIP: high resolution (> 1100p) -- ffprobe secondary check
     height=$(jq -r '
       [.streams[]
-        | select(.codec_type=="video" and (.disposition.attached_pic|not))
+        | select(.codec_type=="video" and (.disposition.attached_pic != 1))
         | .height
       ] | max
     ' <<< "$probe")
