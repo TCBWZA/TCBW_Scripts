@@ -19,6 +19,8 @@ Use at your own risk. These scripts perform destructive operations on video file
 - `jq`: JSON query utility (Bash scripts only).
   - Linux: `sudo apt install jq`
   - Windows: `scoop install jq` or `choco install jq`
+- `bc`: basic calculator (Bash scripts that branch on numeric thresholds).
+  - Linux: `sudo apt install bc`
 
 ### Bash Scripts (AMD GPU)
 
@@ -40,12 +42,12 @@ All compression scripts respect two skip markers:
 
 | Marker | Location | Effect |
 |---|---|---|
-| `.skip` | Parent directory | The entire parent directory is skipped. No files inside are processed. |
-| `.skip_<basename>` | File directory | That specific file is skipped. The basename is the full filename without extension. |
+| `.skip` | Parent directory | The whole parent directory is skipped; no files inside are processed. |
+| `.skip_<basename>` | File directory | That file is skipped. The basename is the full filename without extension. |
 
 Example: to skip `Film.Title.mkv`, create `.skip_Film.Title` in the same directory.
 
-Scripts automatically create a `.skip_<basename>` marker when a transcode produces a file that is not smaller than the original.
+Scripts automatically create a `.skip_<basename>` marker when a transcode is not smaller than the original, so the file is not re-attempted.
 
 ---
 
@@ -62,14 +64,14 @@ Batch video compression script using AMD GPU hardware acceleration (VAAPI) via `
 - Fast remux path: files already HEVC+AAC under 2.5 Mbps are remuxed (stream copy, no re-encode) rather than transcoded.
 - Converts remaining files that are not HEVC or that exceed 2.5 Mbps video bitrate.
 - Interlace detection:
-  - Fast pass: reads `field_order` from stream metadata.
-  - Deep scan: runs `idet` filter (200 frames) only when metadata is inconclusive.
-- Uses software decode with VAAPI encode only (`hevc_vaapi`); avoids hardware decode to support any input codec.
-- Encodes at QP 20 with audio stream-copied (original audio preserved).
+  - Fast pass: reads `field_order` from stream metadata (hard interlace flags resolve immediately).
+  - Deep scan: runs `idet` on ~1000 frames starting at the 5-minute mark only when metadata is inconclusive; strong TFF/BFF with a low interlaced count = telecine, otherwise interlaced if the count is high.
+- Uses software decode with VAAPI encode only (`hevc_vaapi`) so any input codec is supported.
+- Encodes at QP 28; audio is stream-copied (original audio preserved).
 - Replaces original only if the new file is smaller; otherwise creates a `.skip_<basename>` marker.
 - Sets ownership to `1000:1000` and permissions to `666` after each replacement.
 - Supports recursive `.skip` directory markers and per-file `.skip_<basename>` markers.
-- Runs up to 2 parallel encoding jobs.
+- Runs 1 encoding job at a time.
 
 **Parameters:**
 
@@ -237,10 +239,10 @@ Recursively scans foreign-content directories for duplicate episode files and re
 | Video codec (AMD VCE - HandBrake) | `vce_h265` |
 | Video codec (Intel QSV via HandBrake) | `qsv_h265` |
 | Video codec (Intel QSV direct) | `hevc_qsv` |
-| Quality (ffmpeg AMD) | QP 20 |
+| Quality (ffmpeg AMD) | QP 28 |
 | Quality (HandBrake) | RF 24 |
-| Video bitrate target (ffmpeg) | 1800 kbps |
-| Video bitrate max (ffmpeg) | 2000 kbps |
+| Video bitrate target (ffmpeg) | None (QP-based) |
+| Video bitrate max (ffmpeg) | None (QP-based) |
 | Audio codec (HandBrake / QSV scripts) | AAC |
 | Audio (bash compress script) | Stream copy (original preserved) |
 | Audio bitrate (stereo) | 160 kbps |
