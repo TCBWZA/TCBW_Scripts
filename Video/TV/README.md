@@ -42,12 +42,12 @@ All scripts respect two skip markers:
 
 | Marker | Location | Effect |
 |---|---|---|
-| `.skip` | Parent show directory | The entire show directory is skipped. No files inside are processed. |
-| `.skip_<basename>` | Episode directory | That specific file is skipped. The basename is the full filename without extension. |
+| `.skip` | Parent show directory | The whole show directory is skipped; no files inside are processed. |
+| `.skip_<basename>` | Episode directory | That file is skipped. The basename is the full filename without extension. |
 
 Example: to skip `Show.S01E01.mkv`, create `.skip_Show.S01E01` in the same directory.
 
-Scripts automatically create a `.skip_<basename>` marker when a transcode produces a file that is not smaller than the original, preventing repeated failed attempts on that file.
+Scripts automatically create a `.skip_<basename>` marker when a transcode is not smaller than the original, so the file is not re-attempted.
 
 ---
 
@@ -65,10 +65,10 @@ Batch video compression script using AMD/Intel GPU hardware acceleration (VAAPI)
 - Skips files with no video stream or no audio stream, creating a `.skip_<basename>` marker.
 - Deletes legacy files already tagged `[Cleaned]` or `[Trans]`.
 - Uses `.skip` directory markers and `.skip_<basename>` per-file markers to opt out of processing.
-- Container repair remux: files already in the desired format (HEVC+AAC, under 2.5 Mbps, progressive) are checked for container anomalies (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors). Broken containers are remuxed (stream copy) into a clean MKV; clean files are skipped without re-encoding. Enabled with `--remux-check`.
+- Container repair remux: files already HEVC+AAC, under 2.5 Mbps, and progressive are checked for container anomalies (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors). Broken containers are remuxed (stream copy) into a clean MKV; clean files are skipped. Enabled with `--remux-check`.
 - Converts remaining files that are not HEVC+AAC or that exceed 2.5 Mbps video bitrate or are interlaced/telecine.
 - Interlace / telecine detection:
-  - **Fast pass**: reads `field_order` from stream metadata. Hard interlace flags (`tt`, `bb`, `tb`, `bt`) resolve immediately to `interlaced`; `progressive` flag resolves immediately to `progressive`.
+  - **Fast pass**: reads `field_order` from stream metadata. Hard interlace flags (`tt`, `bb`, `tb`, `bt`) resolve to `interlaced`; `progressive` resolves to `progressive`.
   - **Slow pass** (when metadata is inconclusive): runs `ffmpeg -vf idet` on ~1000 frames starting at the 5-minute mark and counts interlaced/TFF/BFF frames. Strong TFF/BFF with low interlaced count = `telecine`; otherwise `interlaced` if interlaced count is high.
 - Applies the appropriate filter chain for each detection result:
   - `interlaced`: `bwdif=mode=send_frame`
@@ -107,10 +107,10 @@ Batch video compression script using AMD/Intel GPU hardware acceleration (VAAPI)
 **What it does:**
 
 - Pre-flight checks for `ffprobe`, `ffmpeg`, `jq`, and `bc`.
-- Uses `jq` to filter audio and subtitle streams to allowed languages: English (`eng`/`en`), undefined (`und`), and unknown (`unk`). Unmatched language tracks are dropped from the output.
+- Uses `jq` to filter audio and subtitle streams. When an English (`eng`/`en`), undefined (`und`), or unknown (`unk`) audio track exists, streams in other languages are dropped. When no such audio track exists (foreign-only content), all audio and subtitle tracks are kept.
 - Inspects each file with `ffprobe` to determine video codec, audio codec, video bitrate, and field order.
 - Skips AV1-encoded files and high-resolution content (`> 1100p`).
-- Detects interlacing / telecine using `ffmpeg -vf idet` on ~1000 frames starting at the 5-minute mark.
+- Detects interlacing / telecine with a two-pass approach: a fast pass reads `field_order` from stream metadata (hard interlace flags resolve immediately), and a slow pass runs `ffmpeg -vf idet` on ~1000 frames starting at the 5-minute mark when metadata is inconclusive.
 - Applies `bwdif=mode=send_frame` for interlaced content, `pullup,dejudder` for telecine.
 - Encodes with `hevc_vaapi` at QP 28, audio is copied, and subtitles are copied or converted from `mov_text` to `srt` for MP4 inputs.
 - Replaces the original only if the new file is at least 10% smaller; otherwise creates a `.skip_<basename>` marker.
@@ -146,7 +146,7 @@ PowerShell compression script using AMD GPU hardware acceleration (`hevc_amf` vi
 - Skips files already encoded as HEVC+AAC that are under 2.5 Mbps and are progressive.
 - Skips 4K (UHD) content (filename and height checks).
 - Files tagged `[Cleaned]` or `[Trans]` are deleted automatically.
-- Detects interlacing via `ffmpeg idet` filter (200 frames, skipping first 5 minutes); applies `yadif` deinterlace filter when interlacing is detected.
+- Detects interlacing with the `ffmpeg idet` filter (200 frames, skipping the first 5 minutes); applies the `yadif` deinterlace filter when interlacing is found.
 - Encodes with `hevc_amf` at 1800k target / 2000k max bitrate.
 - All audio and subtitle streams are copied without modification.
 - Writes to a temporary file; atomically replaces the original only if the output is smaller.
@@ -185,13 +185,13 @@ PowerShell compression script using Intel Quick Sync Video (QSV) hardware accele
 - Skips 4K (UHD) content (filename and height checks).
 - Files tagged `[Cleaned]` or `[Trans]` are deleted automatically.
 - Handles MP4 `mov_text` subtitles by converting them to SRT before remuxing into MKV.
-- Detects interlacing via `ffmpeg idet` filter (200 frames, skipping first 5 minutes); applies `deinterlace_qsv` hardware filter when interlacing is detected.
-- Encodes with `hevc_qsv` at 1800k target / 2000k max bitrate.
+- Interlace / telecine detection is two-pass: a fast pass reads `field_order` from stream metadata (hard interlace flags resolve immediately), and a slow pass runs `ffmpeg idet` on ~1000 frames starting at the 5-minute mark when metadata is inconclusive. Per-result filter chains: `bwdif=mode=send_frame` for interlaced, `pullup,dejudder` for telecine, `scale_qsv` for progressive.
+- Encodes with `hevc_qsv` at QP 28.
 - All audio and subtitle streams are copied without modification.
 - Writes to a temporary file; atomically replaces the original only if the output is smaller.
 - Creates a `.skip_<basename>` marker when output is not smaller, preventing repeated re-encode attempts.
 - Supports `.skip` directory markers and per-file `.skip_<basename>` markers.
-- Runs up to 2 parallel encoding jobs (configurable via `$MaxJobs`).
+- Runs 1 encoding job at a time (`$MaxJobs = 1`, editable at the top of the script).
 
 **Parameters:**
 
@@ -222,13 +222,13 @@ PowerShell batch compression script using HandBrakeCLI with AMD VCE hardware enc
 - Skips files already encoded as HEVC+AAC that are under 2.5 Mbps.
 - Skips 4K (UHD) and AV1-encoded files.
 - Skips files with no video stream or no audio stream.
-- Checks MKV containers for structural anomalies (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors such as non-monotonic timestamps, truncated streams, or missing moov atom); automatically remuxes broken containers before transcoding.
+- Checks MKV containers for structural anomalies (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors such as non-monotonic timestamps, truncated streams, or missing moov atom); broken MKV containers that do not need transcoding are remuxed (stream copy) without re-encoding.
 - Detects file locks before and after encoding; skips files currently open by other processes.
-- Performs deferred interlace detection (only when transcoding is required): skips the first 5 minutes to avoid credits, analyzes 200 frames for interlace or telecine patterns. HEVC input skips this step.
+- Performs deferred interlace detection (only when transcoding is required): a fast pass reads `field_order` (hard interlace flags resolve to interlaced, `progressive` is trusted for HEVC input), and a slow pass analyzes 200 frames starting at the 5-minute mark when metadata is inconclusive or for non-HEVC input.
 - Applies `--deinterlace=slower` for interlaced content; `--detelecine --deinterlace=slower` for suspected telecine.
-- Encodes with HandBrakeCLI using `vce_h265` encoder at quality RF 24, stereo AAC at 160 kbps.
+- Encodes with HandBrakeCLI using `vce_h265` encoder at quality RF 24, re-encoding all audio tracks to AAC at 160 kbps.
 - Filters subtitle streams to English (`eng`) and undefined (`und`) language tracks; other subtitle languages are dropped.
-- Writes to a temporary file; atomically replaces the original only if the output is smaller and non-empty.
+- Writes to a temporary file; atomically replaces the original only if the new file is at least 10% smaller and non-empty. The container-repair remux path skips the 10% size check (stream copy does not shrink files).
 - Creates a `.skip_<basename>` marker when output is not smaller, preventing repeated re-encode attempts.
 - Supports recursive `.skip` directory markers and per-file `.skip_<basename>` markers.
 - Updates the terminal title during encoding to show the current file name.
@@ -259,13 +259,13 @@ PowerShell batch compression script using HandBrakeCLI with Intel Quick Sync Vid
 **What it does:**
 
 - Same logic and feature set as `hbcompress_amd_x265_aac.ps1`.
-- Uses `qsv_h265` as the HandBrake encoder with `--encoder-preset medium`.
+- Encodes with `qsv_h265` and `--encoder-preset medium`.
 - Skips 4K (UHD) and AV1-encoded files.
-- Checks MKV containers for structural anomalies (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors such as non-monotonic timestamps, truncated streams, or missing moov atom); automatically remuxes broken containers before transcoding.
+- Checks MKV containers for structural anomalies (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors such as non-monotonic timestamps, truncated streams, or missing moov atom); broken MKV containers that do not need transcoding are remuxed (stream copy) without re-encoding.
 - Detects file locks before and after encoding.
-- Performs deferred interlace detection with the same frame-skip logic.
+- Performs deferred two-pass interlace detection with the same frame-skip logic.
 - Filters subtitle streams to English and undefined language tracks.
-- Atomically replaces originals; creates `.skip_<basename>` markers when output is not smaller.
+- Atomically replaces originals only when the new file is at least 10% smaller; creates `.skip_<basename>` markers otherwise (the container-repair remux path skips the size check).
 
 **Parameters:**
 
@@ -625,11 +625,11 @@ PowerShell equivalent of `apply-episode-metadata.sh`. Reads episode metadata fro
 | Video codec (AMD/VAAPI) | `hevc_vaapi` |
 | Video codec (Intel QSV via HandBrake) | `qsv_h265` |
 | Video codec (AMD via HandBrake) | `vce_h265` |
-| Quality (ffmpeg) | QP 24/QP 28 |
+| Quality (ffmpeg) | QP 28 |
 | Quality (HandBrake) | RF 24 |
-| Video bitrate target | 1800 kbps |
-| Video bitrate max | 2000 kbps |
+| Video bitrate target | None (QP-based) |
+| Video bitrate max | None (QP-based) |
 | Audio codec | AAC |
 | Audio bitrate (stereo) | 160 kbps |
-| Audio bitrate (5.1) | 384 kbps |
+| Audio bitrate (HandBrake re-encode) | 160 kbps (all tracks) |
 | Container | Matroska (`.mkv`) |
