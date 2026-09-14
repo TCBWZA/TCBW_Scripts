@@ -185,8 +185,14 @@ uids_invalid() {
 echo "Scanning recursively for MKV files..."
 log_audit "=== Unified run started ==="
 
+# Trailers and extras are not episodes: skip Kodi trailer naming and
+# trailers/extras folders so the cleaner never touches promotional files.
 tmpfile=$(mktemp)
-find . -type f -iname '*.mkv' -print0 > "$tmpfile"
+find . -type f -iname '*.mkv' \
+    ! -iname '*-trailer*' \
+    ! -path '*/trailers/*' \
+    ! -path '*/extras/*' \
+    -print0 > "$tmpfile"
 
 while IFS= read -r -d '' mkv; do
     echo "----"
