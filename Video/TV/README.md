@@ -22,6 +22,12 @@ Use at your own risk. These scripts perform destructive operations on video file
 - `bc`: basic calculator (Bash scripts that branch on numeric thresholds).
   - Linux: `sudo apt install bc`
 
+### repack_mkv_lang.sh
+
+- `mkvmerge` from mkvtoolnix (track-filtering remux only).
+  - Linux: `sudo apt install mkvtoolnix`
+  - Verify: `mkvmerge --version`
+
 ### Bash Scripts (AMD/Intel GPU)
 
 - Linux/Unix with Bash 5+
@@ -525,6 +531,43 @@ PowerShell container-repair script that remuxes MKV files with detected structur
 
 # Run on a specific directory with debug output
 .\remux.ps1 -Root "Z:\Media\TV" -EnableDebug
+```
+
+---
+
+### repack_mkv_lang.sh
+
+Bash remux script using `mkvmerge` (mkvtoolnix) that repacks MKV files applying the same language rules as `compress_lang_amd_x265_aac.sh`. No video or audio re-encoding happens; tracks are stream-copied into a fresh container. Targets `.mkv` files of any size.
+
+**What it does:**
+
+- Pre-flight checks for `mkvmerge`, `ffprobe`, and `jq`.
+- Inspects each file with `ffprobe` (single JSON call via `jq`).
+- When an English (`eng`/`en`), undefined (`und`), or unknown (`unk`) audio track exists, keeps only those audio and subtitle languages and drops all others. When no such audio track exists (foreign-only content), all audio and subtitle tracks are kept unchanged.
+- Keeps the primary video stream (first non-attached-picture video) and drops any attached-picture cover tracks.
+- Chapters, global tags, and container attachments (fonts, etc.) are carried over by `mkvmerge` by default.
+- Skips files marked with `.skip` directory markers or `.skip_<basename>` per-file markers.
+- Creates a `.skip_<basename>` marker when a file has no primary video stream or no audio stream.
+- Fast path: files whose tracks already match the language rules are left untouched (no rewrite).
+- Writes to a `[Repack].tmp` file; replaces the original atomically only when `mkvmerge` succeeds and the output is non-empty.
+- Preserves file modification time and sets ownership to `1000:1000` with permissions `666` after replacement.
+- Requires `mkvmerge` v70 or later (v82 verified). Assumes the ffprobe stream index equals the `mkvmerge` track id, which holds for standard Matroska track order.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-d` / `--debug` | Enable verbose debug output. |
+
+**Execution:**
+
+```bash
+# Run from within a TV directory to repack all MKV files
+cd /mnt/z/media/Video/TV/General
+./repack_mkv_lang.sh
+
+# With debug output
+./repack_mkv_lang.sh --debug
 ```
 
 ---
