@@ -142,6 +142,56 @@ cd /mnt/media/TV
 
 ---
 
+### compress_1080p_lang_amd_x265_aac.sh
+
+High-resolution TV variant of `compress_lang_amd_x265_aac.sh`: language-filtered compression that downsizes content taller than 1080p to a full 1920x1080 frame and tone-maps HDR to SDR. Targets `.mkv`, `.mp4`, and `.ts` files that are 950 MB or larger.
+
+**What it does:**
+
+- Pre-flight checks for `ffprobe`, `ffmpeg`, `jq`, `bc`, and `mkvmerge`.
+- Language filtering: when an English (`eng`/`en`), undefined (`und`), or unknown (`unk`) audio track exists, audio and subtitle streams in other languages are dropped; when no such audio exists (foreign-only content), all tracks are kept.
+- Audio handling: any kept audio track that is not already AAC forces a transcode, and all kept audio is re-encoded to AAC 160k.
+- Downscale: when `height > 1080`, scales via CPU `scale` (force_original_aspect_ratio=decrease) then `pad` to a full 1920x1080 black frame; never upscales. CPU scale+pad is used instead of `scale_vaapi` because the VAAPI encoder alignment padding leaves garbage pixels.
+- HDR detection (`color_transfer` in `smpte2084` / `arib-std-b67`); HDR content is tone-mapped to SDR with a CPU zscale/tonemap chain (the AMD VAAPI driver has no HDR VPP): `zscale=transfer=linear,tonemap=hable,zscale=primaries=bt709:transfer=bt709:matrix=bt709`.
+- Interlace / telecine detection follows the same two-pass `field_order` + `idet` scan as `compress_lang`; filters run before the tonemap/scale chain (base = `bwdif=mode=send_frame` interlaced / `pullup,dejudder` telecine / none progressive).
+- `needs_convert` triggers when the video codec/bitrate/scan-type changes, or a track change, downscale, or tonemap is needed. Tracks-only pruning never skips as already-compliant.
+- Encodes with `hevc_vaapi` at QP 28; video track is retagged `-metadata:s:v:0 language=zxx`.
+- Replaces the original only if the new file is at least 10% smaller; otherwise creates a `.skip_<basename>` marker.
+- When the transcode succeeds but is not 10% smaller and tracks were filtered, strips the unwanted audio/subs via an `mkvmerge` stream-copy remux (`[Strip].tmp`), video language set to `zxx`; the video bitstream is unchanged.
+- Runs up to 2 parallel encoding jobs.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-d` / `--debug` | Enable verbose debug output. |
+| `-r` / `--remux-check` | Enable container repair remux for compliant files. |
+
+**Execution:**
+
+```bash
+# Run from within the TV directory
+cd /mnt/media/TV
+./compress_1080p_lang_amd_x265_aac.sh
+
+# With debug output
+./compress_1080p_lang_amd_x265_aac.sh --debug
+```
+
+---
+
+### compress_1080p_eng_amd_x265_aac.sh
+
+Byte-identical copy of `compress_1080p_lang_amd_x265_aac.sh` (kept under a distinct name for deployment/rollout). Same behavior, same parameters, same execution.
+
+---
+
+### compress_1080p_anime_amd_x265_aac.sh
+
+Anime variant of `compress_1080p_lang_amd_x265_aac.sh`. Identical except the audio language filter is widened to keep Japanese and Chinese tracks alongside English: `eng`/`en`, `jpn`/`ja`, `chi`/`zho`/`zh`, `und`, `unk`. Subtitle filtering is unchanged (`eng`/`en`/`und`/`unk`). Same name/parameters/execution as the 1080p lang variant.
+
+---
+
 ### compress_amd_x265_aac.ps1
 
 PowerShell compression script using AMD GPU hardware acceleration (`hevc_amf` via `dxva2`). Targets `.mkv`, `.mp4`, and `.ts` files that are 1 GB or larger.

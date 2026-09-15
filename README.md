@@ -76,6 +76,9 @@ TCBW_Scripts/
 |       |--  Apply-EpisodeMetadata.ps1     - NFO metadata writer to MKV tags (PowerShell)
 |       |--  compress_amd_x265_aac.sh      - AMD VAAPI x265 compression (bash)
 |       |--  compress_amd_x265_aac.ps1     - AMD GPU x265 compression (PowerShell)
+|       |--  compress_1080p_anime_amd_x265_aac.sh - Anime audio 1080p downscale compression (bash)
+|       |--  compress_1080p_eng_amd_x265_aac.sh   - 1080p downscale compression, eng/und/unk (bash)
+|       |--  compress_1080p_lang_amd_x265_aac.sh  - 1080p downscale + HDR tonemap compression (bash)
 |       |--  compress_lang_amd_x265_aac.sh - Language-specific AMD VAAPI x265 compression (bash)
 |       |--  compress_qsv_x265_aac.ps1     - Intel QSV x265 compression (PowerShell)
 |       |--  dedup.ps1                     - Duplicate episode removal and priority-based selection (PowerShell)
@@ -103,7 +106,7 @@ See [Linux/README.md](Linux/README.md) for detailed descriptions of Linux utilit
 
 **USE AT YOUR OWN RISK**
 
-The settings in use work for me. You need to make sure things like bitrate meet your quality requirements. **THESE WILL NOT WORK FOR UHD.**
+The settings in use work for me. You need to make sure things like bitrate meet your quality requirements. **UHD IS SUPPORTED ONLY BY THE MOVIES BASH COMPRESSOR; THE GENERAL SETTINGS WILL NOT WORK FOR UHD.**
 
 ### Overview
 
@@ -144,7 +147,7 @@ The two machines keep batch processing reliable despite the Debian FFmpeg bug, a
 - **Container Repair**: Automatic MKV container health check; broken containers are remuxed (stream copy) without re-encoding
 - **File Lock Detection**: Skips files currently open by other processes (media players, Plex, etc.)
 - **Atomic Replacement**: Writes to a temp file and swaps atomically; originals are only replaced when the new file is at least 10% smaller and valid
-- **Format Guards**: Automatically skips 4K (UHD) and AV1-encoded files
+- **Format Guards**: Movies `compress_amd_x265_aac.sh` encodes UHD in place (ICQ 24, HDR passthrough) and skips AV1-encoded files. TV and Foreign scripts skip high-resolution content.
 - **Subtitle Filtering**: TV and Movies hbcompress scripts retain only English (`eng`) and undefined (`und`) subtitle tracks. Foreign hbcompress scripts copy all subtitle tracks without filtering. The TV `compress_lang` bash script drops streams in languages other than English/undefined/unknown when an English audio track exists, and keeps all tracks when it does not (foreign-only content). `repack_mkv_lang.sh` applies the same language rules when remuxing MKV files without re-encoding.
 
 ### Maintenance & Quality Assurance Scripts
