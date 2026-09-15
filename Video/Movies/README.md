@@ -53,18 +53,32 @@ Scripts automatically create a `.skip_<basename>` marker when a transcode produc
 
 ### compress_amd_x265_aac.sh
 
-Batch video compression script using AMD GPU hardware acceleration (VAAPI) via `ffmpeg`. Targets `.mkv`, `.mp4`, and `.ts` files that are 5 GB or larger.
+Batch video compression script using AMD GPU hardware acceleration (VAAPI) via `ffmpeg`. Finds `.mkv`, `.mp4`, and `.ts` files 5 GB or larger using `find -size +5G`, so undersized files are never probed.
 
 **What it does:**
 
-- Inspects each file with `ffprobe` to determine video codec, audio codec, and video bitrate.
+- Routed per-file by ffprobe resolution (handles both HD and UHD in one pass):
+  - HD (<= 1100p): CQP mode, QP 28.
+  - UHD (> 1100p, SDR): ICQ mode, QP 24.
+  - UHD HDR (> 1100p, smpte2084/arib-std-b67): 10-bit HEVC (`main10`), HDR passthrough, QP 24.
+- Inspects each file with `ffprobe` to determine video codec, bitrate, height, HDR transfer, and audio/subtitle track languages.
+- Language filtering: keeps only English/undefined/unknown tracks when an English audio stream exists, otherwise keeps all tracks. Unwanted audio/subs are stripped.
 - Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
-- Performs two-pass interlace/telecine detection (metadata fast pass, then deep frame scan).
-- Encodes with `hevc_vaapi` at QP 22, VBR 1800k / max 2000k.
-- Replaces original only if the new file is smaller.
+- Movies content is always progressive -- no telecine/interlace detection or filters.
+- Encodes with `hevc_vaapi`; all kept audio is re-encoded to AAC 160k.
+- Replaces original only when the new file is at least 10% smaller; otherwise a `.skip_<basename>` marker is written.
+- If a transcode is not 10% smaller but tracks were filtered, strips the unwanted audio/subs via an `mkvmerge` stream-copy remux (video track re-tagged `zxx`) instead.
+- Remuxes container-repair cases with `-r` (`--remux-check`) when already in the desired format.
 - Runs up to 2 parallel encoding jobs.
 
-No command-line parameters. Run from within the target directory or modify the path constants at the top of the script.
+**Requirements:** `ffmpeg`, `ffprobe`, `jq`, `bc`, `mkvmerge`.
+
+**Parameters:**
+
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| `-d` / `--debug` | No | | Enable verbose debug output |
+| `-r` / `--remux-check` | No | | Container health check; remuxes broken containers without re-encoding |
 
 **Execution:**
 
@@ -426,9 +440,9 @@ Set-Location "Z:\Media\Movies"
 | Video codec (AMD/VAAPI) | `hevc_vaapi` |
 | Video codec (Intel QSV) | `hevc_qsv` |
 | Video codec (AMD VCE via HandBrake AV1) | `av1_amf` |
-| Quality (ffmpeg) | QP 22 |
-| Video bitrate target | 1800 kbps |
-| Video bitrate max | 2000 kbps |
+| Quality (HD, ffmpeg) | CQP QP 28 |
+| Quality (UHD, ffmpeg) | ICQ QP 24 |
+| UHD HDR profile | `main10` (10-bit, HDR passthrough) |
 | Audio codec | AAC |
-| Audio bitrate (stereo) | 160 kbps |
+| Audio bitrate | 160 kbps |
 | Container | Matroska (`.mkv`) |
