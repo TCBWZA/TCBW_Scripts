@@ -98,7 +98,7 @@ echo "Scanning for files..."
 
 # Find all video files >= 5GB
 mapfile -t files < <(
-    find . -type f \( -iname "*.mkv" -o -iname "*.mp4" -o -iname "*.ts" \) -size +5G
+    find . -type f \( -iname "*.mkv" -o -iname "*.mp4" -o -iname "*.ts" \) ! -iname "*-trailer.*" -size +5G
 )
 
 echo "Found ${#files[@]} files."
@@ -184,9 +184,9 @@ for f in "${files[@]}"; do
 
     # Primary video stream (first non-attached video)
     v_index=$(jq -r '
-      (.streams[]
+      [.streams[]
         | select(.codec_type=="video" and (.disposition.attached_pic != 1))
-        | .index) | first
+        | .index] | .[0]
     ' <<< "$probe")
 
     if [[ "$v_index" == "null" || -z "$v_index" ]]; then
