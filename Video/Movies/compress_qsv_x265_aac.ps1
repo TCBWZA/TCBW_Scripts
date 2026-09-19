@@ -57,7 +57,7 @@ function Test-ContainerProblem {
 
 $MaxJobs = 2
 
-Get-ChildItem -Recurse -Filter *.mkv | ForEach-Object {
+Get-ChildItem -Recurse -Filter *.mkv | Where-Object { $_.Name -notlike "*-trailer.*" } | ForEach-Object {
 
     $File = $_.FullName
     $Base = [System.IO.Path]::GetFileNameWithoutExtension($File)
