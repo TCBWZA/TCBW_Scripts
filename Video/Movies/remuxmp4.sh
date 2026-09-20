@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-trap 'echo "Interrupted -- exiting safely"; exit 1' INT
+trap 'interrupted=1; exit 1' INT
+trap 'if [[ ${interrupted:-0} -eq 1 ]]; then echo "Interrupted -- exiting safely"; fi' EXIT
 
 #####################################################
 # DEBUG MODE

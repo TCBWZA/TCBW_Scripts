@@ -23,8 +23,9 @@ cleanup() {
         done
     fi
 }
-trap 'echo "Interrupted -- exiting safely"; cleanup; exit 1' INT TERM
-trap 'cleanup' EXIT
+interrupted=0
+trap 'interrupted=1; cleanup; exit 1' INT TERM
+trap 'if [[ ${interrupted:-0} -eq 1 ]]; then echo "Interrupted -- exiting safely"; fi; cleanup' EXIT
 
 #####################################################
 # DEBUG MODE
