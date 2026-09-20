@@ -76,7 +76,35 @@ xml_get() {
 get_mkv_tag() {
     local xmlfile="$1"
     local tagname="$2"
-    xmlstarlet sel -t -v "//Simple[Name='$tagname']/String" "$xmlfile" 2>/dev/null || true
+    local target="${3:-}"
+    if [[ -n "$target" ]]; then
+        xmlstarlet sel -t -v "//Simple[Name='$tagname' and parent::Simple[parent::Tag/Targets/TargetTypeValue='$target']]/String" "$xmlfile" 2>/dev/null || true
+    else
+        xmlstarlet sel -t -v "//Simple[Name='$tagname' and not(parent::Simple[parent::Tag/Targets/TargetTypeValue])]/String" "$xmlfile" 2>/dev/null || true
+    fi
+}
+
+resolve_series_root() {
+    local d="$1"
+    while [[ -n "$d" && "$d" != "/" ]]; do
+        if find "$d" -maxdepth 1 -type f \( -iname 'series.nfo' -o -iname 'tvshow.nfo' \) -print -quit 2>/dev/null | grep -q .; then
+            basename "$d"
+            return 0
+        fi
+        d=$(dirname "$d")
+    done
+    basename "$(dirname "$1")"
+}
+
+trim_trailing_dash() {
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    while [[ "$s" == *[-–] ]]; do
+        s="${s%[-–]}"
+        s="${s%"${s##*[![:space:]]}"}"
+    done
+    printf '%s' "$s"
 }
 
 build_tags_xml() {
@@ -84,7 +112,7 @@ build_tags_xml() {
     {
         echo "<Tags>"
         echo "  <Tag>"
-        for key in TITLE SERIES SEASON EPISODE DESCRIPTION DATE_RELEASED; do
+        for key in TITLE SERIES SHOW SEASON EPISODE DESCRIPTION DATE_RELEASED; do
             local val="${TAGS[$key]}"
             local esc
             esc=$(printf '%s' "$val" | xmlstarlet esc)
@@ -127,7 +155,7 @@ clean_name() {
     done
 
     name="$(printf '%s' "$name" | sed 's/^[[:space:]]*//')"
-    echo "$name"
+    echo "$(trim_trailing_dash "$name")"
 }
 
 remux_mkv() {
@@ -260,11 +288,12 @@ while IFS= read -r -d '' mkv; do
 
         if [[ $xml_rc -ne 0 ]] || [[ ! "$count" =~ ^[0-9]+$ ]] || [[ "$count" -lt 1 ]]; then
             apply_tags=0
-            series=$(basename "$(dirname "$dir")")
+            series=$(trim_trailing_dash "$(resolve_series_root "$dir")")
             new_global_title="$series"
             log_debug "No episodetails found; apply_tags=0"
         else
             ep_title=$(xml_get "$nfo_clean" "//episodedetails/title")
+            ep_title=$(trim_trailing_dash "$ep_title")
             ep_season=$(xml_get "$nfo_clean" "//episodedetails/season")
             ep_number=$(xml_get "$nfo_clean" "//episodedetails/episode")
             ep_plot=$(xml_get "$nfo_clean" "//episodedetails/plot")
@@ -272,11 +301,13 @@ while IFS= read -r -d '' mkv; do
             ep_year="${ep_aired:0:4}"
 
             series=$(xml_get "$nfo_clean" "//episodedetails/showtitle")
-            [[ -z "$series" ]] && series=$(basename "$(dirname "$dir")")
+            [[ -z "$series" ]] && series=$(resolve_series_root "$dir")
+            series=$(trim_trailing_dash "$series")
 
             declare -A TAGS=(
                 [TITLE]="$ep_title"
                 [SERIES]="$series"
+                [SHOW]="$series"
                 [SEASON]="$ep_season"
                 [EPISODE]="$ep_number"
                 [DESCRIPTION]="$ep_plot"
@@ -290,7 +321,7 @@ while IFS= read -r -d '' mkv; do
         safe_rm "$nfo_clean" yes
     else
         apply_tags=0
-        series=$(basename "$(dirname "$dir")")
+        series=$(resolve_series_root "$dir")
         new_global_title="$series"
         log_debug "No NFO found; apply_tags=0"
     fi
@@ -303,13 +334,15 @@ while IFS= read -r -d '' mkv; do
 
         if [[ -s "$tags_tmp" ]]; then
             ex_series=$(get_mkv_tag "$tags_tmp" "SERIES")
+            ex_show=$(get_mkv_tag "$tags_tmp" "SHOW")
             ex_season=$(get_mkv_tag "$tags_tmp" "SEASON")
             ex_episode=$(get_mkv_tag "$tags_tmp" "EPISODE")
             ex_ep_title=$(get_mkv_tag "$tags_tmp" "TITLE")
 
-            log_debug "Existing tags: SERIES='$ex_series' SEASON='$ex_season' EPISODE='$ex_episode' TITLE='$ex_ep_title'"
+            log_debug "Existing tags: SERIES='$ex_series' SHOW='$ex_show' SEASON='$ex_season' EPISODE='$ex_episode' TITLE='$ex_ep_title'"
 
             if [[ "$ex_series" == "$series" && \
+                  "$ex_show" == "$series" && \
                   "$ex_season" == "$ep_season" && \
                   "$ex_episode" == "$ep_number" && \
                   "$ex_ep_title" == "$ep_title" ]]; then

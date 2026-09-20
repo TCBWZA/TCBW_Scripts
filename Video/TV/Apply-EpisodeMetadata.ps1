@@ -82,8 +82,18 @@ function Get-MkvTags {
         }
         [xml]$xml = Get-Content -LiteralPath $tmp -Raw
         $result = @{}
-        foreach ($simple in $xml.Tags.Tag.Simple) {
-            if ($simple.Name) { $result[$simple.Name] = $simple.String }
+        foreach ($tagBlock in $xml.Tags.Tag) {
+            $isShowBlock = ($null -ne $tagBlock.Targets -and $tagBlock.Targets.TargetTypeValue -eq 70)
+            foreach ($simple in $tagBlock.Simple) {
+                if (-not $simple.Name) { continue }
+                if ($isShowBlock) {
+                    # @70 block: TITLE carries the show name (VLC showName)
+                    if ($simple.Name -eq 'TITLE') { $result['SHOW'] = [string]$simple.String }
+                }
+                else {
+                    $result[$simple.Name] = [string]$simple.String
+                }
+            }
         }
         return $result
     }
@@ -101,7 +111,15 @@ function Build-TagsXml {
         $escaped = [System.Security.SecurityElement]::Escape($Tags[$key])
         $xml += "    <Simple><Name>$key</Name><String>$escaped</String></Simple>`n"
     }
-    $xml += "  </Tag>`n</Tags>"
+    $xml += "  </Tag>`n"
+    if ($Tags.ContainsKey('SHOW') -and $Tags['SHOW']) {
+        $escapedShow = [System.Security.SecurityElement]::Escape($Tags['SHOW'])
+        $xml += "  <Tag>`n"
+        $xml += "    <Targets><TargetTypeValue>70</TargetTypeValue><TargetType>COLLECTION</TargetType></Targets>`n"
+        $xml += "    <Simple><Name>TITLE</Name><String>$escapedShow</String></Simple>`n"
+        $xml += "  </Tag>`n"
+    }
+    $xml += "</Tags>"
     return $xml
 }
 
@@ -226,6 +244,7 @@ foreach ($mkv in $mkvs) {
     $tags = @{
         TITLE         = $title
         SERIES        = $series
+        SHOW          = $series
         SEASON        = $season
         EPISODE       = $episodeNum
         DESCRIPTION   = $plot
@@ -242,7 +261,8 @@ foreach ($mkv in $mkvs) {
     Write-DebugLog "Existing EPISODE tag: '$($existingTags['EPISODE'])'"
     Write-DebugLog "Existing TITLE tag:   '$($existingTags['TITLE'])'"
 
-    if ($existingTags['SERIES'] -eq $series -and
+    if ($existingTags['SHOW'] -eq $series -and
+        $existingTags['SERIES'] -eq $series -and
         $existingTags['SEASON'] -eq $season -and
         $existingTags['EPISODE'] -eq $episodeNum -and
         $existingTags['TITLE'] -eq $title) {

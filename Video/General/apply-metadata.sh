@@ -69,8 +69,44 @@ build_tags_xml() {
             printf '    <Simple><Name>%s</Name><String>%s</String></Simple>\n' "$key" "$esc"
         done
         echo "  </Tag>"
+        # Series root at TargetTypeValue 70 (VLC showName).
+        # Empty Targets defaults to target 50, which VLC reads as Album.
+        if [[ -n "${TAGS[SHOW]}" && "$TYPE" == "EPISODE" ]]; then
+            local esc70
+            esc70=$(printf '%s' "${TAGS[SHOW]}" | xmlstarlet esc)
+            echo "  <Tag>"
+            echo "    <Targets><TargetTypeValue>70</TargetTypeValue><TargetType>COLLECTION</TargetType></Targets>"
+            printf '    <Simple><Name>TITLE</Name><String>%s</String></Simple>\n' "$esc70"
+            echo "  </Tag>"
+        fi
         echo "</Tags>"
     } > "$outfile"
+}
+
+# ------------------------------
+# Series root resolver
+# ------------------------------
+trim_trailing_dash() {
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    while [[ "$s" == *[-–] ]]; do
+        s="${s%[-–]}"
+        s="${s%"${s##*[![:space:]]}"}"
+    done
+    printf '%s' "$s"
+}
+
+resolve_series_root() {
+    local d="$1"
+    while [[ -n "$d" && "$d" != "/" ]]; do
+        if find "$d" -maxdepth 1 -type f \( -iname 'series.nfo' -o -iname 'tvshow.nfo' \) -print -quit 2>/dev/null | grep -q .; then
+            basename "$d"
+            return 0
+        fi
+        d=$(dirname "$d")
+    done
+    basename "$(dirname "$1")"
 }
 
 # ------------------------------
@@ -238,8 +274,10 @@ while IFS= read -r -d '' mkv; do
                 aired=$(xml_get "$nfo_clean" "/episodedetails/aired")
                 year="${aired:0:4}"
 
-                [[ -z "$showtitle" ]] && showtitle=$(basename "$dir")
+                [[ -z "$showtitle" ]] && showtitle=$(resolve_series_root "$dir")
+                showtitle=$(trim_trailing_dash "$showtitle")
                 [[ -z "$etitle" ]] && etitle="Episode $episode"
+                etitle=$(trim_trailing_dash "$etitle")
 
                 s=$(printf '%02d' "$season")
                 e=$(printf '%02d' "$episode")
@@ -249,6 +287,7 @@ while IFS= read -r -d '' mkv; do
                 TAGS[TITLE]="$etitle"
                 TAGS[DESCRIPTION]="$plot"
                 TAGS[SERIES]="$showtitle"
+                TAGS[SHOW]="$showtitle"
                 TAGS[SEASON]="$season"
                 TAGS[EPISODE]="$episode"
                 TAGS[DATE_RELEASED]="$year"
@@ -270,14 +309,16 @@ while IFS= read -r -d '' mkv; do
         mkvextract "$mkv" tags "$tags_tmp" 2>/dev/null || true
 
         if [[ -s "$tags_tmp" ]]; then
-            ex_title=$(xmlstarlet sel -t -v "//Simple[Name='TITLE']/String" "$tags_tmp" 2>/dev/null)
+            ex_title=$(xmlstarlet sel -t -v "//Tag[not(Targets/TargetTypeValue='70')]//Simple[Name='TITLE']/String" "$tags_tmp" 2>/dev/null)
             ex_series=$(xmlstarlet sel -t -v "//Simple[Name='SERIES']/String" "$tags_tmp" 2>/dev/null)
+            ex_show=$(xmlstarlet sel -t -v "//Simple[Name='SHOW']/String" "$tags_tmp" 2>/dev/null)
             ex_season=$(xmlstarlet sel -t -v "//Simple[Name='SEASON']/String" "$tags_tmp" 2>/dev/null)
             ex_episode=$(xmlstarlet sel -t -v "//Simple[Name='EPISODE']/String" "$tags_tmp" 2>/dev/null)
             ex_desc=$(xmlstarlet sel -t -v "//Simple[Name='DESCRIPTION']/String" "$tags_tmp" 2>/dev/null)
 
             if [[ "$TYPE" == "EPISODE" ]]; then
                 if [[ "$ex_series" == "$showtitle" &&
+                      "$ex_show" == "$showtitle" &&
                       "$ex_season" == "$season" &&
                       "$ex_episode" == "$episode" &&
                       "$ex_title" == "$etitle" ]]; then
