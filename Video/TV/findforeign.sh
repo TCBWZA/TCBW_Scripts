@@ -194,8 +194,9 @@ sonarr_replace() {
     fi
 
     local series_json series_id
-    series_json=$(curl -s -H "X-Api-Key: $SONARR_API_KEY" \
-        "$SONARR_URL/api/v3/series?term=$series_name")
+    series_json=$(curl -s -G -H "X-Api-Key: $SONARR_API_KEY" \
+        --data-urlencode "term=$series_name" \
+        "$SONARR_URL/api/v3/series")
     series_id=$(echo "$series_json" | jq '.[0].id // empty')
 
     [[ -z "$series_id" ]] && {
@@ -204,13 +205,12 @@ sonarr_replace() {
         return
     }
 
-    local episodes_json episode_json episode_id episode_file_id
+    local episodes_json episode_json episode_id
     episodes_json=$(curl -s -H "X-Api-Key: $SONARR_API_KEY" \
         "$SONARR_URL/api/v3/episode?seriesId=$series_id")
     episode_json=$(echo "$episodes_json" | jq \
         ".[] | select(.seasonNumber==$season and .episodeNumber==$episode)")
     episode_id=$(echo "$episode_json" | jq '.id // empty')
-    episode_file_id=$(echo "$episode_json" | jq '.episodeFileId // empty')
 
     [[ -z "$episode_id" ]] && {
         print_error "Sonarr: Episode not found for $file"
@@ -218,27 +218,27 @@ sonarr_replace() {
         return
     }
 
-    [[ -z "$episode_file_id" ]] && {
-        print_error "Sonarr: EpisodeFileId missing for $file"
-        log_sonarr "$file" "404 (episodeFileId missing)"
-        return
-    }
+    # File was already removed from the filesystem by the caller.
+    # Refresh so Sonarr rescans and marks the episode missing (wanted),
+    # re-enable monitoring, then trigger a grab/search.
+    local refresh_body refresh_status
+    refresh_body="{\"name\":\"RefreshSeries\",\"seriesId\":$series_id}"
+    refresh_status=$(curl -s -o /dev/null -w "%{http_code}" \
+        -X POST -H "X-Api-Key: $SONARR_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d "$refresh_body" \
+        "$SONARR_URL/api/v3/command")
+    print_ok "Sonarr: Refreshed series for $file (HTTP $refresh_status)"
+    log_sonarr "$file" "$refresh_status"
 
-    local delete_status
-    delete_status=$(curl -s -o /dev/null -w "%{http_code}" \
-        -X DELETE -H "X-Api-Key: $SONARR_API_KEY" \
-        "$SONARR_URL/api/v3/episodefile/$episode_file_id")
-    print_ok "Sonarr: Deleted episode file for $file (HTTP $delete_status)"
-    log_sonarr "$file" "$delete_status"
-
-    local updated_json monitor_status
-    updated_json=$(echo "$episode_json" | jq '.monitored=true')
+    local monitor_body monitor_status
+    monitor_body="{\"episodeIds\":[$episode_id],\"monitored\":true}"
     monitor_status=$(curl -s -o /dev/null -w "%{http_code}" \
         -X PUT -H "X-Api-Key: $SONARR_API_KEY" \
         -H "Content-Type: application/json" \
-        -d "$updated_json" \
-        "$SONARR_URL/api/v3/episode/$episode_id")
-    print_ok "Sonarr: Re-monitored episode for $file (HTTP $monitor_status)"
+        -d "$monitor_body" \
+        "$SONARR_URL/api/v3/episode/monitor")
+    print_ok "Sonarr: Enabled wanted on episode for $file (HTTP $monitor_status)"
     log_sonarr "$file" "$monitor_status"
 
     local search_body search_status
@@ -275,6 +275,9 @@ find "$ROOT" \
             lang_string=$(echo "$langs" | paste -sd ";" -)
             echo "\"$file\",\"$lang_string\"" >> "$CSV_FILE"
         fi
+
+        rm -f "$file"
+        print_ok "Deleted: $file"
 
         sonarr_replace "$file"
     fi

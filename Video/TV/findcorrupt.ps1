@@ -259,22 +259,37 @@ function Invoke-SonarrReplaceFromPath {
         }
 
         $episodeId = $episodeObj.id
-        $episodeFileId = $episodeObj.episodeFileId
 
         Remove-Item -LiteralPath $FilePath -Force -ErrorAction Stop
 
-        if ($episodeFileId) {
-            $deleteResponse = Invoke-WebRequest -Method Delete -Uri "$SonarrUrl/api/v3/episodefile/$episodeFileId" -Headers $Headers -ErrorAction Stop
-            Write-SonarrLog -File $FilePath -Status $deleteResponse.StatusCode
-        }
+        # File was already removed from the filesystem. Refresh so Sonarr
+        # rescans and marks the episode missing (wanted), re-enable
+        # monitoring, then trigger a grab/search.
+        $refreshBody = @{
+            name     = "RefreshSeries"
+            seriesId = $series.id
+        } | ConvertTo-Json
 
-        $episodeObj.monitored = $true
+        $refreshResponse = Invoke-WebRequest `
+            -Method Post `
+            -Uri "$SonarrUrl/api/v3/command" `
+            -Headers $Headers `
+            -Body $refreshBody `
+            -ContentType "application/json" `
+            -ErrorAction Stop
+
+        Write-SonarrLog -File $FilePath -Status $refreshResponse.StatusCode
+
+        $monitorBody = @{
+            episodeIds = @($episodeId)
+            monitored  = $true
+        } | ConvertTo-Json
 
         $monitorResponse = Invoke-WebRequest `
             -Method Put `
-            -Uri "$SonarrUrl/api/v3/episode/$episodeId" `
+            -Uri "$SonarrUrl/api/v3/episode/monitor" `
             -Headers $Headers `
-            -Body ($episodeObj | ConvertTo-Json -Depth 10) `
+            -Body $monitorBody `
             -ContentType "application/json" `
             -ErrorAction Stop
 
