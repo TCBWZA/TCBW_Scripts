@@ -351,6 +351,19 @@ for f in "${files[@]}"; do
     debug "video_track_id=$video_track_id"
 
     #####################################################
+    # Needs convert? (cheap checks first)
+    #####################################################
+
+    needs_convert=false
+    [[ "$vcodec_lc" != "hevc" ]] && needs_convert=true
+    (( vbitrate > 2500000 )) && needs_convert=true
+    $needs_downscale && needs_convert=true
+    $needs_tonemap && needs_convert=true
+    $audio_modified && needs_convert=true
+    $audio_needs_aac && needs_convert=true
+    $subtitle_modified && needs_convert=true
+
+    #####################################################
     # Interlace / telecine detection (PowerShell parity)
     #####################################################
 
@@ -358,7 +371,7 @@ for f in "${files[@]}"; do
 
     if [[ "$field_order" =~ ^(tt|bb|tb|bt)$ ]]; then
         status="interlaced"
-    elif [[ "$field_order" != "progressive" ]]; then
+    elif [[ "$field_order" != "progressive" ]] && $needs_convert; then
         echo "Running deep interlace/telecine scan..."
 
         idet_output=$(
@@ -391,21 +404,7 @@ for f in "${files[@]}"; do
         fi
     fi
 
-    echo "Detected: $status"
-
-    #####################################################
-    # Needs convert?
-    #####################################################
-
-    needs_convert=false
-    [[ "$vcodec_lc" != "hevc" ]] && needs_convert=true
-    (( vbitrate > 2500000 )) && needs_convert=true
     [[ "$status" != "progressive" ]] && needs_convert=true
-    $needs_downscale && needs_convert=true
-    $needs_tonemap && needs_convert=true
-    $audio_modified && needs_convert=true
-    $audio_needs_aac && needs_convert=true
-    $subtitle_modified && needs_convert=true
     debug "Needs convert: $needs_convert"
     if ! $needs_convert; then
         #####################################################
@@ -451,6 +450,8 @@ for f in "${files[@]}"; do
 
         continue
     fi
+
+    echo "Detected: $status"
 
     #####################################################
     # Transcode
