@@ -61,7 +61,7 @@ run_updates() {
             pct exec "$CTID" -- sh -c "xbps-install -Su -y"
             ;;
         *)
-            echo "Unknown package manager in CT $CTID — skipping updates"
+            echo "Unknown package manager in CT $CTID -- skipping updates"
             ;;
     esac
 }
@@ -94,12 +94,27 @@ update_container() {
     echo "Running updates inside container $CTID..."
     run_updates "$CTID" "$PKG" > "$LOGFILE" 2>&1
 
+    # Run container-provided update command
+    if pct exec "$CTID" -- test -x /usr/bin/update; then
+        echo "Running container custom update command (/usr/bin/update)..."
+        pct exec "$CTID" -- /usr/bin/update >> "$LOGFILE" 2>&1
+    else
+        echo "No /usr/bin/update command found in CT $CTID"
+    fi
+
     # APT-only reboot detection
     if [[ "$PKG" == "apt" ]]; then
         if pct exec "$CTID" -- test -f /var/run/reboot-required; then
             echo "Reboot required for container $CTID. Rebooting..."
             pct exec "$CTID" -- reboot
-            sleep 10
+
+            echo "Waiting for container $CTID to come back online..."
+            for i in {1..60}; do
+                if pct status "$CTID" | grep -q "running"; then
+                    break
+                fi
+                sleep 2
+            done
         fi
     fi
 

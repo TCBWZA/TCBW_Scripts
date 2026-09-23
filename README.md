@@ -14,7 +14,7 @@ TCBW_Scripts/
 |   |   |--  lxc-upgrade.sh                - Updates Proxmox host and all LXC containers in parallel (with autoremove)
 |   |   |--  setperm.sh                    - Sets permissions on media directories
 |   |   |--  showswap.sh                   - Displays swap usage
-|   |   |--  shrinkvol.sh                  - Shrinks a ZFS volume
+|   |   |--  shrinkvol.sh                  - Shrinks an LXC container LVM logical volume
 |   |   |--  sync.sh                       - Orchestrator: powers on USB, runs all sync tasks, powers off
 |   |   |--  sync_anime.sh                 - Rsyncs anime library to /mnt/nmedia/Media/Video/Anime (local USB)
 |   |   |--  sync_audiobooks.sh            - Rsyncs audiobook library to /mnt/nmedia/Media/audiobooks (local USB)
@@ -28,9 +28,6 @@ TCBW_Scripts/
 |   |   |--  sync_tv.sh                    - Rsyncs TV library to /mnt/nmedia/Media/Video/TV (local USB)
 |   |   |--  usb-poweroff.sh               - Safely powers off the USB external drive
 |   |   \--  usb-poweron.sh                - Powers on the USB external drive
-|   \--  lxc/
-|       |--  lxc-upgrade.sh                - Updates Proxmox host and LXC containers (also in Linux/general/)
-|       \--  shrinkvol.sh                  - Shrinks a ZFS volume (also in Linux/general/)
 |--  Video/
 |   |--  Foreign/                          - Compression scripts for foreign language content
 |   |   |--  README.md

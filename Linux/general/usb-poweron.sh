@@ -4,6 +4,12 @@ MOUNT="/mnt/nmedia"
 UUID="5422D89122D87986"
 XHCI="0000:30:00.4"
 
+# If already mounted, skip everything
+if mountpoint -q "$MOUNT"; then
+    echo "Drive already mounted -- skipping poweron."
+    exit 0
+fi
+
 echo "Resetting AMD XHCI controller at $XHCI..."
 
 # Logical controller reset (equivalent to unplug/replug)

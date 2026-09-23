@@ -2,7 +2,24 @@
 
 ### --- CONFIGURATION --- ###
 CTID=100
+
+SOURCE="/mnt/sysdata_docker/"
+DEST="/mnt/nmedia/DATA/sysdata_docker/"
+MOUNT="/mnt/nmedia"
 ### ---------------------- ###
+
+# Mount the target if needed. Remember whether THIS script mounted it so
+# we only unmount targets we mounted; sync.sh powers the drive and keeps
+# it mounted for the whole job sequence.
+MOUNTED_BY_SCRIPT=false
+if ! mountpoint -q "$MOUNT"; then
+    echo "Mounting $MOUNT..."
+    if ! mount "$MOUNT"; then
+        echo "ERROR: Failed to mount $MOUNT. Aborting sync."
+        exit 1
+    fi
+    MOUNTED_BY_SCRIPT=true
+fi
 
 ORIGINALLY_RUNNING=false
 
@@ -20,32 +37,15 @@ else
     echo "Container $CTID is already stopped."
 fi
 
-
 # Deletes files in destination that no longer exist in source
-
-SOURCE="/mnt/sysdata_docker/"
-DEST="/mnt/nmedia/DATA/sysdata_docker/"
-
-# Trigger automount and fail fast if remote is offline
-if ! timeout 10s ls /mnt/nmedia >/dev/null 2>&1; then
-    echo "ERROR: Remote share unavailable. Aborting sync."
-    exit 1
-fi
-
-# Confirm mount succeeded
-if ! grep -qs "/mnt/nmedia" /proc/mounts; then
-    echo "ERROR: /mnt/nmedia did not mount. Aborting."
-    exit 1
-fi
-
-rsync -avhL --size-only --no-times --no-perms --no-owner --no-group --omit-dir-times --modify-window=5 --itemize-changes --progress --delete "$SOURCE" "$DEST"
+rsync -avhL --no-perms --no-owner --no-group --delete --itemize-changes --progress --exclude='*.tmp' "$SOURCE" "$DEST"
 
 echo "Sync complete."
 
-# Determine actual device backing /mnt/nmedia
+# Determine actual device backing $MOUNT
 DEV=$(lsblk -no NAME,MOUNTPOINT \
     | sed 's/^[^a-zA-Z0-9]*//' \
-    | awk '$2=="/mnt/nmedia"{print "/dev/"$1; exit}')
+    | awk -v m="$MOUNT" '$2==m{print "/dev/"$1; exit}')
 
 echo "Flushing write buffers on $DEV..."
 sync
@@ -57,4 +57,11 @@ if [ "$ORIGINALLY_RUNNING" = true ]; then
     pct start $CTID
 else
     echo "Container was originally stopped. Leaving it stopped."
+fi
+
+if [ "$MOUNTED_BY_SCRIPT" = true ]; then
+    echo "Unmounting $MOUNT (mounted by this script)..."
+    umount "$MOUNT" || echo "WARN: Failed to unmount $MOUNT."
+else
+    echo "$MOUNT left mounted (was already mounted)."
 fi

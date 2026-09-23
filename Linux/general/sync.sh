@@ -11,6 +11,7 @@ echo "=== STARTING SYNC JOBS ==="
 ./sync_audiobooks.sh
 ./sync_books.sh
 ./sync_movies.sh
+# ./sync_etv.sh
 ./sync_sysdocker_maindocker.sh
 ./sync_tv.sh
 

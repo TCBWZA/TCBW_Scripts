@@ -5,7 +5,7 @@ DEVICE="/dev/sdk"
 
 # If already unmounted, skip
 if ! mountpoint -q "$MOUNT"; then
-    echo "Drive already unmounted — skipping poweroff."
+    echo "Drive already unmounted -- skipping poweroff."
     exit 0
 fi
 
@@ -17,7 +17,7 @@ fi
 
 # If device disappeared already, skip
 if [ ! -b "$DEVICE" ]; then
-    echo "Block device already gone — nothing to power off."
+    echo "Block device already gone -- nothing to power off."
     exit 0
 fi
 

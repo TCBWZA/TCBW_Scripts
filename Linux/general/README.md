@@ -31,6 +31,12 @@ All `sync_*.sh` and `backup_*.sh` scripts skip files with a `.tmp` extension (`-
 
 The media/video sync scripts use local Promox paths (`/main/media/...`) for sources and `/mnt/nmedia` mount for destinations, running on the Proxmox host.
 
+The `/mnt/nmedia` target is a direct-attached NTFS drive (fstab `UUID -- /mnt/nmedia ntfs-3g`), so syncs use full archive semantics minus POSIX perms/owner/group (ntfs-3g cannot store them). FAT32-era workarounds from the old SMB mount (`--size-only`, `--no-times`, `--omit-dir-times`, `--modify-window=5`) are gone, and `--inplace` was dropped in favor of atomic temp-file-plus-rename semantics. `sync_etv.sh` keeps those SMB-era flags because `/mnt/emedia` is still a CIFS share.
+
+Each `/mnt/nmedia` sync script mounts the target itself if it is not already mounted, and unmounts it **only if this script mounted it**. When run through `sync.sh`, the drive is already power-on mounted, so no per-job unmount happens and the power-off happens once at the end.
+
+`/mnt/emedia` (the `sync_etv.sh` target) is a systemd automount unit, not the local USB drive; the script triggers the automount on demand and leaves teardown to the unit's idle timeout.
+
 ---
 
 ## Scripts
@@ -57,7 +63,7 @@ Scripts called (in order):
 
 ### sync_tv.sh
 
-Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/nmedia/Media/Video/TV`. Checks that `/mnt/nmedia` is mounted before syncing. Uses rsync `--inplace`. Flushes write buffers on the backing block device for `/mnt/nmedia` before returning.
+Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/nmedia/Media/Video/TV`. Mounts `/mnt/nmedia` if not already mounted (and unmounts it only when this script mounted it). Flushes write buffers on the backing block device for `/mnt/nmedia` before returning.
 
 ```bash
 ./sync_tv.sh
@@ -69,7 +75,7 @@ Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/nmedia/Media/Video/T
 
 ### sync_etv.sh
 
-Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/emedia/Media/Video/TV`. Secondary/emergency backup to the emedia mount. Checks that `/mnt/emedia` is mounted before syncing. Not included in the `sync.sh` orchestrator; run manually when syncing to emedia.
+Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/emedia/Media/Video/TV`. Secondary/emergency backup to the emedia mount, which is a systemd automount unit (not the local USB drive). Accessing the path triggers the automount; teardown is left to the unit's idle timeout. Skips `*.tmp`. Not included in the `sync.sh` orchestrator; run manually when syncing to emedia.
 
 ```bash
 ./sync_etv.sh
@@ -81,7 +87,7 @@ Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/emedia/Media/Video/T
 
 ### sync_movies.sh
 
-Rsyncs the movie library from `/main/media/Video/Movies/` to `/mnt/nmedia/Media/Video/Movies`. Checks that `/mnt/nmedia` is mounted and flushes the backing block device before returning.
+Rsyncs the movie library from `/main/media/Video/Movies/` to `/mnt/nmedia/Media/Video/Movies`. Mounts `/mnt/nmedia` if needed (unmounts only when this script mounted it) and flushes the backing block device before returning.
 
 ```bash
 ./sync_movies.sh
@@ -93,7 +99,7 @@ Rsyncs the movie library from `/main/media/Video/Movies/` to `/mnt/nmedia/Media/
 
 ### sync_anime.sh
 
-Rsyncs the anime library from `/main/media/Video/Anime/` to `/mnt/nmedia/Media/Video/Anime`. Checks that `/mnt/nmedia` is mounted and flushes the backing block device before returning.
+Rsyncs the anime library from `/main/media/Video/Anime/` to `/mnt/nmedia/Media/Video/Anime`. Mounts `/mnt/nmedia` if needed (unmounts only when this script mounted it) and flushes the backing block device before returning.
 
 ```bash
 ./sync_anime.sh
@@ -105,7 +111,7 @@ Rsyncs the anime library from `/main/media/Video/Anime/` to `/mnt/nmedia/Media/V
 
 ### sync_audiobooks.sh
 
-Rsyncs the audiobook library from `/main/media/audiobooks/` to `/mnt/nmedia/Media/audiobooks`. Checks that `/mnt/nmedia` is mounted and flushes the backing block device before returning.
+Rsyncs the audiobook library from `/main/media/audiobooks/` to `/mnt/nmedia/Media/audiobooks`. Mounts `/mnt/nmedia` if needed (unmounts only when this script mounted it) and flushes the backing block device before returning.
 
 ```bash
 ./sync_audiobooks.sh
@@ -117,7 +123,7 @@ Rsyncs the audiobook library from `/main/media/audiobooks/` to `/mnt/nmedia/Medi
 
 ### sync_books.sh
 
-Rsyncs the book library from `/main/media/books/` to `/mnt/nmedia/Media/books`. Checks that `/mnt/nmedia` is mounted and flushes the backing block device before returning.
+Rsyncs the book library from `/main/media/books/` to `/mnt/nmedia/Media/books`. Mounts `/mnt/nmedia` if needed (unmounts only when this script mounted it) and flushes the backing block device before returning.
 
 ```bash
 ./sync_books.sh
@@ -129,7 +135,7 @@ Rsyncs the book library from `/main/media/books/` to `/mnt/nmedia/Media/books`. 
 
 ### sync_docker.sh
 
-Stops LXC container 100 (if running), rsyncs the Docker data volume from `/mnt/sysdata_docker/` to `/mnt/nmedia/DATA/sysdata_docker/`, then restarts the container if it was originally running. Checks that `/mnt/nmedia` is mounted before syncing. Uses rsync `--inplace` with `--hard-links`. Flushes block device buffers on `/mnt/nmedia` before returning.
+Stops LXC container 100 (if running), rsyncs the Docker data volume from `/mnt/sysdata_docker/` to `/mnt/nmedia/DATA/sysdata_docker/`, then restarts the container if it was originally running. Mounts `/mnt/nmedia` if not already mounted (and unmounts it only when this script mounted it). Flushes block device buffers on `/mnt/nmedia` before returning.
 
 ```bash
 ./sync_docker.sh
@@ -141,7 +147,7 @@ Stops LXC container 100 (if running), rsyncs the Docker data volume from `/mnt/s
 
 ### sync_backups.sh
 
-Rsyncs system backup data from `/mnt/sysdata_backups/` to `/mnt/nmedia/DATA/sysdata_backups/`. Checks that `/mnt/nmedia` is mounted. Flushes block device buffers on `/mnt/nmedia` before returning.
+Rsyncs system backup data from `/mnt/sysdata_backups/` to `/mnt/nmedia/DATA/sysdata_backups/`. Mounts `/mnt/nmedia` if needed (unmounts only when this script mounted it). Flushes block device buffers on `/mnt/nmedia` before returning.
 
 ```bash
 ./sync_backups.sh
@@ -153,7 +159,7 @@ Rsyncs system backup data from `/mnt/sysdata_backups/` to `/mnt/nmedia/DATA/sysd
 
 ### backup_docker.sh
 
-Stops LXC container 100 (if running), compresses `/mnt/sysdata_docker/` into a tar archive on `/mnt/nmedia/pve/`, then restarts the container if it was originally running. Moves any previous backup archive to a `hold/` subfolder before writing the new one. Supports three compressors via the `COMPRESSOR` variable at the top of the script.
+Stops LXC container 100 (if running), compresses `/mnt/sysdata_docker/` into a tar archive on `/mnt/nmedia/pve/`, then restarts the container if it was originally running. Powers on the USB drive first and powers it off at the end. Moves any previous backup archive to a `hold/` subfolder before writing the new one. Skips `*.tmp`. Supports three compressors via the `COMPRESSOR` variable at the top of the script.
 
 | Value | Tool | Notes |
 |---|---|---|
@@ -184,7 +190,7 @@ apt install zstd
 
 ### backup_etc.sh
 
-Archives `/etc` to `/mnt/nmedia/pve/etc-backup.tar.gz` using `tar`. Aborts if `/mnt/nmedia` is not mounted. Run on the Proxmox host to back up host configuration.
+Archives `/etc` to `/mnt/nmedia/pve/etc-backup.tar.gz` using `tar`. Skips `*.tmp`. Powers on the USB drive, aborts if `/mnt/nmedia` is not mounted, and powers the drive off at the end. Run on the Proxmox host to back up host configuration.
 
 ```bash
 ./backup_etc.sh
@@ -196,7 +202,7 @@ Archives `/etc` to `/mnt/nmedia/pve/etc-backup.tar.gz` using `tar`. Aborts if `/
 
 ### backup_root.sh
 
-Archives `/root` to `/mnt/nmedia/pve/root-backup.tar.gz` using `tar`. Aborts if `/mnt/nmedia` is not mounted. Run on the Proxmox host to back up the root home directory.
+Archives `/root` to `/mnt/nmedia/pve/root-backup.tar.gz` using `tar`. Skips `*.tmp`. Powers on the USB drive, aborts if `/mnt/nmedia` is not mounted, and powers the drive off at the end. Run on the Proxmox host to back up the root home directory.
 
 ```bash
 ./backup_root.sh
@@ -257,7 +263,7 @@ Stops LXC container 100 (if running), rsyncs system Docker data from `/mnt/sysda
 
 ### lxc-upgrade.sh
 
-Performs package upgrades for all running or stopped LXC containers on the Proxmox host. Stops any running containers, detects the package manager inside each container (apt, apk, dnf, yum, pacman, or xbps), runs the appropriate update command, and restarts any containers it started. Containers detected as needing an APT reboot are rebooted in place. Runs container updates in parallel with up to **3 concurrent jobs** at once.
+Performs package upgrades for all running or stopped LXC containers on the Proxmox host. Stops any running containers, detects the package manager inside each container (apt, apk, dnf, yum, pacman, or xbps), runs the appropriate update command, and restarts any containers it started. Also runs a container-provided custom update command at `/usr/bin/update` when present. Containers detected as needing an APT reboot are rebooted and waited on to come back online. Runs container updates in parallel with up to **3 concurrent jobs** at once.
 
 ```bash
 ./lxc-upgrade.sh
@@ -300,7 +306,7 @@ Displays the top 10 processes consuming swap, sorted by swap usage (descending).
 
 Small helpers to toggle USB-powered devices (power off / power on). `usb-poweroff.sh` unmounts `/mnt/nmedia` and calls `udisksctl power-off` on `/dev/sdk`.
 
-`usb-poweron.sh` performs a logical reset of the AMD XHCI PCI controller (`0000:30:00.4`), waits for the block device with UUID `5422D89122D87986` to reappear (up to 20 seconds), then mounts it back to `/mnt/nmedia`. This reset sequence handles AMD USB controller quirks with certain USB hubs.
+`usb-poweron.sh` first skips entirely if `/mnt/nmedia` is already mounted. Otherwise it performs a logical reset of the AMD XHCI PCI controller (`0000:30:00.4`), waits for the block device with UUID `5422D89122D87986` to reappear (up to 20 seconds), then mounts it back to `/mnt/nmedia`. This reset sequence handles AMD USB controller quirks with certain USB hubs.
 
 You will need to update the `DEVICE`, `UUID`, and `XHCI` variables in each script to match your system hardware.
 

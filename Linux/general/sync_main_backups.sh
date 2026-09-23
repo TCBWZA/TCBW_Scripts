@@ -26,7 +26,7 @@ log "Destination ZFS dataset is mounted."
 
 ### --- RSYNC --- ###
 log "Starting rsync from $SOURCE to $DEST..."
-rsync -avh --itemize-changes --progress --delete "$SOURCE" "$DEST"
+rsync -avh --itemize-changes --progress --delete --exclude='*.tmp' "$SOURCE" "$DEST"
 log "Sync complete."
 
 echo "Flushing write buffers..."

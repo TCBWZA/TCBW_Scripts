@@ -61,7 +61,7 @@ log "Destination ZFS dataset is mounted."
 
 ### --- RSYNC --- ###
 log "Starting rsync from $SOURCE to $DEST..."
-rsync -avh --itemize-changes --progress --delete "$SOURCE" "$DEST"
+rsync -avh --itemize-changes --progress --delete --exclude='*.tmp' "$SOURCE" "$DEST"
 sync
 log "Sync complete."
 

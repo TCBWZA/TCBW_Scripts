@@ -9,6 +9,9 @@ DEST="/mnt/nmedia/pve/docker-backup.tar"
 COMPRESSOR="pigz"   # options: pigz | zstd | gzip
 ### ---------------------- ###
 
+echo "=== POWERING ON USB DRIVE ==="
+usb-poweron.sh
+
 ORIGINALLY_RUNNING=false
 
 echo "Checking container state..."
@@ -75,5 +78,8 @@ if [ "$ORIGINALLY_RUNNING" = true ]; then
 else
     echo "Container was originally stopped. Leaving it stopped."
 fi
+
+echo "=== POWERING OFF USB DRIVE ==="
+usb-poweroff.sh
 
 echo "Done."
