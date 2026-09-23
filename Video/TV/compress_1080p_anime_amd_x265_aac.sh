@@ -211,6 +211,8 @@ for f in "${files[@]}"; do
     done
 
     audio_indices=()
+    audio_chs=()
+    audio_layouts=()
     for ((i = 0; i < ${#audio_streams[@]}; i += 2)); do
         idx="${audio_streams[$i]}"
         lang="${audio_streams[$((i + 1))]}"
@@ -218,6 +220,10 @@ for f in "${files[@]}"; do
             continue
         fi
         audio_indices+=("$idx")
+        info=$(jq -r --argjson idx "$idx" '.streams[] | select(.codec_type=="audio" and .index==$idx) | [((.channels // 0)|tostring), (.channel_layout // "unknown")] | @tsv' <<< "$probe")
+        read -r ch layout <<< "$info"
+        audio_chs+=("$ch")
+        audio_layouts+=("$layout")
     done
 
     debug "Audio indices (selected): ${audio_indices[*]}"
@@ -534,6 +540,36 @@ for f in "${files[@]}"; do
 
     debug "vf=$vf"
 
+    # AAC's native bitstream has fixed layouts (ADTS config). The PCE fallback
+    # ffmpeg uses for layouts like 5.1(side) muxes the track as channels=N with
+    # channel_layout=unknown, which players flag unsupported and which later
+    # re-encodes refuse ("Unsupported channel layout N channels"). Normalize any
+    # >stereo track whose layout the AAC encoder cannot carry natively to the
+    # standard same-width layout (5.1(side) -> 5.1, unknown 6ch -> 5.1).
+    audio_norm_args=()
+    for ((k = 0; k < ${#audio_indices[@]}; k++)); do
+        if (( audio_chs[k] > 2 )); then
+            case "${audio_layouts[$k]}" in
+                mono|stereo|2.1|3.0|4.0|5.0|5.1|6.1|7.0|7.1) ;;
+                *)
+                    std=""
+                    case "${audio_chs[$k]}" in
+                        3) std=3.0 ;;
+                        4) std=4.0 ;;
+                        5) std=5.0 ;;
+                        6) std=5.1 ;;
+                        7) std=6.1 ;;
+                        8) std=7.1 ;;
+                    esac
+                    if [[ -n "$std" ]]; then
+                        audio_norm_args+=( -filter:a:$k "aformat=channel_layouts=$std" )
+                    fi
+                    ;;
+            esac
+        fi
+    done
+    debug "Audio layout normalize args: ${audio_norm_args[*]:-none}"
+
     transcode_cmd=(
         run_ffmpeg
         -nostdin
@@ -546,6 +582,7 @@ for f in "${files[@]}"; do
         -c:v:0 hevc_vaapi
         -qp 28
         -metadata:s:v:0 language=zxx
+        "${audio_norm_args[@]}"
         -c:a aac
         -b:a 160k
         "${sub_codec_args[@]}"
