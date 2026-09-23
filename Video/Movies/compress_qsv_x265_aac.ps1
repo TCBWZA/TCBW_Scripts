@@ -103,6 +103,12 @@ Get-ChildItem -Recurse -Filter *.mkv | Where-Object { $_.Name -notlike "*-traile
     $acodec = ffprobe -v error -select_streams a:0 `
         -show_entries stream=codec_name -of default=nw=1:nk=1 "$File"
 
+    $achans = ffprobe -v error -select_streams a:0 `
+        -show_entries stream=channels -of default=nw=1:nk=1 "$File"
+
+    $alayout = ffprobe -v error -select_streams a:0 `
+        -show_entries stream=channel_layout -of default=nw=1:nk=1 "$File"
+
     $field = ffprobe -v error -select_streams v:0 `
         -show_entries stream=field_order -of default=nw=1:nk=1 "$File"
 
@@ -176,6 +182,27 @@ Get-ChildItem -Recurse -Filter *.mkv | Where-Object { $_.Name -notlike "*-traile
         $vf = ""
     }
 
+    # AAC's native bitstream has fixed layouts (ADTS config). The PCE fallback
+    # ffmpeg uses for layouts like 5.1(side) muxes the track as channels=N with
+    # channel_layout=unknown, which players flag unsupported and later
+    # re-encodes refuse. Normalize any >stereo track whose layout the AAC
+    # encoder cannot carry natively to the standard same-width layout.
+    $AudioNormArgs = @()
+    if ($achans -and $achans -match '^\d+$' -and [int]$achans -gt 2) {
+        $std = switch ([int]$achans) {
+            3 { "3.0" }
+            4 { "4.0" }
+            5 { "5.0" }
+            6 { "5.1" }
+            7 { "6.1" }
+            8 { "7.1" }
+        }
+        if ($std -and $alayout -notin @("mono", "stereo", "2.1", "3.0", "4.0", "5.0", "5.1", "6.1", "7.0", "7.1")) {
+            $AudioNormArgs = @("-filter:a:0", "aformat=channel_layouts=$std")
+        }
+    }
+    Write-DebugLog "Audio layout normalize args: $(if ($AudioNormArgs) { $AudioNormArgs -join ' ' } else { 'none' })"
+
     # mov_text -> SRT: MP4 text subtitles cannot be stream-copied into MKV
     $SubArgs = @('-c:s', 'copy')
     if ([System.IO.Path]::GetExtension($File).ToLower() -eq '.mp4') {
@@ -194,7 +221,7 @@ Get-ChildItem -Recurse -Filter *.mkv | Where-Object { $_.Name -notlike "*-traile
     Write-Host "Processing $File"
     # Start encoding job
     Start-Job -ScriptBlock {
-        param($File, $Tmp, $vf, $SubArgs)
+        param($File, $Tmp, $vf, $SubArgs, $AudioNormArgs)
          
         # Clean temp file immediately before ffmpeg runs
         if (Test-Path -LiteralPath $Tmp) {
@@ -207,6 +234,7 @@ Get-ChildItem -Recurse -Filter *.mkv | Where-Object { $_.Name -notlike "*-traile
                 -i "$File" `
                 -c:v hevc_qsv `
                 -b:v 1800k -maxrate 2000k -bufsize 4000k `
+                @AudioNormArgs `
                 -c:a aac -b:a 160k `
                 @SubArgs `
                 -f matroska `
@@ -218,6 +246,7 @@ Get-ChildItem -Recurse -Filter *.mkv | Where-Object { $_.Name -notlike "*-traile
                 -vf "$vf" `
                 -c:v hevc_qsv `
                 -b:v 1800k -maxrate 2000k -bufsize 4000k `
+                @AudioNormArgs `
                 -c:a aac -b:a 160k `
                 @SubArgs `
                 -f matroska `
@@ -267,7 +296,7 @@ Get-ChildItem -Recurse -Filter *.mkv | Where-Object { $_.Name -notlike "*-traile
             }
         }
 
-    } -ArgumentList $File, $Tmp, $vf, $SubArgs
+    } -ArgumentList $File, $Tmp, $vf, $SubArgs, $AudioNormArgs
 
 }
 

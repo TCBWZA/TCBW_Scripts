@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # =============================================================================
-# MOVIE METADATA APPLIER (Proxmox‑safe, colourised)
+# MOVIE METADATA APPLIER (Proxmox-safe, colourised)
 # =============================================================================
 #   Applies movie metadata from NFO files to MKV files using mkvpropedit.
 #
@@ -20,7 +20,7 @@
 # =============================================================================
 
 # ------------------------------
-# Shell options (Proxmox‑safe)
+# Shell options (Proxmox-safe)
 # ------------------------------
 set -ou pipefail
 IFS=$'\n\t'

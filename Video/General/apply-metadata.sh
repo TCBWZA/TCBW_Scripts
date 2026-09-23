@@ -230,7 +230,7 @@ while IFS= read -r -d '' mkv; do
 
         # Validate XML
         if ! xmlstarlet val "$nfo_clean" >/dev/null 2>&1; then
-            log WARN "Invalid XML in NFO — ignoring: $nfo"
+            log WARN "Invalid XML in NFO -- ignoring: $nfo"
             apply_tags=0
         fi
     fi
@@ -295,7 +295,7 @@ while IFS= read -r -d '' mkv; do
                 ;;
 
             *)
-                log WARN "Unknown NFO root <$root> — skipping tags"
+                log WARN "Unknown NFO root <$root> -- skipping tags"
                 apply_tags=0
                 ;;
         esac

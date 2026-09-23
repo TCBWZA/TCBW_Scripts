@@ -142,7 +142,7 @@ build_tags_xml() {
 echo "Scanning recursively for MKV files..."
 log_audit "=== Episode run started ==="
 
-# Corrected loop — no subshell
+# Corrected loop -- no subshell
 tmpfile=$(mktemp)
 find . -type f -iname '*.mkv' -print0 > "$tmpfile"
 while IFS= read -r -d '' mkv; do

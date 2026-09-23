@@ -276,7 +276,7 @@ for f in "${files[@]}"; do
 
     rm -f -- "$tmpfile"
 
-    echo "Remuxing $f → MKV"
+    echo "Remuxing $f -> MKV"
     debug "Temp file: $tmpfile"
 
     ffmpeg -nostdin -hide_banner -y \
@@ -305,7 +305,7 @@ for f in "${files[@]}"; do
         chown 1000:1000 "$output_mkv"
         chmod 666 "$output_mkv"
 
-        echo "Done: $((orig_size/1024/1024))MB → $((new_size/1024/1024))MB"
+        echo "Done: $((orig_size/1024/1024))MB -> $((new_size/1024/1024))MB"
 
         #####################################################
         # Apply movie metadata from NFO

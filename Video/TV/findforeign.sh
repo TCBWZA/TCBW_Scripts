@@ -4,13 +4,13 @@
 #  Foreign-Only Audio Scanner (Bash Version)
 #
 #  Behaviour:
-#      • Sonarr enabled by default
-#      • --no-sonarr disables Sonarr
-#      • CSV logging only when --csv is provided
-#      • --append requires --csv
-#      • Full audit-safe parameter validation
-#      • .skip file support to ignore entire shows
-#      • Colourised terminal output
+#      - Sonarr enabled by default
+#      - --no-sonarr disables Sonarr
+#      - CSV logging only when --csv is provided
+#      - --append requires --csv
+#      - Full audit-safe parameter validation
+#      - .skip file support to ignore entire shows
+#      - Colourised terminal output
 #
 #  Requirements (Debian/Ubuntu/WSL):
 #      sudo apt update

@@ -229,7 +229,7 @@ for f in "${files[@]}"; do
         continue
     fi
 
-    # mov_text → SRT: MP4 text subtitles cannot be stream-copied into MKV
+    # mov_text -> SRT: MP4 text subtitles cannot be stream-copied into MKV
     sub_codec_args=(-c:s copy)
     if [[ "$f" == *.mp4 ]]; then
         if jq -e '[.streams[] | select(.codec_type=="subtitle" and .codec_name=="mov_text")] | length > 0' <<< "$probe" >/dev/null 2>&1; then
@@ -295,7 +295,7 @@ for f in "${files[@]}"; do
         # No transcode needed -- check for container problems
         #####################################################
         if [[ "$WANT_REMUX_CHECK" == "true" ]] && [[ "$acodec" == "aac" ]] && check_container_problem "$f"; then
-            echo "Remuxing $f → container repair"
+            echo "Remuxing $f -> container repair"
             tmpfile="$dir/${base_no_ext}[Trans].tmp"
 
             rm -f -- "$tmpfile"
@@ -316,7 +316,7 @@ for f in "${files[@]}"; do
                 mv -- "$tmpfile" "$f"
                 chown 1000:1000 "$f"
                 chmod 666 "$f"
-                echo "Replaced (remux): $((orig_size/1024/1024))MB → $((new_size/1024/1024))MB"
+                echo "Replaced (remux): $((orig_size/1024/1024))MB -> $((new_size/1024/1024))MB"
             else
                 rm -f -- "$tmpfile"
             fi
@@ -341,7 +341,7 @@ for f in "${files[@]}"; do
     case "$status" in
 
         progressive)
-            debug "Transcode path: PROGRESSIVE → CPU decode + VAAPI encode (fast path)"
+            debug "Transcode path: PROGRESSIVE -> CPU decode + VAAPI encode (fast path)"
             transcode_cmd=(
                 run_ffmpeg
                 -nostdin
@@ -361,7 +361,7 @@ for f in "${files[@]}"; do
             ;;
 
         interlaced)
-            debug "Transcode path: INTERLACED → CPU bwdif + VAAPI encode"
+            debug "Transcode path: INTERLACED -> CPU bwdif + VAAPI encode"
             transcode_cmd=(
                 run_ffmpeg 
                 -nostdin
@@ -381,7 +381,7 @@ for f in "${files[@]}"; do
             ;;
 
         telecine)
-            debug "Transcode path: TELECINE → CPU pullup/dejudder + VAAPI encode"
+            debug "Transcode path: TELECINE -> CPU pullup/dejudder + VAAPI encode"
             transcode_cmd=(
                 run_ffmpeg
                 -nostdin
@@ -416,7 +416,7 @@ for f in "${files[@]}"; do
                 mv -- "$tmpfile" "$f"
                 chown 1000:1000 "$f"
                 chmod 666 "$f"
-                echo "Replaced: $((orig_size/1024/1024))MB → $((new_size/1024/1024))MB"
+                echo "Replaced: $((orig_size/1024/1024))MB -> $((new_size/1024/1024))MB"
             else
                 echo "Skipped: new file not smaller"
                 touch "$file_skip_file"
