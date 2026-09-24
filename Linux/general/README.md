@@ -263,13 +263,28 @@ Stops LXC container 100 (if running), rsyncs system Docker data from `/mnt/sysda
 
 ### lxc-upgrade.sh
 
-Performs package upgrades for all running or stopped LXC containers on the Proxmox host. Stops any running containers, detects the package manager inside each container (apt, apk, dnf, yum, pacman, or xbps), runs the appropriate update command, and restarts any containers it started. Also runs a container-provided custom update command at `/usr/bin/update` when present. Containers detected as needing an APT reboot are rebooted and waited on to come back online. Runs container updates in parallel with up to **3 concurrent jobs** at once.
+Performs package upgrades for all LXC containers on the Proxmox host. Detects the package manager inside each container (apt, apk, dnf, yum, pacman, or xbps) and runs the appropriate upgrade command; containers that were stopped are started for the run and stopped again afterwards. Containers flagged as needing an APT reboot are rebooted and waited on to come back online. Containers are updated in parallel with up to **3 concurrent jobs**; all operations are logged to `/var/log/lxc-update-<CTID>.log`.
+
+When a container provides a `/usr/bin/update` entrypoint (installed at build time by the community-scripts project for Proxmox VE LXC apps), the script also runs it to apply the app-level update. Community-scripts update entrypoints support unattended operation, so the script invokes them as `env PHS_SILENT=1 /usr/bin/update` -- `PHS_SILENT=1` is the project's supported environment variable for silent mode: it skips the interactive update menu, auto-selects the default option, and suppresses addon prompts (the project's own batch `update-apps.sh` uses the same switch). Update scripts that do not honour the variable simply run normally.
 
 ```bash
 ./lxc-upgrade.sh
 ```
 
-**Requirements:** `pct` (Proxmox host), log output saved to `/var/log/lxc-update-<CTID>.log`
+**Requirements:** `pct` (Proxmox host). The host itself is updated first with `apt update && apt upgrade -y && apt autoremove -y`.
+
+---
+
+### shrink_boot_disk.sh
+
+Shrinks an LXC rootfs that is a RAW disk image on directory storage (e.g. `ssd2`). For LVM-backed rootfs use `shrinkvol.sh` instead. Stops the container, attaches the raw image via loopback, runs `e2fsck` + `resize2fs` down to the target size, truncates the image file to the real filesystem size, and updates the container config. Potentially destructive; always back up first.
+
+```bash
+./shrink_boot_disk.sh <VMID> [NEW_SIZE]   # size prompted if omitted (e.g. 48G)
+./shrink_boot_disk.sh -d <VMID>           # dry run: plan + used-space check, no changes
+```
+
+**Requirements:** `e2fsck`, `resize2fs`, `tune2fs`, `losetup`, `truncate`, `pvesm`, `pct`, run as root on the Proxmox host.
 
 ---
 

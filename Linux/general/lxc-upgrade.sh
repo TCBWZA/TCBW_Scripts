@@ -97,7 +97,7 @@ update_container() {
     # Run container-provided update command
     if pct exec "$CTID" -- test -x /usr/bin/update; then
         echo "Running container custom update command (/usr/bin/update)..."
-        pct exec "$CTID" -- /usr/bin/update >> "$LOGFILE" 2>&1
+        pct exec "$CTID" -- env PHS_SILENT=1 /usr/bin/update >> "$LOGFILE" 2>&1
     else
         echo "No /usr/bin/update command found in CT $CTID"
     fi
