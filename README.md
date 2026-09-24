@@ -88,6 +88,7 @@ TCBW_Scripts/
 |       |--  remux.ps1                     - Container-repair remux without re-encoding (PowerShell)
 |       \--  repack_mkv_lang.sh            - Track-filtering MKV remux without re-encoding (bash)
 |--  Windows/
+|   |--  backup-wsl.ps1                    - Exports a WSL distro to a compressed 7z archive with retention (PowerShell)
 |   \--  General/
 |       \--  sync_robo.ps1                 - Robocopy-based sync helper for Windows (PowerShell)
 \--  audio/
