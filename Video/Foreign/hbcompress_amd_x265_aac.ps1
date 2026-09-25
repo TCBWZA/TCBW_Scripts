@@ -350,8 +350,21 @@ foreach ($f in $files) {
     # Per-file skip
     $fileSkip = Join-Path $dir (".skip_$base")
     if (Test-Path -LiteralPath $fileSkip) {
-        Write-Host "Skipping $($f.FullName) -- file marked skip"
-        continue
+        $marker = [System.IO.FileInfo]::new($fileSkip)
+        $honour = $true
+        if ($marker.Length -gt 0) {
+            $fingerprinted = [System.IO.File]::ReadAllText($fileSkip) -match '^compliant-v1\|(\d+)\|(\d+)$'
+            $honour = -not $fingerprinted -or ($f.Length -eq [long]$matches[1] -and $f.LastWriteTimeUtc.Ticks -eq [long]$matches[2])
+            if (-not $honour) {
+                Write-Host "Stale compliant marker for $($f.FullName) -- rechecking"
+                Debug "Fingerprint mismatch, removing: $fileSkip"
+                Remove-Item -LiteralPath $fileSkip -Force
+            }
+        }
+        if ($honour) {
+            Write-Host "Skipping $($f.FullName) -- file marked skip"
+            continue
+        }
     }
 
     # Delete leftover cleaned/transcoded
@@ -483,6 +496,8 @@ foreach ($f in $files) {
 
     if (-not $needs) {
         Write-Host "Skipping $($f.FullName) -- already in desired format"
+        Set-Content -LiteralPath $fileSkip -Value "compliant-v1|$($f.Length)|$($f.LastWriteTimeUtc.Ticks)" -Encoding ascii -NoNewline
+        Debug "Compliant fingerprint written: $fileSkip"
         continue
     }
 

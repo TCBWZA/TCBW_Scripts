@@ -353,7 +353,7 @@ foreach ($f in $files) {
     Debug "---------------------------------------------"
     Debug "Processing file: $($f.FullName)"
 
-    Write-Host "$([char]0x1B)]0;$($f.Name)`a"
+    Write-Host -NoNewline "$([char]0x1B)]0;$($f.Name)`a"
 
     # SKIP: SIZE < 1GB
     if ($f.Length -lt 1GB) {
@@ -388,9 +388,22 @@ foreach ($f in $files) {
     $fileSkip = Join-Path $dir ".skip_$baseNoExt"
 
     if (Test-Path -LiteralPath $fileSkip) {
-        Write-Host "Skipping $($f.FullName) -- file marked with $(Split-Path $fileSkip -Leaf)"
-        Debug "Per-file skip triggered: $fileSkip"
-        continue
+        $marker = [System.IO.FileInfo]::new($fileSkip)
+        $honour = $true
+        if ($marker.Length -gt 0) {
+            $fingerprinted = [System.IO.File]::ReadAllText($fileSkip) -match '^compliant-v1\|(\d+)\|(\d+)$'
+            $honour = -not $fingerprinted -or ($f.Length -eq [long]$matches[1] -and $f.LastWriteTimeUtc.Ticks -eq [long]$matches[2])
+            if (-not $honour) {
+                Write-Host "Stale compliant marker for $($f.FullName) -- rechecking"
+                Debug "Fingerprint mismatch, removing: $fileSkip"
+                Remove-Item -LiteralPath $fileSkip -Force
+            }
+        }
+        if ($honour) {
+            Write-Host "Skipping $($f.FullName) -- file marked with $(Split-Path $fileSkip -Leaf)"
+            Debug "Per-file skip triggered: $fileSkip"
+            continue
+        }
     }
 
     # SKIP: Already processed
@@ -400,7 +413,7 @@ foreach ($f in $files) {
         continue
     }
 
-    Write-Host "`nChecking $($f.FullName)"
+    Write-Host "Checking $($f.FullName)"
     Debug "Running ffprobe..."
 
     # ffprobe JSON (streams only)
@@ -542,6 +555,8 @@ foreach ($f in $files) {
     ###############################################################
     if (-not $needs_convert) {
         Write-Host "Skipping $($f.FullName) -- already in desired format"
+        Set-Content -LiteralPath $fileSkip -Value "compliant-v1|$($f.Length)|$($f.LastWriteTimeUtc.Ticks)" -Encoding ascii -NoNewline
+        Debug "Compliant fingerprint written: $fileSkip"
         continue
     }
 
