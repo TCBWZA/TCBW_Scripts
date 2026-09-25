@@ -131,8 +131,9 @@ Get-ChildItem -Recurse -Filter *.mkv | Where-Object { $_.Name -notlike "*-traile
     Write-DebugLog "vcodec=$vcodec vbitrate=$vbitrate acodec=$acodec field=$field NeedsConvert=$NeedsConvert"
 
     if (-not $NeedsConvert) {
-        if (Test-ContainerProblem -Path $File) {
-            Write-Host "Remuxing $File -> container repair"
+        $isMkv = [System.IO.Path]::GetExtension($File) -ieq ".mkv"
+        if ((Test-ContainerProblem -Path $File) -or -not $isMkv) {
+            Write-Host "Remuxing $File -> MKV (stream copy)"
             $Tmp = Join-Path $Dir "$Base`[Trans`].tmp"
             if (Test-Path $Tmp) { Remove-Item $Tmp -Force }
 
@@ -153,9 +154,15 @@ Get-ChildItem -Recurse -Filter *.mkv | Where-Object { $_.Name -notlike "*-traile
                 $timestamp = $origFile.LastWriteTime
                 $origMB = [math]::Round($origFile.Length / 1MB, 2)
                 $newMB  = [math]::Round((Get-Item -LiteralPath $Tmp).Length / 1MB, 2)
-                Remove-Item -LiteralPath $File -Force
-                Move-Item -LiteralPath $Tmp -Destination $File -Force
-                (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
+                $finalPath = if ([System.IO.Path]::GetExtension($File) -ieq ".mkv") { $File } else { [System.IO.Path]::ChangeExtension($File, ".mkv") }
+                if ($finalPath -ne $File -and (Test-Path -LiteralPath $finalPath)) {
+                    Write-Host "Target already exists, refusing to overwrite: $finalPath"
+                    Remove-Item -LiteralPath $Tmp -Force
+                    return
+                }
+                Move-Item -LiteralPath $Tmp -Destination $finalPath -Force
+                if ($finalPath -ne $File) { Remove-Item -LiteralPath $File -Force }
+                (Get-Item -LiteralPath $finalPath).LastWriteTime = $timestamp
                 Write-Host "Replaced (remux): ${origMB}MB -> ${newMB}MB"
             } else {
                 if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Force }
@@ -275,9 +282,15 @@ Get-ChildItem -Recurse -Filter *.mkv | Where-Object { $_.Name -notlike "*-traile
             
             if ($newSize -lt $origSize) {
                 $timestamp = $origFile.LastWriteTime
-                Remove-Item -LiteralPath $File -Force
-                Move-Item -LiteralPath $Tmp -Destination $File -Force
-                (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
+                $finalPath = if ([System.IO.Path]::GetExtension($File) -ieq ".mkv") { $File } else { [System.IO.Path]::ChangeExtension($File, ".mkv") }
+                if ($finalPath -ne $File -and (Test-Path -LiteralPath $finalPath)) {
+                    Write-Host "Target already exists, refusing to overwrite: $finalPath"
+                    Remove-Item -LiteralPath $Tmp -Force
+                    return
+                }
+                Move-Item -LiteralPath $Tmp -Destination $finalPath -Force
+                if ($finalPath -ne $File) { Remove-Item -LiteralPath $File -Force }
+                (Get-Item -LiteralPath $finalPath).LastWriteTime = $timestamp
                 $origMB = [math]::Round($origSize / 1MB, 2)
                 $newMB = [math]::Round($newSize / 1MB, 2)
                 Write-Host "Replaced: ${origMB}MB -> ${newMB}MB"

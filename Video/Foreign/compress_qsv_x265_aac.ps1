@@ -235,11 +235,12 @@ $AllFiles | ForEach-Object -Parallel {
 
     if (-not $NeedsConvert) {
         #####################################################
-        # No transcode needed -- check for container problems
+        # No transcode needed: repair a sick MKV, or make it MKV at all
         #####################################################
         $hasContainerProblem = & $using:ContainerCheckSB $File
-        if ($hasContainerProblem) {
-            Write-Host "Remuxing $File -> container repair"
+        $isMkv = [System.IO.Path]::GetExtension($File) -ieq ".mkv"
+        if ($hasContainerProblem -or -not $isMkv) {
+            Write-Host "Remuxing $File -> MKV (stream copy)"
             if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Force }
 
             ffmpeg -nostdin -hide_banner -y `
@@ -255,9 +256,15 @@ $AllFiles | ForEach-Object -Parallel {
                 $timestamp = $origFile.LastWriteTime
                 $origMB = [math]::Round($origFile.Length / 1MB, 2)
                 $newMB  = [math]::Round((Get-Item -LiteralPath $Tmp).Length / 1MB, 2)
-                Remove-Item -LiteralPath $File -Force
-                Move-Item -LiteralPath $Tmp -Destination $File -Force
-                (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
+                $finalPath = if ([System.IO.Path]::GetExtension($File) -ieq ".mkv") { $File } else { [System.IO.Path]::ChangeExtension($File, ".mkv") }
+                if ($finalPath -ne $File -and (Test-Path -LiteralPath $finalPath)) {
+                    Write-Host "Target already exists, refusing to overwrite: $finalPath"
+                    Remove-Item -LiteralPath $Tmp -Force
+                    return
+                }
+                Move-Item -LiteralPath $Tmp -Destination $finalPath -Force
+                if ($finalPath -ne $File) { Remove-Item -LiteralPath $File -Force }
+                (Get-Item -LiteralPath $finalPath).LastWriteTime = $timestamp
                 Write-Host "Replaced (remux): ${origMB}MB -> ${newMB}MB"
             }
             else {
@@ -321,9 +328,15 @@ $AllFiles | ForEach-Object -Parallel {
             
             if ($newSize -lt $origSize) {
                 $timestamp = $origFile.LastWriteTime
-                Remove-Item -LiteralPath $File -Force
-                Move-Item -LiteralPath $Tmp -Destination $File -Force
-                (Get-Item -LiteralPath $File).LastWriteTime = $timestamp
+                $finalPath = if ([System.IO.Path]::GetExtension($File) -ieq ".mkv") { $File } else { [System.IO.Path]::ChangeExtension($File, ".mkv") }
+                if ($finalPath -ne $File -and (Test-Path -LiteralPath $finalPath)) {
+                    Write-Host "Target already exists, refusing to overwrite: $finalPath"
+                    Remove-Item -LiteralPath $Tmp -Force
+                    return
+                }
+                Move-Item -LiteralPath $Tmp -Destination $finalPath -Force
+                if ($finalPath -ne $File) { Remove-Item -LiteralPath $File -Force }
+                (Get-Item -LiteralPath $finalPath).LastWriteTime = $timestamp
                 $origMB = [math]::Round($origSize / 1MB, 2)
                 $newMB = [math]::Round($newSize / 1MB, 2)
                 Write-Host "Replaced: ${origMB}MB -> ${newMB}MB"

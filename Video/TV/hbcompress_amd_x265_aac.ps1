@@ -242,9 +242,18 @@ function Invoke-AtomicReplace {
             return
         }
 
-        Write-Host "Removing original -> $OrigFile"
-        Debug "Removing original"
-        Remove-Item -LiteralPath $OrigFile -Force
+        $isMkv = [System.IO.Path]::GetExtension($OrigFile) -ieq ".mkv"
+        $finalPath = if ($isMkv) { $OrigFile } else { [System.IO.Path]::ChangeExtension($OrigFile, ".mkv") }
+
+        if ($finalPath -ne $OrigFile) {
+            if (Test-Path -LiteralPath $finalPath) {
+                Write-Host "Target already exists, refusing to overwrite: $finalPath"
+                Debug "Destination collision: $finalPath"
+                Remove-Item -LiteralPath $TmpFile -Force
+                return
+            }
+            Write-Host "Output will be Matroska -> $finalPath"
+        }
 
         # Final lock check before move
         if (Test-FileLocked -Path $TmpFile) {
@@ -254,9 +263,10 @@ function Invoke-AtomicReplace {
             return
         }
 
-        Write-Host "Committing new file -> $OrigFile"
+        Write-Host "Committing new file -> $finalPath"
         Debug "Moving temp file into place"
-        Move-Item -LiteralPath $TmpFile -Destination $OrigFile -Force
+        Move-Item -LiteralPath $TmpFile -Destination $finalPath -Force
+        if ($finalPath -ne $OrigFile) { Remove-Item -LiteralPath $OrigFile -Force }
 
         Write-Host "Replaced: ${origMB}MB -> ${newMB}MB"
         Debug "Atomic replacement complete"
@@ -371,6 +381,8 @@ foreach ($f in $files) {
 
     $baseNoExt = $f.BaseName
     $dir       = $f.DirectoryName
+
+    $isMkv = $f.Extension -ieq ".mkv"
 
     Debug "Base name: $baseNoExt"
     Debug "Directory: $dir"
@@ -543,22 +555,23 @@ foreach ($f in $files) {
     ###############################################################
     $canRemux = $false
 
-    # Only MKV is eligible for container-repair remux
-    if ($f.Extension -ieq ".mkv") {
+    # Only remux if transcoding is NOT needed
+    if (-not $needs_convert) {
 
-        # Only remux if transcoding is NOT needed
-        if (-not $needs_convert) {
-
+        if ($isMkv) {
             # Only remux if MKV container is problematic
             if (Test-MKVContainerProblem -Path $f.FullName) {
                 $canRemux = $true
             }
         }
+        else {
+            $canRemux = $true
+        }
     }
 
     if ($canRemux) {
-        Write-Host "Remuxing $($f.FullName) -> container repair"
-        Debug "Container-repair remux triggered"
+        Write-Host "Remuxing $($f.FullName) -> MKV (stream copy)"
+        Debug "Stream-copy remux triggered"
 
         $tmpfile = Join-Path $dir ($baseNoExt + '[Trans].tmp')
 

@@ -91,6 +91,25 @@ run_ffmpeg() {
     return $?
 }
 
+commit_as_mkv() {
+    local tmp_file="$1" src_file="$2" dest_file
+    if [[ "$src_file" == *.mkv ]]; then
+        dest_file="$src_file"
+    else
+        dest_file="${src_file%.*}.mkv"
+        if [[ -e "$dest_file" ]]; then
+            echo "ERROR: target exists, refusing to overwrite: $dest_file" >&2
+            return 1
+        fi
+    fi
+    touch -r "$src_file" "$tmp_file"
+    mv -- "$tmp_file" "$dest_file" || return 1
+    [[ "$dest_file" == "$src_file" ]] || rm -f -- "$src_file"
+    chown 1000:1000 "$dest_file"
+    chmod 666 "$dest_file"
+    return 0
+}
+
 MAX_JOBS=2
 
 echo "Starting up..."
@@ -340,9 +359,9 @@ for f in "${files[@]}"; do
     needs_downscale=false
     (( height > 1080 )) && needs_downscale=true
 
-    # HDR detection: smpte2084 (HDR10) / arib-std-b67 (HLG) -> tone map to SDR
+    # HDR detection: smpte2084 / bt2020-10 (HDR10) / arib-std-b67 (HLG) -> tone map to SDR
     needs_tonemap=false
-    if [[ "$color_transfer" =~ ^(smpte2084|arib-std-b67)$ ]]; then
+    if [[ "$color_transfer" =~ ^(smpte2084|bt2020-10|arib-std-b67)$ ]]; then
         needs_tonemap=true
     fi
 
@@ -415,10 +434,19 @@ for f in "${files[@]}"; do
     debug "Needs convert: $needs_convert"
     if ! $needs_convert; then
         #####################################################
-        # No transcode needed -- check for container problems
+        # No transcode needed: repair a sick MKV, or make it MKV at all
         #####################################################
-        if [[ "$WANT_REMUX_CHECK" == "true" ]] && [[ "$acodec" == "aac" ]] && check_container_problem "$f"; then
-            echo "Remuxing $f -> container repair"
+        do_remux=false
+        if [[ "$WANT_REMUX_CHECK" == "true" ]] && [[ "$acodec" == "aac" ]]; then
+            if [[ "$f" == *.mkv ]]; then
+                check_container_problem "$f" && do_remux=true
+            else
+                do_remux=true
+            fi
+        fi
+
+        if $do_remux; then
+            echo "Remuxing $f -> MKV (stream copy)"
             tmpfile="$dir/${base_no_ext}[Trans].tmp"
 
             rm -f -- "$tmpfile"
@@ -442,12 +470,11 @@ for f in "${files[@]}"; do
             if [[ $? -eq 0 ]]; then
                 orig_size=$(stat -c%s "$f")
                 new_size=$(stat -c%s "$tmpfile")
-                touch -r "$f" "$tmpfile"
-                rm -f -- "$f"
-                mv -- "$tmpfile" "$f"
-                chown 1000:1000 "$f"
-                chmod 666 "$f"
-                echo "Replaced (remux): $((orig_size/1024/1024))MB -> $((new_size/1024/1024))MB"
+                if commit_as_mkv "$tmpfile" "$f"; then
+                    echo "Replaced (remux): $((orig_size/1024/1024))MB -> $((new_size/1024/1024))MB"
+                else
+                    rm -f -- "$tmpfile"
+                fi
             else
                 rm -f -- "$tmpfile"
             fi
@@ -598,12 +625,11 @@ for f in "${files[@]}"; do
             new_size=$(stat -c%s "$tmpfile")
 
             if (( new_size * 10 < orig_size * 9 )); then
-                touch -r "$f" "$tmpfile"
-                rm -f -- "$f"
-                mv -- "$tmpfile" "$f"
-                chown 1000:1000 "$f"
-                chmod 666 "$f"
-                echo "Replaced: $((orig_size/1024/1024))MB -> $((new_size/1024/1024))MB"
+                if commit_as_mkv "$tmpfile" "$f"; then
+                    echo "Replaced: $((orig_size/1024/1024))MB -> $((new_size/1024/1024))MB"
+                else
+                    rm -f -- "$tmpfile"
+                fi
             else
                 echo "Skipped: new file not smaller"
                 touch "$file_skip_file"
@@ -625,12 +651,11 @@ for f in "${files[@]}"; do
                     mkv_args+=("$f")
                     "${mkv_args[@]}"
                     if [[ $? -eq 0 && -s "$strip_tmpfile" ]]; then
-                        touch -r "$f" "$strip_tmpfile"
-                        rm -f -- "$f"
-                        mv -- "$strip_tmpfile" "$f"
-                        chown 1000:1000 "$f"
-                        chmod 666 "$f"
-                        echo "Replaced (mkvmerge strip): tracks fixed, video bitstream unchanged"
+                        if commit_as_mkv "$strip_tmpfile" "$f"; then
+                            echo "Replaced (mkvmerge strip): tracks fixed, video bitstream unchanged"
+                        else
+                            rm -f -- "$strip_tmpfile"
+                        fi
                     else
                         echo "mkvmerge strip failed for $f"
                         rm -f -- "$strip_tmpfile"

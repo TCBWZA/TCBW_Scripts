@@ -220,7 +220,17 @@ function Invoke-AtomicReplace {
         return
     }
 
-    Remove-Item -LiteralPath $OrigFile -Force
+    $isMkv = [System.IO.Path]::GetExtension($OrigFile) -ieq ".mkv"
+    $finalPath = if ($isMkv) { $OrigFile } else { [System.IO.Path]::ChangeExtension($OrigFile, ".mkv") }
+
+    if ($finalPath -ne $OrigFile) {
+        if (Test-Path -LiteralPath $finalPath) {
+            Write-Host "Target already exists, refusing to overwrite: $finalPath"
+            Remove-Item -LiteralPath $TmpFile -Force
+            return
+        }
+        Write-Host "Output will be Matroska -> $finalPath"
+    }
 
     if (Test-FileLocked -Path $TmpFile) {
         Write-Host "Temp file locked at final move"
@@ -228,8 +238,9 @@ function Invoke-AtomicReplace {
         return
     }
 
-    Move-Item -LiteralPath $TmpFile -Destination $OrigFile -Force
-    Write-Host "Replaced file"
+    Move-Item -LiteralPath $TmpFile -Destination $finalPath -Force
+    if ($finalPath -ne $OrigFile) { Remove-Item -LiteralPath $OrigFile -Force }
+    Write-Host "Replaced file -> $finalPath"
 }
 
 # =====================================================================
