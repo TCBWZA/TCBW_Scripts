@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-set +e +u +o pipefail
 set -u -o pipefail
 
 # ============================================================
@@ -66,7 +65,7 @@ APPEND=0
 AUDIT=0
 ENABLE_SONARR=1
 DEBUG=false
-SONARR_URL="http://docker:8989"
+SONARR_URL="http://docker.local:8989"
 SONARR_API_KEY="YOUR_API_KEY_HERE"
 SONARR_LOG=""
 

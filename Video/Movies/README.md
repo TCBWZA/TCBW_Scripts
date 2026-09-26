@@ -274,7 +274,7 @@ PowerShell utility that recursively scans a directory for corrupt MKV files usin
 | `-CsvFile` | No | | CSV log file path (leave empty to disable CSV logging) |
 | `-Append` | No | | Append to CSV instead of overwriting |
 | `-Audit` | No | | Dry-run mode; no deletions or Radarr API calls (connectivity check still runs) |
-| `-RadarrUrl` | No | `http://docker:7878` | Radarr base URL |
+| `-RadarrUrl` | No | `http://docker.local:7878` | Radarr base URL |
 | `-RadarrLogFile` | No | `D:\Work\RadarrLog.txt` | Log file for Radarr actions |
 | `-MissingMovieLog` | No | `D:\Work\MissingMovies.txt` | Log file for unmatched movies |
 | `-Help` / `-ShowHelp` / `-?` | No | | Show built-in help |
@@ -346,7 +346,7 @@ Bash script that remuxes MP4 files into MKV containers without re-encoding. Inte
 Edit the following constants near the top of the script before running:
 
 ```bash
-RADARR_URL="http://docker:7878"
+RADARR_URL="http://docker.local:7878"
 RADARR_API_KEY="YOUR_API_KEY_HERE"
 RADARR_LOG="/tmp/remux_radarr.log"
 MISSING_LOG="/tmp/remux_missing.log"

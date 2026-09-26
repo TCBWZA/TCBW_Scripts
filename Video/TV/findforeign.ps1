@@ -79,7 +79,7 @@ param(
 
     [switch]$Debug,
 
-    [string]$SonarrUrl = "http://docker:8989",
+    [string]$SonarrUrl = "http://docker.local:8989",
 
     [string]$SonarrLogFile = "D:\Work\SonarrLog.txt"
 )

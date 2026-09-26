@@ -40,7 +40,6 @@
 #       directory must exist and be writable).
 # =============================================================================
 
-set +e +u +o pipefail
 set -u -o pipefail
 IFS=$'\n\t'
 

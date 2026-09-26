@@ -435,7 +435,7 @@ PowerShell equivalent of `findforeign.sh`. Scans a directory tree for MKV files 
 | `-CsvFile` | Yes | | Output CSV file path |
 | `-Append` | No | | Append to existing CSV instead of overwriting |
 | `-EnableSonarr` | No | | Enable Sonarr replacement workflow |
-| `-SonarrUrl` | No | `http://docker:8989` | Sonarr base URL |
+| `-SonarrUrl` | No | `http://docker.local:8989` | Sonarr base URL |
 | `-SonarrLogFile` | No | `D:\Work\SonarrLog.txt` | Log file for Sonarr actions |
 
 **Configuration:**
@@ -496,7 +496,7 @@ PowerShell utility that recursively scans a directory for corrupt MKV files usin
 | `-Append` | No | | Append to CSV instead of overwriting |
 | `-EnableSonarr` | No | | Enable Sonarr replacement workflow |
 | `-Audit` | No | | Dry-run mode; no deletions or API calls |
-| `-SonarrUrl` | No | `http://docker:8989` | Sonarr base URL |
+| `-SonarrUrl` | No | `http://docker.local:8989` | Sonarr base URL |
 | `-SonarrLogFile` | No | `D:\Work\SonarrLog.txt` | Log file for Sonarr actions |
 | `-MissingSeriesLog` | No | `D:\Work\MissingSeries.txt` | Log file for unmatched series |
 | `-Help` / `-ShowHelp` / `-?` | No | | Show built-in help |

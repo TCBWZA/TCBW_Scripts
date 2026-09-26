@@ -80,7 +80,7 @@ param(
     [Alias('?')]
     [switch]$HelpShort,
 
-    [string]$RadarrUrl = "http://docker:7878",
+    [string]$RadarrUrl = "http://docker.local:7878",
     [string]$RadarrLogFile = "D:\Work\RadarrLog.txt",
     [string]$MissingMovieLog = "D:\Work\MissingMovies.txt"
 )

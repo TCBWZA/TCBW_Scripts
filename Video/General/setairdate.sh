@@ -29,7 +29,6 @@
 #   ./setairdate.sh --debug
 # =============================================================================
 
-set +e +u +o pipefail
 set -u -o pipefail
 IFS=$'\n\t'
 

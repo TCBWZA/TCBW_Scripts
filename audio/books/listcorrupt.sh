@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-set +e +u +o pipefail
 set -u -o pipefail
 
 BASE_DIR="."

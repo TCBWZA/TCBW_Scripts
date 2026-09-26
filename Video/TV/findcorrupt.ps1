@@ -87,7 +87,7 @@ param(
     [Alias('?')]
     [switch]$HelpShort,
 
-    [string]$SonarrUrl = "http://docker:8989",
+    [string]$SonarrUrl = "http://docker.local:8989",
     [string]$SonarrLogFile = "D:\Work\SonarrLog.txt",
     [string]$MissingSeriesLog = "D:\Work\MissingSeries.txt"
 )

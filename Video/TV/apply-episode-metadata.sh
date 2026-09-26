@@ -27,7 +27,11 @@
 #   Linux cannot restore ctime or creation time. Only mtime is preserved.
 # =============================================================================
 
-set +euo
+# Only nounset and pipefail are enabled here. Do not add a preceding
+# option-reset line: these scripts run as fresh bash processes that
+# never inherit errexit, and the historical combined reset spelling is
+# read by bash as a bare +o, which prints every shell option instead
+# of clearing one -- that dump breaks the Proxmox console.
 set -u -o pipefail
 IFS=$'\n\t'
 

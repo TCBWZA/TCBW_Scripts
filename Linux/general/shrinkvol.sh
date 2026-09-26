@@ -1,6 +1,5 @@
 #!/bin/bash
 
-set +e +u +o pipefail
 set -u -o pipefail
 
 echo "     #############################################"

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-set +e +u +o pipefail
 set -u -o pipefail
 
 trap 'interrupted=1; exit 1' INT
@@ -23,7 +22,7 @@ debug() { $DEBUG && echo "[DEBUG] $*"; }
 # RADARR CONFIG
 #####################################################
 
-RADARR_URL="http://docker:7878"
+RADARR_URL="http://docker.local:7878"
 RADARR_API_KEY="YOUR_API_KEY_HERE"
 RADARR_LOG="/tmp/remux_radarr.log"
 MISSING_LOG="/tmp/remux_missing.log"
