@@ -1,5 +1,8 @@
 #!/bin/bash
 
+set +e +u +o pipefail
+set -u -o pipefail
+
 ###############################################################
 # PRE-FLIGHT CHECKS
 ###############################################################
@@ -44,7 +47,7 @@ echo "Starting up..."
 echo "Scanning for files..."
 
 mapfile -t files < <(
-    find . -type f -iname "*.mkv"
+    find . -type f -iname "*.mkv" ! -iname "*-trailer.*"
 )
 
 echo "Found ${#files[@]} files."

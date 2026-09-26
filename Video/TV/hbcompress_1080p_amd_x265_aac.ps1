@@ -149,7 +149,7 @@ function Test-OutputIs1080pSDR {
         return $false
     }
 
-    $s = ($out.streams | Where-Object { $_.codec_type -eq "video" })[0]
+    $s = ($out.streams | Where-Object { $_.codec_type -eq "video" -and -not $_.disposition.attached_pic })[0]
     if (-not $s) {
         Write-Host "Post-check FAILED: no video stream in output"
         Debug "Post-encode probe found no video stream"
@@ -356,7 +356,7 @@ function Get-VideoInterlaceStatus {
         return "unknown"
     }
 
-    $stream = $probe.streams | Where-Object { $_.codec_type -eq "video" }
+    $stream = $probe.streams | Where-Object { $_.codec_type -eq "video" -and -not $_.disposition.attached_pic }
 
     if ($stream.field_order -and $stream.field_order -match "^(tt|bb|tb|bt)$") {
         Debug "Interlace fast pass: TRUE interlaced"
@@ -508,7 +508,7 @@ foreach ($f in $files) {
         continue
     }
 
-    $videoStream = ($probe.streams | Where-Object { $_.codec_type -eq "video" })[0]
+    $videoStream = ($probe.streams | Where-Object { $_.codec_type -eq "video" -and -not $_.disposition.attached_pic })[0]
 
     if (-not $videoStream) {
         Write-Host "Skipping $($f.FullName) -- no video stream found"

@@ -182,7 +182,7 @@ foreach ($f in $files) {
         $probe = $probeJson | ConvertFrom-Json
     } catch { Debug "ffprobe failed for $($f.FullName)"; continue }
 
-    $vstream = ($probe.streams | Where-Object { $_.codec_type -eq "video" })[0]
+    $vstream = ($probe.streams | Where-Object { $_.codec_type -eq "video" -and -not $_.disposition.attached_pic })[0]
     if (-not $vstream) { Debug "No video stream: $($f.FullName)"; continue }
 
     $vcodec = $vstream.codec_name

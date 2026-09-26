@@ -29,10 +29,8 @@
 #   ./setairdate.sh --debug
 # =============================================================================
 
-# Reset any inherited shell options (Proxmox root shells often force -eu)
-set +euo
-set -e
-set -u
+set +e +u +o pipefail
+set -u -o pipefail
 IFS=$'\n\t'
 
 # ---------------------------------------------------------------------------

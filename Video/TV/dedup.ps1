@@ -61,10 +61,42 @@ function Remove-ItemSafe {
 
     if ($Audit) {
         Write-Host "AUDIT: Would delete: $Path" -ForegroundColor Yellow
+        return $true
     }
-    else {
-        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue -Recurse:$Recurse -ProgressAction SilentlyContinue
+
+    # A locked file must be reported, not counted as deleted.
+    try {
+        Remove-Item -LiteralPath $Path -Force -Recurse:$Recurse -ErrorAction Stop -ProgressAction SilentlyContinue
+        return $true
     }
+    catch {
+        Write-Warning "Could not delete (in use?): $Path -- $($_.Exception.Message)"
+        return $false
+    }
+}
+
+# Sidecars only, so "Movie.2021" cannot claim "Movie.2021.1080p.mkv".
+$SidecarExtensions = @('.srt', '.ass', '.ssa', '.sub', '.idx', '.nfo', '.sup', '.vtt', '.smi')
+
+function Get-SidecarFile {
+    <#
+        Sidecars matched on a delimiter boundary. A bare StartsWith also claimed the
+        next episode ("Show.S01E01" took "Show.S01E011"), the kept resolution variant,
+        and a same-prefixed directory, which the caller deletes with -Recurse.
+    #>
+    param(
+        [string]$Dir,
+        [string]$BaseName,
+        [string[]]$Exclude = @()
+    )
+
+    $esc = [regex]::Escape($BaseName)
+    Get-ChildItem -LiteralPath $Dir -File -ErrorAction SilentlyContinue |
+        Where-Object {
+            ($Exclude -notcontains $_.FullName) -and
+            ($_.Name -match "^${esc}([._-]|$)") -and
+            ($SidecarExtensions -contains $_.Extension.ToLower())
+        }
 }
 
 # ============================================================
@@ -82,7 +114,15 @@ function Get-VideoProperties {
             return @{ Resolution = 0; Bitrate = 0; Error = "No video stream found" }
         }
 
-        $stream = $probe.streams[0]
+        # attached_pic is cover art and can sit first, so [0] is not the video.
+        $videoStreams = @($probe.streams |
+            Where-Object { $_.codec_type -eq "video" -and -not $_.disposition.attached_pic })
+
+        if ($videoStreams.Count -eq 0) {
+            return @{ Resolution = 0; Bitrate = 0; Error = "No real video stream found" }
+        }
+
+        $stream = $videoStreams[0]
         
         $height = [int]$stream.height
         $width  = [int]$stream.width
@@ -251,26 +291,26 @@ foreach ($dir in $allDirs) {
                 ([math]::Round($fileInfo.Bitrate / 1MB, 2)).ToString() + " Mbps"
             } else { "unknown" }
 
-            Write-Host "      Deleting: $($file.Name) ($resStr, $bitrateStr)"
-            $Summary.EpisodesDeleted += $file.FullName
-            Remove-ItemSafe -Path $file.FullName
-        }
+              Write-Host "      Deleting: $($file.Name) ($resStr, $bitrateStr)"
+              if (Remove-ItemSafe -Path $file.FullName) {
+                  $Summary.EpisodesDeleted += $file.FullName
+              }
+          }
 
-        foreach ($file in $filesToDelete) {
-            $baseName = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+          foreach ($file in $filesToDelete) {
+              $baseName = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
 
-            $sidecars = Get-ChildItem -LiteralPath $dir -ErrorAction SilentlyContinue |
-                Where-Object {
-                    $_.BaseName.StartsWith($baseName, [System.StringComparison]::OrdinalIgnoreCase) -and
-                    $_.FullName -ne $file.FullName
-                }
+              # Without this, the survivor matches itself.
+              $sidecars = Get-SidecarFile -Dir $dir -BaseName $baseName `
+                  -Exclude @($fileToKeep.FullName, $file.FullName)
 
-            foreach ($sidecar in $sidecars) {
-                Write-Host "        Removing sidecar: $($sidecar.Name)"
-                $Summary.SidecarsDeleted += $sidecar.FullName
-                Remove-ItemSafe -Path $sidecar.FullName -Recurse
-            }
-        }
+              foreach ($sidecar in $sidecars) {
+                  Write-Host "        Removing sidecar: $($sidecar.Name)"
+                  if (Remove-ItemSafe -Path $sidecar.FullName) {
+                      $Summary.SidecarsDeleted += $sidecar.FullName
+                  }
+              }
+          }
     }
 
     Write-Host ""

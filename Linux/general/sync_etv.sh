@@ -1,4 +1,5 @@
 #!/bin/bash
+set -uo pipefail
 
 ### --- CONFIGURATION --- ###
 SOURCE="/main/media/Video/TV/"
@@ -25,7 +26,11 @@ fi
 
 # emedia is a CIFS SMB share (DriveE on the LAN), not the direct-attached
 # NTFS drive, so it keeps the SMB-era metadata flags.
-rsync -avh --size-only --no-times --no-perms --no-owner --no-group --omit-dir-times --itemize-changes --progress --delete --inplace --exclude='*.tmp' "$SOURCE" "$DEST"
+# An unchecked rsync reported a failed copy as success.
+if ! rsync -avh --size-only --no-times --no-perms --no-owner --no-group --omit-dir-times --itemize-changes --progress --delete --inplace --exclude='*.tmp' "$SOURCE" "$DEST"; then
+    echo "ERROR: rsync failed for $SOURCE -> $DEST. Not reporting success." >&2
+    exit 1
+fi
 
 echo "Flushing write buffers..."
 sync

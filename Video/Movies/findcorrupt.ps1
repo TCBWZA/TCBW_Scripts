@@ -263,17 +263,40 @@ function Invoke-RadarrReplaceFromPath {
     try {
         $movieList = Invoke-RestMethod -Method Get -Uri "$RadarrUrl/api/v3/movie?term=$searchTerm" -Headers $Headers
 
-        $movie = $movieList | Select-Object -First 1
+        # /movie?term= is a loose search: require an exact title AND year, and
+        # refuse to guess when that still leaves more than one candidate.
+        $candidates = @($movieList | Where-Object {
+            ($_.title -eq $info.Title) -and ($_.year -eq [int]$info.Year)
+        })
 
-        if (-not $movie) {
+        if ($candidates.Count -eq 0) {
             $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
             Add-Content -LiteralPath $MissingMovieLog -Value "$timestamp,$($info.Title),$FilePath"
             Write-RadarrLog -File $FilePath -Status "404 (movie not found)"
             return
         }
 
+        if ($candidates.Count -gt 1) {
+            Write-RadarrLog -File $FilePath -Status "ERROR: ambiguous movie match, nothing deleted"
+            Write-Warning "Matches $($candidates.Count) Radarr movies for '$($info.Title) ($($info.Year))' -- leaving file in place: $FilePath"
+            return
+        }
+
+        $movie = $candidates[0]
         $movieId = $movie.id
         $movieFileId = $movie.movieFile.id
+
+        # Radarr reports /main/... paths, so compare leaf names, not full paths.
+        if ($movieFileId) {
+            $remoteLeaf = if ($movie.movieFile.path) { [System.IO.Path]::GetFileName($movie.movieFile.path) } else { $null }
+            $localLeaf = [System.IO.Path]::GetFileName($FilePath)
+
+            if (-not $remoteLeaf -or ($remoteLeaf -ne $localLeaf)) {
+                Write-RadarrLog -File $FilePath -Status "ERROR: Radarr record points at a different file, nothing deleted"
+                Write-Warning "Radarr holds '$remoteLeaf' but this file is '$localLeaf' -- leaving it in place: $FilePath"
+                return
+            }
+        }
 
         Remove-Item -LiteralPath $FilePath -Force -ErrorAction Stop
 

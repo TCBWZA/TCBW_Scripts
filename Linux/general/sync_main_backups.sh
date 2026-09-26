@@ -26,8 +26,13 @@ log "Destination ZFS dataset is mounted."
 
 ### --- RSYNC --- ###
 log "Starting rsync from $SOURCE to $DEST..."
-rsync -avh --itemize-changes --progress --delete --exclude='*.tmp' "$SOURCE" "$DEST"
-log "Sync complete."
+# An unchecked rsync reported a failed copy as success.
+if rsync -avh --itemize-changes --progress --delete --exclude='*.tmp' "$SOURCE" "$DEST"; then
+    log "Sync complete."
+else
+    log "ERROR: rsync failed for $SOURCE -> $DEST. Not reporting success."
+    exit 1
+fi
 
 echo "Flushing write buffers..."
 sync

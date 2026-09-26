@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -uo pipefail
 # ============================================================
 #  Rename extension-less download files to <dirname>.mkv
 #
@@ -62,14 +63,17 @@ if [[ ! -d "$ROOT" ]]; then
 fi
 
 # -------- Helpers --------
-vid_ext='\( -iname "*.mkv" -o -iname "*.mp4" -o -iname "*.avi" -o -iname "*.mov" -o -iname "*.m4v" -o -iname "*.wmv" -o -iname "*.ts" -o -iname "*.m2ts" -o -iname "*.webm" -o -iname "*.flv" -o -iname "*.mpg" -o -iname "*.mpeg" -o -iname "*.vob" -o -iname "*.ogv" -o -iname "*.3gp" -o -iname "*.rmvb" \)'
+video_files() {
+    find "$1" -maxdepth 1 -type f \( \
+        -iname "*.mkv"  -o -iname "*.mp4"  -o -iname "*.avi"  -o -iname "*.mov" \
+        -o -iname "*.m4v"  -o -iname "*.wmv"  -o -iname "*.ts"   -o -iname "*.m2ts" \
+        -o -iname "*.webm" -o -iname "*.flv"  -o -iname "*.mpg"  -o -iname "*.mpeg" \
+        -o -iname "*.vob"  -o -iname "*.ogv"  -o -iname "*.3gp"  -o -iname "*.rmvb" \
+        \) 2>/dev/null
+}
 
 noext_files() {
     find "$1" -maxdepth 1 -type f ! -name "*.*" ! -name ".*" 2>/dev/null
-}
-
-video_files() {
-    eval "find \"$1\" -maxdepth 1 -type f $vid_ext 2>/dev/null"
 }
 
 # -------- Build suffix find args --------
@@ -79,10 +83,14 @@ for i in "${!SUFFIXES[@]}"; do
     suffix_args+=(-name "*${SUFFIXES[$i]}")
 done
 
+# Matroska is the fixed target container; the name is never taken from the input extension.
+target_ext=".mkv"
+
 # -------- Main scan --------
 echo "Scanning $ROOT for folders ending in: ${SUFFIXES[*]}"
 
-find "$ROOT" -type d \( "${suffix_args[@]}" \) 2>/dev/null | while IFS= read -r dir; do
+# Process substitution, not a pipe: a piped while discards the state it sets.
+while IFS= read -r dir; do
     dname=$(basename "$dir")
 
     vids=$(video_files "$dir")
@@ -101,7 +109,7 @@ find "$ROOT" -type d \( "${suffix_args[@]}" \) 2>/dev/null | while IFS= read -r 
     fi
 
     noext="$noexts"
-    target="$dir/$dname.mkv"
+    target="$dir/$dname$target_ext"
 
     if [[ $AUDIT -eq 1 ]]; then
         echo "[AUDIT] would rename: $noext -> $target"
@@ -119,4 +127,4 @@ find "$ROOT" -type d \( "${suffix_args[@]}" \) 2>/dev/null | while IFS= read -r 
     else
         echo "ERROR: rename failed: $noext -> $target"
     fi
-done
+done < <(find "$ROOT" -type d \( "${suffix_args[@]}" \) 2>/dev/null)

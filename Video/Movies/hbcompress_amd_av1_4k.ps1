@@ -381,7 +381,7 @@ foreach ($f in $files) {
         continue
     }
 
-    $videoStream = ($probe.streams | Where-Object { $_.codec_type -eq "video" })[0]
+    $videoStream = ($probe.streams | Where-Object { $_.codec_type -eq "video" -and -not $_.disposition.attached_pic })[0]
 
     if (-not $videoStream) {
         Write-Host "Skipping $($f.FullName) -- no video stream found"

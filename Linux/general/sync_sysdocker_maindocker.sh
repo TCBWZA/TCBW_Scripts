@@ -60,10 +60,16 @@ fi
 log "Destination ZFS dataset is mounted."
 
 ### --- RSYNC --- ###
+SYNC_OK=true
 log "Starting rsync from $SOURCE to $DEST..."
-rsync -avh --itemize-changes --progress --delete --exclude='*.tmp' "$SOURCE" "$DEST"
-sync
-log "Sync complete."
+# An unchecked rsync reported a failed copy as success.
+if rsync -avh --itemize-changes --progress --delete --exclude='*.tmp' "$SOURCE" "$DEST"; then
+    sync
+    log "Sync complete."
+else
+    log "ERROR: rsync failed for $SOURCE -> $DEST. Not reporting success."
+    SYNC_OK=false
+fi
 
 ### --- RESTORE CONTAINER STATE --- ###
 if [ "$ORIGINALLY_RUNNING" = true ]; then
@@ -75,3 +81,6 @@ else
 fi
 
 log "All done."
+
+# Restored above, so report rather than exit and strand CT $CTID stopped.
+[ "$SYNC_OK" = true ] || exit 1

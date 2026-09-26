@@ -707,7 +707,7 @@ PowerShell equivalent of `apply-episode-metadata.sh`. Reads episode metadata fro
 
 ---
 
-> **organize-chapters.sh / organize-chapters.ps1** have moved to [Video/General/](../General/README.md).
+> **organize-chapters.ps1** have moved to [Video/General/](../General/README.md).
 
 ---
 

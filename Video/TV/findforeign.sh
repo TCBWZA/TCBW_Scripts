@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+set +e +u +o pipefail
+set -u -o pipefail
+
 # ============================================================
 #  Foreign-Only Audio Scanner (Bash Version)
 #
@@ -176,10 +179,40 @@ log_sonarr() {
     echo "$ts,\"$file\",$status" >> "$SONARR_LOG"
 }
 
-# -------- Sonarr replacement --------
-sonarr_replace() {
-    [[ $ENABLE_SONARR -ne 1 ]] && return
+# -------- Sonarr resolution --------
+# Fetches the whole series list once per run and caches it. Returns non-zero if the
+# list cannot be read, so a fetch failure refuses the delete.
+SONARR_SERIES_JSON=""
+SONARR_SERIES_LOADED=0
+sonarr_series_list() {
+    if [[ "$SONARR_SERIES_LOADED" -eq 1 ]]; then
+        [[ -n "$SONARR_SERIES_JSON" ]]
+        return
+    fi
+    SONARR_SERIES_LOADED=1
+    SONARR_SERIES_JSON=$(curl -s -H "X-Api-Key: $SONARR_API_KEY" \
+        "$SONARR_URL/api/v3/series") || SONARR_SERIES_JSON=""
+    # An empty or non-array body is a failed fetch, not an empty library.
+    if ! echo "$SONARR_SERIES_JSON" | jq -e 'type == "array" and length > 0' \
+        > /dev/null 2>&1; then
+        SONARR_SERIES_JSON=""
+        return 1
+    fi
+    return 0
+}
+
+# Resolves the series and episode, publishing RESOLVED_SERIES_ID / RESOLVED_EPISODE_ID.
+# Runs BEFORE the file is removed, so a failed lookup cannot leave an episode deleted
+# with nothing queued to replace it.
+REASON=""
+RESOLVED_SERIES_ID=""
+RESOLVED_EPISODE_ID=""
+
+sonarr_resolve() {
     local file="$1"
+    REASON="unknown"
+    RESOLVED_SERIES_ID=""
+    RESOLVED_EPISODE_ID=""
 
     local series_name season episode
     series_name=$(basename "$(dirname "$(dirname "$file")")")
@@ -188,35 +221,64 @@ sonarr_replace() {
         season="${BASH_REMATCH[1]}"
         episode="${BASH_REMATCH[2]}"
     else
-        print_error "Sonarr: Could not parse SxxEyy for $file"
-        log_sonarr "$file" "ERROR: Could not parse SxxEyy"
-        return
+        REASON="ERROR: Could not parse SxxEyy"
+        return 1
     fi
 
-    local series_json series_id
-    series_json=$(curl -s -G -H "X-Api-Key: $SONARR_API_KEY" \
-        --data-urlencode "term=$series_name" \
-        "$SONARR_URL/api/v3/series")
-    series_id=$(echo "$series_json" | jq '.[0].id // empty')
+    local series_json matches match
+    sonarr_series_list || { REASON="ERROR: could not read the series list"; return 1; }
+    series_json="$SONARR_SERIES_JSON"
 
-    [[ -z "$series_id" ]] && {
-        print_error "Sonarr: Series not found for $file"
-        log_sonarr "$file" "404 (series not found)"
-        return
-    }
+    # Matched locally, not searched: /series?term= returns the whole library for
+    # every term, so taking [0] deleted the wrong episode in testing.
+    matches=$(echo "$series_json" | jq -c --arg want "$series_name" '
+        [ .[]
+          | select(
+              (.title | ascii_downcase) == ($want | ascii_downcase)
+              or ((.path | split("/"))[-1] | ascii_downcase) == ($want | ascii_downcase)
+            )
+        ]')
+    match=$(echo "$matches" | jq -r 'if length == 0 then empty
+                                     elif length == 1 then (.[0].id | tostring)
+                                     else "AMBIGUOUS" end')
 
-    local episodes_json episode_json episode_id
+    if [[ "$match" == "AMBIGUOUS" ]]; then
+        print_error "Sonarr: '$series_name' matches several series -- not guessing:"
+        # Only the candidates, not the whole library.
+        echo "$matches" | jq -r '.[].title' | sed 's/^/Sonarr:     /'
+        REASON="ERROR: ambiguous series match"
+        return 1
+    fi
+
+    if [[ -z "$match" ]]; then
+        REASON="404 (series not found)"
+        return 1
+    fi
+
+    RESOLVED_SERIES_ID="$match"
+
+    local episodes_json episode_id
     episodes_json=$(curl -s -H "X-Api-Key: $SONARR_API_KEY" \
-        "$SONARR_URL/api/v3/episode?seriesId=$series_id")
-    episode_json=$(echo "$episodes_json" | jq \
-        ".[] | select(.seasonNumber==$season and .episodeNumber==$episode)")
-    episode_id=$(echo "$episode_json" | jq '.id // empty')
+        "$SONARR_URL/api/v3/episode?seriesId=$RESOLVED_SERIES_ID")
+    episode_id=$(echo "$episodes_json" | jq \
+        --argjson s "$season" --argjson e "$episode" \
+        -r '[ .[] | select(.seasonNumber==$s and .episodeNumber==$e) ]
+           | if length == 1 then (.[0].id | tostring) else empty end')
 
-    [[ -z "$episode_id" ]] && {
-        print_error "Sonarr: Episode not found for $file"
-        log_sonarr "$file" "404 (episode not found)"
-        return
-    }
+    if [[ -z "$episode_id" ]]; then
+        REASON="404 (episode not found)"
+        return 1
+    fi
+
+    RESOLVED_EPISODE_ID="$episode_id"
+    return 0
+}
+
+# -------- Sonarr replacement --------
+# Refresh marks it missing, monitoring re-enables it as wanted, the search re-grabs it.
+sonarr_request() {
+    local file="$1"
+    local series_id="$RESOLVED_SERIES_ID" episode_id="$RESOLVED_EPISODE_ID"
 
     # File was already removed from the filesystem by the caller.
     # Refresh so Sonarr rescans and marks the episode missing (wanted),
@@ -255,9 +317,9 @@ sonarr_replace() {
 # -------- Main scan with .skip support --------
 print_info "Scanning for MKVs with foreign-only audio..."
 
-find "$ROOT" \
-    -type d -exec test -e "{}/.skip" \; -prune -o \
-    -type f -name "*.mkv" -print | while read -r file; do
+# Process substitution, not a pipe: a piped while discards the state it sets.
+# Trailers are excluded, so one is never judged as a foreign episode.
+while read -r file; do
 
     langs=$(get_audio_languages "$file")
 
@@ -271,6 +333,13 @@ find "$ROOT" \
     if [[ "$has_allowed" -eq 0 ]]; then
         print_warn "Foreign-only: $file"
 
+        # Confirm the replacement BEFORE removing anything.
+        if [[ $ENABLE_SONARR -eq 1 ]] && ! sonarr_resolve "$file"; then
+            print_error "Sonarr: $REASON -- leaving file in place: $file"
+            log_sonarr "$file" "$REASON (file kept)"
+            continue
+        fi
+
         if [[ -n "$CSV_FILE" ]]; then
             lang_string=$(echo "$langs" | paste -sd ";" -)
             echo "\"$file\",\"$lang_string\"" >> "$CSV_FILE"
@@ -279,7 +348,9 @@ find "$ROOT" \
         rm -f "$file"
         print_ok "Deleted: $file"
 
-        sonarr_replace "$file"
+        [[ $ENABLE_SONARR -eq 1 ]] && sonarr_request "$file"
     fi
-done
+done < <(find "$ROOT" \
+    -type d -exec test -e "{}/.skip" \; -prune -o \
+    -type f -name "*.mkv" ! -iname "*-trailer.*" -print)
 

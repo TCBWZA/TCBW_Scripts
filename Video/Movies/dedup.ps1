@@ -62,10 +62,44 @@ function Remove-ItemSafe {
 
     if ($Audit) {
         Write-Host "AUDIT: Would delete: $Path" -ForegroundColor Yellow
+        return $true
     }
-    else {
-        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue -Recurse:$Recurse
+
+    # A locked file must be reported, not counted as deleted.
+    try {
+        Remove-Item -LiteralPath $Path -Force -Recurse:$Recurse -ErrorAction Stop
+        return $true
     }
+    catch {
+        Write-Warning "Could not delete (in use?): $Path -- $($_.Exception.Message)"
+        return $false
+    }
+}
+
+# Sidecars only, so "Movie.2021" cannot claim "Movie.2021.1080p.mkv".
+$SidecarExtensions = @('.srt', '.ass', '.ssa', '.sub', '.idx', '.nfo', '.sup', '.vtt', '.smi')
+
+function Get-SidecarFile {
+    <#
+        Sidecars matched on a delimiter boundary. A bare StartsWith also claimed the
+        next episode ("Show.S01E01" took "Show.S01E011"), the kept resolution variant,
+        and a same-prefixed directory, which the caller deletes with -Recurse.
+    #>
+    param(
+        [string]$Dir,
+        [string]$BaseName,
+        [string[]]$Exclude = @()
+    )
+
+    $esc = [regex]::Escape($BaseName)
+    Get-ChildItem -LiteralPath $Dir -File -ErrorAction SilentlyContinue |
+        Where-Object {
+            ($Exclude -notcontains $_.FullName) -and
+            ($_.Name -match "^${esc}([._-]|$)") -and
+            ($_.Name -notlike "*-trailer.*") -and
+            ($_.Name -notlike "*-behindthescenes.*") -and
+            ($SidecarExtensions -contains $_.Extension.ToLower())
+        }
 }
 
 # ============================================================
@@ -214,8 +248,9 @@ foreach ($folder in $movieFolders) {
 
     foreach ($file in $filesToDelete) {
         Write-Host "  Deleting video: $($file.Name)"
-        $Summary.VideosDeleted += $file.FullName
-        Remove-ItemSafe -Path $file.FullName
+        if (Remove-ItemSafe -Path $file.FullName) {
+            $Summary.VideosDeleted += $file.FullName
+        }
     }
 
     # ============================================================
@@ -227,17 +262,15 @@ foreach ($folder in $movieFolders) {
         $baseName = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
 
         # Sidecars
-        $sidecars = Get-ChildItem -LiteralPath $folder.FullName -ErrorAction SilentlyContinue |
-            Where-Object {
-                $_.BaseName.StartsWith($baseName, [System.StringComparison]::OrdinalIgnoreCase) -and
-                ($_.Name -notlike "*-trailer.*") -and
-                ($_.Name -notlike "*-behindthescenes.*")
-            }
+        # Without this, the survivor matches itself.
+        $sidecars = Get-SidecarFile -Dir $folder.FullName -BaseName $baseName `
+            -Exclude @($fileToKeep.FullName, $file.FullName)
 
         foreach ($s in $sidecars) {
             Write-Host "    Removing related item: $($s.FullName)"
-            $Summary.SidecarsDeleted += $s.FullName
-            Remove-ItemSafe -Path $s.FullName -Recurse
+            if (Remove-ItemSafe -Path $s.FullName) {
+                $Summary.SidecarsDeleted += $s.FullName
+            }
         }
 
         # Trickplay folder

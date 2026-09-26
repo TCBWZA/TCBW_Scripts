@@ -125,45 +125,9 @@ PowerShell utility that removes three categories of orphaned items from a media 
 
 ---
 
-### organize-chapters.sh
-
-Bash utility that recursively moves `*_chapters.xml` files into a `chapters/` subdirectory within each folder that contains them.
-
-**What it does:**
-
-- Walks the directory tree from the specified root.
-- For each directory containing `*_chapters.xml` files, creates a `chapters/` subdirectory and moves all matching files into it.
-- Skips directories containing a `.skip` marker file (and all their subdirectories).
-- Skips any directory already named `chapters` to avoid redundant nesting.
-- Dry-run mode (`--dry-run`) previews all planned moves without making any changes.
-- Prints a summary of files moved and directories skipped.
-
-**Parameters:**
-
-| Parameter | Description |
-|---|---|
-| `--root <dir>` | Root directory to scan. Defaults to `.` |
-| `--dry-run` | Preview mode; no files are moved |
-| `--debug` | Enable verbose debug output |
-
-**Execution:**
-
-```bash
-# Run from within a media directory
-./organize-chapters.sh
-
-# Dry-run preview
-./organize-chapters.sh --dry-run
-
-# Specify a root directory
-./organize-chapters.sh --root /mnt/media/Movies --dry-run
-```
-
----
-
 ### organize-chapters.ps1
 
-PowerShell equivalent of `organize-chapters.sh`. Recursively moves `*_chapters.xml` files into a `chapters/` subdirectory within each folder that contains them.
+Recursively moves `*_chapters.xml` files into a `chapters/` subdirectory within each folder that contains them.
 
 **What it does:**
 

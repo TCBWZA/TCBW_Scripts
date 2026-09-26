@@ -28,6 +28,7 @@
 # =============================================================================
 
 set +euo
+set -u -o pipefail
 IFS=$'\n\t'
 
 # ------------------------------
@@ -109,8 +110,11 @@ trim_trailing_dash() {
     local s="$1"
     s="${s#"${s%%[![:space:]]*}"}"
     s="${s%"${s##*[![:space:]]}"}"
-    while [[ "$s" == *[-–] ]]; do
-        s="${s%[-–]}"
+    # Strip trailing hyphens and the U+2013/U+2014 dashes NFOs use; escapes
+    # keep the source ASCII because $'...' does not expand in a [[ ]] pattern.
+    local DASH_CLASS=$'[-\u2013\u2014]'
+    while [[ "$s" == *$DASH_CLASS ]]; do
+        s="${s%$DASH_CLASS}"
         s="${s%"${s##*[![:space:]]}"}"
     done
     printf '%s' "$s"

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -uo pipefail
 
 ### --- CONFIGURATION --- ###
 CTID=100
@@ -38,18 +39,33 @@ else
 fi
 
 # Deletes files in destination that no longer exist in source
-rsync -avhL --no-perms --no-owner --no-group --delete --itemize-changes --progress --exclude='*.tmp' "$SOURCE" "$DEST"
+# An unchecked rsync reported a failed copy as success.
+SYNC_OK=true
 
-echo "Sync complete."
+if ! rsync -avhL --no-perms --no-owner --no-group --delete --itemize-changes --progress --exclude='*.tmp' "$SOURCE" "$DEST"; then
+    echo "ERROR: rsync failed for $SOURCE -> $DEST. Not reporting success." >&2
+    SYNC_OK=false
+fi
 
-# Determine actual device backing $MOUNT
-DEV=$(lsblk -no NAME,MOUNTPOINT \
-    | sed 's/^[^a-zA-Z0-9]*//' \
-    | awk -v m="$MOUNT" '$2==m{print "/dev/"$1; exit}')
+# An unresolved device must fail rather than skip the flush.
+if [ "$SYNC_OK" = true ]; then
+    DEV=$(lsblk -no NAME,MOUNTPOINT \
+        | sed 's/^[^a-zA-Z0-9]*//' \
+        | awk -v m="$MOUNT" '$2==m{print "/dev/"$1; exit}')
 
-echo "Flushing write buffers on $DEV..."
-sync
-blockdev --flushbufs "$DEV"
+    if [ -z "$DEV" ]; then
+        echo "ERROR: could not resolve the device backing $MOUNT -- not flushing, not unmounting." >&2
+        SYNC_OK=false
+    else
+        echo "Flushing write buffers on $DEV..."
+        sync
+        blockdev --flushbufs "$DEV"
+    fi
+fi
+
+if [ "$SYNC_OK" = true ]; then
+    echo "Sync complete."
+fi
 
 # Restore container state
 if [ "$ORIGINALLY_RUNNING" = true ]; then
@@ -65,3 +81,5 @@ if [ "$MOUNTED_BY_SCRIPT" = true ]; then
 else
     echo "$MOUNT left mounted (was already mounted)."
 fi
+
+[ "$SYNC_OK" = true ] || exit 1

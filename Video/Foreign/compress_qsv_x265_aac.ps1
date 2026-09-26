@@ -191,7 +191,7 @@ $AllFiles | ForEach-Object -Parallel {
     $probeJson = ffprobe -v quiet -print_format json -show_streams "$File"
     $probe     = $probeJson | ConvertFrom-Json
 
-    $video = $probe.streams | Where-Object { $_.codec_type -eq "video" } | Select-Object -First 1
+    $video = $probe.streams | Where-Object { $_.codec_type -eq "video" -and -not $_.disposition.attached_pic } | Select-Object -First 1
     $audio = $probe.streams | Where-Object { $_.codec_type -eq "audio" } | Select-Object -First 1
 
     $vcodec   = $video.codec_name

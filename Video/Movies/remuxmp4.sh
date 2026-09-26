@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+set +e +u +o pipefail
+set -u -o pipefail
+
 trap 'interrupted=1; exit 1' INT
 trap 'if [[ ${interrupted:-0} -eq 1 ]]; then echo "Interrupted -- exiting safely"; fi' EXIT
 
@@ -296,12 +299,19 @@ for f in "${files[@]}"; do
         orig_size=$(stat -c%s "$f")
         new_size=$(stat -c%s "$tmpfile")
 
-        # Remember original mtime before removing source
-        orig_mtime=$(stat -c%y "$f")
+          # Remember original mtime before the source is replaced
+          orig_mtime=$(stat -c%y "$f")
 
-        touch -r "$f" "$tmpfile"
-        rm -f -- "$f"
-        mv -- "$tmpfile" "$output_mkv"
+          touch -r "$f" "$tmpfile"
+
+          # Move first, delete second: a failed mv used to leave nothing behind.
+          # The source is dropped only when the container extension changed.
+          if ! mv -- "$tmpfile" "$output_mkv"; then
+              echo "ERROR: could not move remux into place -- source left untouched: $f" >&2
+              continue
+          fi
+
+          rm -f -- "$f"
         chown 1000:1000 "$output_mkv"
         chmod 666 "$output_mkv"
 

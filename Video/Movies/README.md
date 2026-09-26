@@ -207,7 +207,7 @@ Set-Location "Z:\Media\Movies"
 
 ---
 
-> **organize-chapters.sh / organize-chapters.ps1** have moved to [Video/General/](../General/README.md).
+> **organize-chapters.ps1** have moved to [Video/General/](../General/README.md).
 
 ---
 

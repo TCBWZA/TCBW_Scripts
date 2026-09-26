@@ -1,4 +1,5 @@
 #!/bin/bash
+set -uo pipefail
 
 SOURCE="/root"
 DEST="/mnt/nmedia/pve/root-backup.tar.gz"
@@ -12,7 +13,26 @@ if ! mountpoint -q "/mnt/nmedia"; then
     exit 1
 fi
 
-tar -czpf $DEST --exclude='*.tmp' $SOURCE
+# Stage, verify, then promote: writing straight to $DEST truncated the last good backup in place.
+STAGE="${DEST}.inprogress"
+rm -f -- "$STAGE"
+
+BACKUP_OK=false
+
+if tar -czpf "$STAGE" --exclude='*.tmp' "$SOURCE" && tar -tzf "$STAGE" > /dev/null 2>&1; then
+    mv -f -- "$STAGE" "$DEST"
+    echo "Backup complete: $DEST"
+    BACKUP_OK=true
+else
+    echo "ERROR: /root backup failed or failed verification -- previous backup left in place." >&2
+    rm -f -- "$STAGE"
+fi
 
 echo "=== POWERING OFF USB DRIVE ==="
 usb-poweroff.sh
+
+if [ "$BACKUP_OK" = true ]; then
+    exit 0
+fi
+
+exit 1

@@ -1,5 +1,8 @@
 #!/bin/bash
 
+set +e +u +o pipefail
+set -u -o pipefail
+
 echo "     #############################################"
 echo "     #                                           #"
 echo "     #      Script powered by Chiappina.com      #"

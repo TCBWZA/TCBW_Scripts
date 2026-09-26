@@ -8,6 +8,9 @@
 set -uo pipefail
 IFS=$'\n'
 
+# U+2013 EN DASH, the generated episode-title separator. Escape keeps this ASCII.
+EN_DASH=$'\u2013'
+
 # ------------------------------
 # Flags
 # ------------------------------
@@ -90,8 +93,11 @@ trim_trailing_dash() {
     local s="$1"
     s="${s#"${s%%[![:space:]]*}"}"
     s="${s%"${s##*[![:space:]]}"}"
-    while [[ "$s" == *[-–] ]]; do
-        s="${s%[-–]}"
+    # Strip trailing hyphens and the U+2013/U+2014 dashes NFOs use; escapes
+    # keep the source ASCII because $'...' does not expand in a [[ ]] pattern.
+    local DASH_CLASS=$'[-\u2013\u2014]'
+    while [[ "$s" == *$DASH_CLASS ]]; do
+        s="${s%$DASH_CLASS}"
         s="${s%"${s##*[![:space:]]}"}"
     done
     printf '%s' "$s"
@@ -282,7 +288,7 @@ while IFS= read -r -d '' mkv; do
                 s=$(printf '%02d' "$season")
                 e=$(printf '%02d' "$episode")
 
-                new_title="$showtitle – S${s}E${e} – $etitle"
+                new_title="$showtitle $EN_DASH S${s}E${e} $EN_DASH $etitle"
 
                 TAGS[TITLE]="$etitle"
                 TAGS[DESCRIPTION]="$plot"

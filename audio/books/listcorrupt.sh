@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+set +e +u +o pipefail
+set -u -o pipefail
+
 BASE_DIR="."
 DELETE_MODE=0
 DEBUG_MODE=0
