@@ -172,7 +172,33 @@ remux_mkv() {
 # ------------------------------
 log INFO "Scanning for MKV files..."
 tmpfile=$(mktemp)
-find . -type f -iname '*.mkv' -print0 > "$tmpfile"
+# Suffix extras (setreleasedate list) and Jellyfin extras directories are both
+# excluded: a promo can be flagged by name or by the folder it sits in, and the
+# live tree uses capitalised Trailers/Extras, so -path (case-sensitive) would
+# miss every one of them -- hence -ipath.
+find . -type f -iname '*.mkv' \
+    ! -iname '*-trailer.*' \
+    ! -iname '*-behindthescenes.*' \
+    ! -iname '*-featurette.*' \
+    ! -iname '*-interview.*' \
+    ! -iname '*-scene.*' \
+    ! -iname '*-short.*' \
+    ! -iname '*-deleted.*' \
+    ! -iname '*-sample.*' \
+    ! -ipath '*/behind the scenes/*' \
+    ! -ipath '*/deleted scenes/*' \
+    ! -ipath '*/interviews/*' \
+    ! -ipath '*/scenes/*' \
+    ! -ipath '*/samples/*' \
+    ! -ipath '*/shorts/*' \
+    ! -ipath '*/featurettes/*' \
+    ! -ipath '*/clips/*' \
+    ! -ipath '*/other/*' \
+    ! -ipath '*/extras/*' \
+    ! -ipath '*/trailers/*' \
+    ! -ipath '*/theme-music/*' \
+    ! -ipath '*/backdrops/*' \
+    -print0 > "$tmpfile"
 
 while IFS= read -r -d '' mkv; do
     log INFO "Processing: $mkv"

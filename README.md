@@ -30,6 +30,8 @@ TCBW_Scripts/
 |   |   |--  usb-poweroff.sh               - Safely powers off the USB external drive
 |   |   \--  usb-poweron.sh                - Powers on the USB external drive
 |--  Video/
+|   |--  Anime/                             - Animation-specific variants of the TV compression scripts
+|   |   \--  compress_amd_x265_aac.sh       - AMD GPU VAAPI x265 compression at QP 32 for animation (bash)
 |   |--  Foreign/                          - Compression scripts for foreign language content
 |   |   |--  README.md
 |   |   |--  compress_amd_x265_aac.sh      - AMD GPU VAAPI x265 compression (bash)
@@ -57,8 +59,6 @@ TCBW_Scripts/
 |   |--  Movies/                           - Compression, deduplication, and maintenance scripts for movies
 |   |   |--  README.md
 |   |   |--  Handbrake AV1 4K preset.json  - HandBrake AV1 4K user preset (import into HandBrake)
-|   |   |--  apply-movie-metadata.sh       - NFO metadata writer to MKV tags (bash)
-|   |   |--  Apply-MovieMetadata.ps1       - NFO metadata writer to MKV tags (PowerShell)
 |   |   |--  compress_amd_x265_aac.sh      - AMD GPU VAAPI x265 compression (bash)
 |   |   |--  compress_amd_x265_aac.ps1     - AMD GPU x265 compression (PowerShell)
 |   |   |--  compress_qsv_x265_aac.ps1     - Intel QSV x265 compression (PowerShell)
@@ -69,14 +69,13 @@ TCBW_Scripts/
 |   |   \--  remuxmp4.sh                   - MP4 to MKV container remux with Radarr integration (bash)
 |   \--  TV/                               - Compression, deduplication, and maintenance scripts for TV shows
 |       |--  README.md
-|       |--  apply-episode-metadata.sh     - NFO metadata writer to MKV tags (bash)
-|       |--  Apply-EpisodeMetadata.ps1     - NFO metadata writer to MKV tags (PowerShell)
 |       |--  compress_amd_x265_aac.sh      - AMD VAAPI x265 compression (bash)
 |       |--  compress_amd_x265_aac.ps1     - AMD GPU x265 compression (PowerShell)
 |       |--  compress_1080p_anime_amd_x265_aac.sh - Anime audio 1080p downscale compression (bash)
 |       |--  compress_1080p_eng_amd_x265_aac.sh   - 1080p downscale compression, eng/und/unk (bash)
 |       |--  compress_1080p_lang_amd_x265_aac.sh  - 1080p downscale + HDR tonemap compression (bash)
 |       |--  compress_lang_amd_x265_aac.sh - Language-specific AMD VAAPI x265 compression (bash)
+|       |--  compress_mp4ts_amd_x265_aac.sh - MP4/TS to MKV at QP 28, no size gate, replaces even on growth (bash)
 |       |--  compress_qsv_x265_aac.ps1     - Intel QSV x265 compression (PowerShell)
 |       |--  dedup.ps1                     - Duplicate episode removal and priority-based selection (PowerShell)
 |       |--  findcorrupt.ps1               - Corrupt MKV detection with Sonarr integration (PowerShell)
@@ -153,7 +152,7 @@ The two machines keep batch processing reliable despite the Debian FFmpeg bug, a
 - **Corrupt File Detection**: `findcorrupt.ps1` scans for unreadable MKV files and optionally triggers Sonarr or Radarr replacement
 - **Foreign Audio Detection**: `findforeign.ps1` / `findforeign.sh` flag episodes with no English or undetermined audio tracks
 - **Container Repair**: `remux.ps1` fixes MKV structural anomalies without re-encoding
-- **Metadata Sync**: `Apply-EpisodeMetadata.ps1` / `apply-episode-metadata.sh` write episode metadata from NFO sidecar files into MKV container tags. `Apply-MovieMetadata.ps1` / `apply-movie-metadata.sh` do the same for movies.
+- **Metadata Sync**: `apply-metadata.sh` is the single applier for both movies and episodes. It reads the NFO, decides MOVIE vs EPISODE from the XML root element, and writes the matching tags into the MKV container. It is deployed alongside whatever script calls it, so the invocation is not bound to folder layout.
 
 ### Deduplication Scripts
 
@@ -272,11 +271,8 @@ The two machines keep batch processing reliable despite the Debian FFmpeg bug, a
 # Find foreign audio TV episodes
 ./Video/TV/findforeign.ps1
 
-# Write episode metadata from NFO to MKV tags
-./Video/TV/Apply-EpisodeMetadata.ps1
-
-# Write movie metadata from NFO to MKV tags
-./Video/Movies/Apply-MovieMetadata.ps1
+# Write NFO metadata to MKV tags (MOVIE vs EPISODE decided from the NFO)
+./Video/General/apply-metadata.sh
 
 # Repair MKV containers without re-encoding
 ./Video/TV/remux.ps1

@@ -622,83 +622,19 @@ cd /mnt/z/media/Video/TV/General
 
 ---
 
-### apply-episode-metadata.sh
+### apply-metadata.sh
 
-Bash utility that reads episode metadata from `.nfo` sidecar files and writes it into MKV container tags using `mkvpropedit`.
+Bash utility that reads NFO metadata for both movies and episodes and writes it into MKV container tags using `mkvpropedit`. It decides MOVIE vs EPISODE from the XML root element, so one script replaces the retired `apply-episode-metadata.sh` and `apply-movie-metadata.sh` along with their PowerShell equivalents.
 
-**What it does:**
+`movie.nfo` is consulted only when the NFO is a movie; the episode path resolves the series name from the NFO and falls back to the series folder name instead. Extras are excluded from the scan by filename suffix and by Jellyfin extras directory.
 
-- Reads title, plot, episode number, and other fields from `<basename>.nfo` files.
-- Falls back to `movie.nfo` in the same directory if the episode NFO is missing a show title.
-- Falls back to the parent directory name as the series title if NFO files are unavailable.
-- Preserves file modification timestamps (`mtime`) after writing tags.
-- Dry-run mode (`--dry-run`) previews all changes without modifying any files.
-- Optional audit log (`--audit-log <path>`) records all changes made.
-
-**Requirements:**
-
-- `mkvtoolnix` (`mkvpropedit`, `mkvinfo`)
-- `xmlstarlet`
-- Bash 4+
-
-**Execution:**
+Deployed alongside whatever script calls it -- `compress_mp4ts_amd_x265_aac.sh` resolves it from its own directory -- so the call is not bound to the repo or live folder layout.
 
 ```bash
-# Apply metadata (current directory)
-./apply-episode-metadata.sh
-
-# Dry-run preview
-./apply-episode-metadata.sh --dry-run
-
-# With debug output
-./apply-episode-metadata.sh --debug
-
-# Write audit log
-./apply-episode-metadata.sh --audit-log "./audit.log"
-```
-
----
-
-### Apply-EpisodeMetadata.ps1
-
-PowerShell equivalent of `apply-episode-metadata.sh`. Reads episode metadata from `.nfo` sidecar files and writes it into MKV container tags using `mkvpropedit`.
-
-**What it does:**
-
-- Reads title, plot, episode number, and other fields from `<basename>.nfo` files.
-- Supports multi-episode NFOs by merging titles, plots, and episode number ranges.
-- Falls back to `movie.nfo` or the parent directory name when the show title is missing from NFO.
-- Preserves file creation time and last-write time after each tag-write operation.
-- Dry-run mode (`-DryRun`) performs all processing steps but does not modify any MKV files.
-- Optional audit log records all changes and, when `-Debug` is active, debug messages too.
-
-**Parameters:**
-
-| Parameter | Description |
-|---|---|
-| `-DryRun` | Preview mode; no MKV files are modified. |
-| `-Debug` | Enables verbose debug output to the console (and audit log if enabled). |
-| `-AuditLogPath` | Path to the audit log file. Logging is disabled when empty or omitted. |
-
-**Requirements:**
-
-- `mkvtoolnix` (`mkvpropedit`)
-- PowerShell 7+
-
-**Execution:**
-
-```powershell
-# Apply metadata (current directory)
-.\Apply-EpisodeMetadata.ps1
-
-# Dry-run preview
-.\Apply-EpisodeMetadata.ps1 -DryRun
-
-# With debug output
-.\Apply-EpisodeMetadata.ps1 -Debug
-
-# Write audit log
-.\Apply-EpisodeMetadata.ps1 -AuditLogPath ".\audit.log"
+./apply-metadata.sh               # apply to the current directory
+./apply-metadata.sh --dry-run     # report what would change, change nothing
+./apply-metadata.sh --debug       # verbose
+./apply-metadata.sh --audit-log "./audit.log"
 ```
 
 ---

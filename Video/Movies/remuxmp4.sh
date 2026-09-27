@@ -321,13 +321,16 @@ for f in "${files[@]}"; do
         #####################################################
 
         script_dir="$(dirname -- "$(realpath -- "$0")")"
-        metadata_script="$script_dir/apply-movie-metadata.sh"
+        # Same-directory reference: deploy ships apply-metadata.sh alongside
+        # this script, so the call is independent of folder layout. The unified
+        # applier decides MOVIE vs EPISODE from the NFO itself.
+        metadata_script="$script_dir/apply-metadata.sh"
 
         if [[ -x "$metadata_script" ]]; then
             echo "Applying metadata to $output_mkv"
             (cd "$dir" && bash "$metadata_script") && debug "Metadata applied OK" || echo "Warning: metadata apply failed for $output_mkv"
         else
-            debug "apply-movie-metadata.sh not found or not executable at $metadata_script -- skipping"
+            debug "apply-metadata.sh not found or not executable at $metadata_script -- skipping"
         fi
 
         # Restore original mtime

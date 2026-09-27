@@ -169,14 +169,16 @@ apply_episode_metadata() {
     local target_dir="$1"
     local script_dir
     script_dir="$(dirname -- "$(realpath -- "$0")")"
-    local metadata_script="$script_dir/apply-episode-metadata.sh"
+    # Same-directory reference: deploy ships apply-metadata.sh alongside this
+    # script, so the call is independent of the repo vs live folder layout.
+    local metadata_script="$script_dir/apply-metadata.sh"
 
     if [[ -x "$metadata_script" ]]; then
         (cd "$target_dir" && bash "$metadata_script") \
             && debug "Metadata applied OK" \
             || echo "Warning: metadata apply failed in $target_dir"
     else
-        debug "apply-episode-metadata.sh not found or not executable at $metadata_script -- skipping"
+        debug "apply-metadata.sh not found or not executable at $metadata_script -- skipping"
     fi
 }
 

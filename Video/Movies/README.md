@@ -337,7 +337,7 @@ Bash script that remuxes MP4 files into MKV containers without re-encoding. Inte
 - Copies all video, audio, subtitle, and attachment streams (e.g. embedded TTF/OTF fonts) into a Matroska container.
 - Writes to a `[Trans].tmp` temp file; on success, renames to `.mkv` and deletes the original `.mp4`.
 - Preserves the original file modification time.
-- After a successful remux, runs `apply-movie-metadata.sh` from the same directory to apply NFO metadata to the new MKV.
+- After a successful remux, runs `apply-metadata.sh` from the same directory to apply NFO metadata to the new MKV.
 - Files with no audio streams are treated as corrupt: the file is deleted and a Radarr replacement search is triggered (same Radarr flow as `findcorrupt.ps1`).
 - Respects `.skip` directory markers.
 
@@ -366,65 +366,17 @@ cd /mnt/media/Movies
 
 ---
 
-### apply-movie-metadata.sh
+### apply-metadata.sh
 
-Bash script that applies movie metadata from NFO sidecar files into MKV container tags using `mkvpropedit`.
+Bash utility that reads NFO metadata for movies and episodes and writes it into MKV container tags using `mkvpropedit`. It decides MOVIE vs EPISODE from the XML root element, so one script replaces the retired `apply-movie-metadata.sh` and `apply-episode-metadata.sh` along with their PowerShell equivalents.
 
-**What it does:**
-
-- Reads metadata from `<basename>.nfo` (preferred) or `movie.nfo` (fallback) for each MKV.
-- Falls back to the directory name when no `<title>` element is found in the NFO.
-- Writes title and year tags into the MKV container using `mkvpropedit`.
-- Preserves the original file modification time after writing.
-- Supports dry-run mode (`--dry-run`) and optional audit log output.
-- Proxmox-safe: no process substitution, compatible with strict shell environments.
-
-**Execution:**
+Movies resolve their title from `<basename>.nfo` with `movie.nfo` as the folder-level fallback. It is deployed alongside the script that calls it, so `remuxmp4.sh` finds it in its own directory regardless of folder layout.
 
 ```bash
-cd /mnt/media/Movies
-./apply-movie-metadata.sh
-
-# Dry-run mode
-./apply-movie-metadata.sh --dry-run
-```
-
----
-
-### Apply-MovieMetadata.ps1
-
-PowerShell equivalent of `apply-movie-metadata.sh`. Applies movie metadata from NFO sidecar files into MKV container tags using `mkvpropedit`.
-
-**What it does:**
-
-- Reads metadata from `<basename>.nfo` (preferred) or `movie.nfo` (fallback) for each MKV.
-- Falls back to the directory name when no `<title>` element is found.
-- Writes title and year tags into the MKV container using `mkvpropedit`.
-- Preserves the original `CreationTime` and `LastWriteTime` after writing.
-- Supports dry-run mode (`-DryRun`) and optional audit log output (`-AuditLogPath`).
-- Literal-path safe and deterministic.
-
-**Requirements:** `mkvtoolnix` (`mkvpropedit`, `mkvinfo`) - install with `choco install mkvtoolnix`.
-
-**Parameters:**
-
-| Parameter | Required | Default | Description |
-|---|---|---|---|
-| `-DryRun` | No | | Process files but do not write any changes to disk |
-| `-Debug` | No | | Enable verbose debug output |
-| `-AuditLogPath` | No | `""` | Path to audit log file; logging is disabled when empty |
-
-**Execution:**
-
-```powershell
-Set-Location "Z:\Media\Movies"
-.\Apply-MovieMetadata.ps1
-
-# Dry-run mode
-.\Apply-MovieMetadata.ps1 -DryRun
-
-# With audit log
-.\Apply-MovieMetadata.ps1 -AuditLogPath ".\movie_audit.log"
+./apply-metadata.sh               # apply to the current directory
+./apply-metadata.sh --dry-run     # report what would change, change nothing
+./apply-metadata.sh --debug       # verbose
+./apply-metadata.sh --audit-log "./audit.log"
 ```
 
 ---
