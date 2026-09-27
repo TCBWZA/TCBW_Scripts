@@ -126,7 +126,7 @@ function Build-TagsXml {
 Write-Host "Scanning recursively for MKV files..."
 Write-Audit "=== Episode run started ==="
 
-$mkvs = Get-ChildItem -LiteralPath . -Recurse -Filter *.mkv
+$mkvs = Get-ChildItem -LiteralPath . -Recurse -Filter *.mkv | Where-Object { $_.BaseName -notmatch '-(trailer|behindthescenes|featurette|interview|scene|short|deleted|sample)$' } 
 
 foreach ($mkv in $mkvs) {
 

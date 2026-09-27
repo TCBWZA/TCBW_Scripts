@@ -46,7 +46,7 @@ echo "Starting up..."
 echo "Scanning for files..."
 
 mapfile -t files < <(
-    find . -type f -iname "*.mkv" ! -iname "*-trailer.*"
+    find . -type f -iname "*.mkv" ! -iname "*-trailer.*" ! -iname "*-behindthescenes.*" ! -iname "*-featurette.*" ! -iname "*-interview.*" ! -iname "*-scene.*" ! -iname "*-short.*" ! -iname "*-deleted.*" ! -iname "*-sample.*"
 )
 
 echo "Found ${#files[@]} files."

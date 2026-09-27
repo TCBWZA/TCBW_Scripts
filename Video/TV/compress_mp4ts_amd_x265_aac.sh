@@ -204,7 +204,7 @@ echo "Scanning for MP4 and TS files..."
 
 # MP4 and TS only, any size, trailers excluded.
 mapfile -t files < <(
-    find . -type f \( -iname "*.mp4" -o -iname "*.ts" \) ! -iname "*-trailer.*"
+    find . -type f \( -iname "*.mp4" -o -iname "*.ts" \) ! -iname "*-trailer.*" ! -iname "*-behindthescenes.*" ! -iname "*-featurette.*" ! -iname "*-interview.*" ! -iname "*-scene.*" ! -iname "*-short.*" ! -iname "*-deleted.*" ! -iname "*-sample.*"
 )
 
 echo "Found ${#files[@]} files."

@@ -96,8 +96,7 @@ function Get-SidecarFile {
         Where-Object {
             ($Exclude -notcontains $_.FullName) -and
             ($_.Name -match "^${esc}([._-]|$)") -and
-            ($_.Name -notlike "*-trailer.*") -and
-            ($_.Name -notlike "*-behindthescenes.*") -and
+            ($_.BaseName -notmatch '-(trailer|behindthescenes|featurette|interview|scene|short|deleted|sample)$') -and
             ($SidecarExtensions -contains $_.Extension.ToLower())
         }
 }
@@ -174,8 +173,7 @@ foreach ($folder in $movieFolders) {
         Get-ChildItem -LiteralPath $folder.FullName -File -ErrorAction SilentlyContinue |
         Where-Object {
             ($validExtensions -contains $_.Extension.ToLower()) -and
-            ($_.Name -notlike "*-trailer.*") -and
-            ($_.Name -notlike "*-behindthescenes.*")
+            ($_.BaseName -notmatch '-(trailer|behindthescenes|featurette|interview|scene|short|deleted|sample)$')
         }
     )
 

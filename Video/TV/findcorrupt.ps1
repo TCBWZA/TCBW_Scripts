@@ -360,7 +360,7 @@ Write-Host "Scanning for corrupt MKVs..." -ForegroundColor Cyan
 
 $corruptFound = $false
 
-Get-ChildItem -LiteralPath $Root -Recurse -File -Filter "*.mkv" | ForEach-Object {
+Get-ChildItem -LiteralPath $Root -Recurse -File -Filter "*.mkv" | Where-Object { $_.BaseName -notmatch '-(trailer|behindthescenes|featurette|interview|scene|short|deleted|sample)$' }  | ForEach-Object {
 
     $File = $_.FullName
 

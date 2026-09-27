@@ -119,7 +119,7 @@ echo "Scanning for files..."
 
 # Find all video files >= 1GB
 mapfile -t files < <(
-    find . -type f \( -iname "*.mkv" -o -iname "*.mp4" -o -iname "*.ts" \) ! -iname "*-trailer.*" -size +950M
+    find . -type f \( -iname "*.mkv" -o -iname "*.mp4" -o -iname "*.ts" \) ! -iname "*-trailer.*" ! -iname "*-behindthescenes.*" ! -iname "*-featurette.*" ! -iname "*-interview.*" ! -iname "*-scene.*" ! -iname "*-short.*" ! -iname "*-deleted.*" ! -iname "*-sample.*" -size +950M
 )
 
 echo "Found ${#files[@]} files."
