@@ -627,7 +627,6 @@ foreach ($f in $files) {
     Write-Host "Input    : $($f.FullName)"
     Write-Host "Temp Out : $tmpfile"
     Write-Host "Filters  : $hb_filter"
-    Write-Host "AnimTune : $hb_animation"
 
     ###############################################################
     # RUN HANDBRAKE

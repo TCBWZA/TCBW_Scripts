@@ -633,14 +633,6 @@ foreach ($f in $files) {
     Debug "HandBrake filter: $hb_filter"
 
     ###############################################################
-    # ANIMATION-SPECIFIC ENCODER SETTINGS
-    ###############################################################
-    $hb_animation = @(
-        "--quality 20",
-        "--encoder-preset slow"
-    ) -join " "
-
-    ###############################################################
     # TEMP OUTPUT
     ###############################################################
     $tmpfile = Join-Path $dir ($baseNoExt + '[Trans].tmp')
@@ -654,7 +646,6 @@ foreach ($f in $files) {
     Write-Host "Input    : $($f.FullName)"
     Write-Host "Temp Out : $tmpfile"
     Write-Host "Filters  : $hb_filter"
-    Write-Host "AnimTune : $hb_animation"
 
     ###############################################################
     # RUN HANDBRAKE
