@@ -234,31 +234,45 @@ function Invoke-SonarrReplaceFromPath {
 
         $seriesList = Invoke-RestMethod -Method Get -Uri "$SonarrUrl/api/v3/series?term=$seriesName" -Headers $Headers
 
-        $series = $seriesList |
-            Where-Object {
-                $_.title -like "*$seriesName*" -or
-                $_.cleanTitle -like "*$seriesName*"
-            } |
-            Select-Object -First 1
+        # /series?term= is a loose search and can return the whole library: match
+        # the title or the folder leaf exactly, then refuse to guess when that
+        # still leaves more than one candidate.
+        $candidates = @($seriesList | Where-Object {
+            ($null -ne $_.title -and $_.title -eq $seriesName) -or
+            ($null -ne $_.path  -and [System.IO.Path]::GetFileName($_.path) -eq $seriesName)
+        })
 
-        if (-not $series) {
+        if ($candidates.Count -eq 0) {
             $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
             Add-Content -LiteralPath $MissingSeriesLog -Value "$timestamp,$seriesName,$FilePath"
             Write-SonarrLog -File $FilePath -Status "404 (series not found)"
             return
         }
 
+        if ($candidates.Count -gt 1) {
+            Write-SonarrLog -File $FilePath -Status "ERROR: ambiguous series match, nothing deleted"
+            Write-Warning "Matches $($candidates.Count) Sonarr series for '$seriesName' -- leaving file in place: $FilePath"
+            return
+        }
+
+        $series = $candidates[0]
+
         $episodes = Invoke-RestMethod -Method Get -Uri "$SonarrUrl/api/v3/episode?seriesId=$($series.id)" -Headers $Headers
 
-        $episodeObj = $episodes |
-            Where-Object { $_.seasonNumber -eq $season -and $_.episodeNumber -eq $episode }
+        $episodeMatches = @($episodes |
+            Where-Object { $_.seasonNumber -eq $season -and $_.episodeNumber -eq $episode })
 
-        if (-not $episodeObj) {
+        if ($episodeMatches.Count -eq 0) {
             Write-SonarrLog -File $FilePath -Status "404 (episode not found)"
             return
         }
 
-        $episodeId = $episodeObj.id
+        if ($episodeMatches.Count -gt 1) {
+            Write-SonarrLog -File $FilePath -Status "ERROR: ambiguous episode match, nothing deleted"
+            return
+        }
+
+        $episodeId = $episodeMatches[0].id
 
         Remove-Item -LiteralPath $FilePath -Force -ErrorAction Stop
 
