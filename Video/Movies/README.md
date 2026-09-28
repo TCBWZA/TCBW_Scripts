@@ -1,6 +1,6 @@
 # Movies Video Scripts
 
-Compression, deduplication, and maintenance scripts for movie content. Scripts convert video to x265 (HEVC) with AAC audio, detect and remove duplicates, and identify corrupt MKV files.
+Compression, setreleasedate, and maintenance scripts for movie content. Scripts convert video to x265 (HEVC) with AAC audio, and identify corrupt MKV files. Note: no deduplication of movies -- a folder can intentionally hold both a 4K (2160p) and a 1080p encode of the same film.
 
 ## DISCLAIMER
 
@@ -208,38 +208,6 @@ Set-Location "Z:\Media\Movies"
 ---
 
 > **organize-chapters.ps1** have moved to [Video/General/](../General/README.md).
-
----
-
-### dedup.ps1
-
-Recursively scans movie directories for duplicate video files and removes them, keeping the best copy. Also removes associated sidecar files for deleted duplicates.
-
-**What it does:**
-
-- Scans each movie folder for multiple video files (`.mkv`, `.mp4`, `.avi`, `.ts`).
-- When duplicates are found, keeps the best file using this priority:
-  - File type: `MKV > MP4 > AVI > TS`
-  - File size: largest file wins when file types are equal.
-- Deletes duplicate files along with any associated sidecar files (`.nfo`, `.srt`, `.jpg`, `.trickplay`, etc.) and orphaned `trickplay` folders.
-- Outputs a summary report listing files kept, files deleted, and sidecars removed.
-- Audit mode (`-Audit`) previews all planned deletions without making any changes.
-
-**Parameters:**
-
-| Parameter | Required | Default | Description |
-|---|---|---|---|
-| `-Audit` | No | | Dry-run mode; no files are deleted. Prints what would be removed. |
-
-**Execution:**
-
-```powershell
-# Audit mode -- preview what would be deleted (recommended before first real run)
-.\dedup.ps1 -Audit
-
-# Perform actual deduplication
-.\dedup.ps1
-```
 
 ---
 

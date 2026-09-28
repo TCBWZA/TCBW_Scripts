@@ -33,6 +33,7 @@ TCBW_Scripts/
 |   |--  Anime/                             - Animation-specific variants of the TV compression scripts
 |   |   |--  compress_amd_x265_aac.sh       - AMD GPU VAAPI x265 compression at QP 32 for animation (bash)
 |   |   |--  findunsubbed.sh                - Finds Japanese-audio titles with no English subtitles (bash)
+|   |   |--  fixmkvproperties.sh            - Fixes MKV container properties (bash)
 |   |   |--  hbcompress_amd_x265_aac.ps1    - HandBrake AMD VCE x265 compression (PowerShell)
 |   |   \--  hbcompress_qsv_x265_aac.ps1    - HandBrake Intel QSV x265 compression (PowerShell)
 |   |--  Foreign/                          - Compression scripts for foreign language content
@@ -48,8 +49,8 @@ TCBW_Scripts/
 |   |   |--  compress_amd_x265_aac.sh      - AMD GPU VAAPI x265 compression (bash)
 |   |   |--  dircleanup.sh                 - Removes orphaned trickplay dirs, stale .skip markers, dangling NFOs (bash)
 |   |   |--  dircleanup.ps1                - Removes orphaned trickplay dirs, stale .skip markers, dangling NFOs (PowerShell)
+|   |   |--  dedup.ps1                     - Duplicate episode removal and priority-based selection (PowerShell)
 |   |   |--  fixSpecials.ps1               - Renames Specials folders to Season 00, merging if needed (PowerShell)
-|   |   |--  fixmkvproperties.sh           - Fixes MKV container properties (bash)
 |   |   |--  fixunnamedvideo.sh           - Renames extension-less downloads to <dirname>.mkv (bash)
 |   |   |--  hb 1080 profile.json          - HandBrake 1080p user preset (import into HandBrake)
 |   |   |--  hb 1080p SDR AMD profile.json - HandBrake 1080p SDR user preset (import into HandBrake)
@@ -58,13 +59,12 @@ TCBW_Scripts/
 |   |   |--  setairdate.sh                 - NFO air date to file timestamp setter for TV episodes (bash)
 |   |   |--  setairdate.ps1                - NFO air date to file timestamp setter for TV episodes (PowerShell)
 |   |   \--  sync_robo.ps1                 - Robocopy-based sync helper (PowerShell)
-|   |--  Movies/                           - Compression, deduplication, and maintenance scripts for movies
+|   |--  Movies/                           - Compression and maintenance scripts for movies
 |   |   |--  README.md
 |   |   |--  Handbrake AV1 4K preset.json  - HandBrake AV1 4K user preset (import into HandBrake)
 |   |   |--  compress_amd_x265_aac.sh      - AMD GPU VAAPI x265 compression (bash)
 |   |   |--  compress_amd_x265_aac.ps1     - AMD GPU x265 compression (PowerShell)
 |   |   |--  compress_qsv_x265_aac.ps1     - Intel QSV x265 compression (PowerShell)
-|   |   |--  dedup.ps1                     - Duplicate removal (PowerShell)
 |   |   |--  findcorrupt.ps1               - Corrupt MKV detection with Radarr integration (PowerShell)
 |   |   |--  hbcompress_amd_av1_4k.ps1     - HandBrake AMD VCE AV1 4K compression (PowerShell)
 |   |   |--  hbcompress_amd_x265_aac.ps1   - HandBrake AMD VCE x265 compression (PowerShell)
@@ -81,7 +81,6 @@ TCBW_Scripts/
 |       |--  compress_lang_amd_x265_aac.sh - Language-specific AMD VAAPI x265 compression (bash)
 |       |--  compress_mp4ts_amd_x265_aac.sh - MP4/TS to MKV at QP 28, no size gate, replaces even on growth (bash)
 |       |--  compress_qsv_x265_aac.ps1     - Intel QSV x265 compression (PowerShell)
-|       |--  dedup.ps1                     - Duplicate episode removal and priority-based selection (PowerShell)
 |       |--  findcorrupt.ps1               - Corrupt MKV detection with Sonarr integration (PowerShell)
 |       |--  findforeign.ps1               - Foreign-audio detection with Sonarr integration (PowerShell)
 |       |--  findforeign.sh                - Foreign-audio detection (bash)
@@ -246,16 +245,10 @@ The two machines keep batch processing reliable despite the Debian FFmpeg bug, a
 
 ```powershell
 # TV Content - Audit mode (preview only)
-./Video/TV/dedup.ps1 -Audit
+./Video/General/dedup.ps1 -Audit
 
 # TV Content - Perform deduplication
-./Video/TV/dedup.ps1
-
-# Movies - Audit mode (preview only)
-./Video/Movies/dedup.ps1 -Audit
-
-# Movies - Perform deduplication
-./Video/Movies/dedup.ps1
+./Video/General/dedup.ps1
 
 # Foreign - Audit mode (preview only)
 ./Video/Foreign/dedup.ps1 -Audit
@@ -352,7 +345,7 @@ bash ./Linux/general/usb-poweron.sh
 # Directory and metadata cleanup
 bash ./Video/General/dircleanup.sh
 bash ./Video/General/listuhd.sh
-  bash ./Video/General/fixmkvproperties.sh
+bash ./Video/Anime/fixmkvproperties.sh
   bash ./Video/General/setairdate.sh
 bash ./Video/Movies/setreleasedate.sh
 ```

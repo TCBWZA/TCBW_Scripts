@@ -1,6 +1,6 @@
 # TV Shows Video Scripts
 
-Compression, deduplication, and maintenance scripts for TV show content. Scripts convert video to x265 (HEVC) with AAC audio, detect and remove duplicates, flag foreign-language-only files, and identify corrupt MKV files.
+Compression and maintenance scripts for TV show content. Scripts convert video to x265 (HEVC) with AAC audio, flag foreign-language-only files, and identify corrupt MKV files. Episode deduplication is shared from [Video/General/](../General/README.md).
 
 ## DISCLAIMER
 
@@ -338,33 +338,6 @@ Set-Location "Z:\Media\TV"
 
 # Enable debug output
 .\hbcompress_qsv_x265_aac.ps1 -Debug
-```
-
----
-
-### dedup.ps1
-
-Recursively scans TV show directories for duplicate episodes and removes them, keeping the best copy. Also removes associated sidecar files for deleted episodes.
-
-**What it does:**
-
-- Scans all files recursively for episode codes matching `S##E##`, `S##E###`, `##x##`, `#x##`, or `##x###`.
-- Groups files by episode code within the same directory.
-- When duplicates are found, keeps the best file using this priority:
-  - File type: `MKV > MP4 > TS > AVI`
-  - File size: largest file wins when file types are equal.
-- Deletes duplicate files along with any associated sidecar files (`.nfo`, `.srt`, `.jpg`, `.trickplay`, etc.).
-- Outputs a summary report listing episodes kept, episodes deleted, and sidecar files removed.
-- Audit mode (`-Audit`) previews all planned deletions without making any changes.
-
-**Execution:**
-
-```powershell
-# Audit mode -- preview what would be deleted (recommended before first real run)
-.\dedup.ps1 -Audit
-
-# Perform actual deduplication
-.\dedup.ps1
 ```
 
 ---
