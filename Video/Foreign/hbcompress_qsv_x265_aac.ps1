@@ -663,20 +663,11 @@ Debug "Running cleanup..."
 
 Get-ChildItem -Recurse -File |
     Where-Object {
-        $_.Name -match '\[Trans\]\.tmp' -or
-        $_.Name -match '\[Trans\]\.nfo' -or
-        $_.Name -match '\[Trans\]\.jpg'
+        $_.Name -match '\[Trans\]\.tmp'
     } |
     ForEach-Object {
         Debug "Removing leftover file: $($_.FullName)"
         Remove-Item -LiteralPath $_.FullName -Force
-    }
-
-Get-ChildItem -Recurse -Directory |
-    Where-Object { $_.Name -match '\[Trans\]\.trickplay' } |
-    ForEach-Object {
-        Debug "Removing leftover directory: $($_.FullName)"
-        Remove-Item -LiteralPath $_.FullName -Recurse -Force
     }
 
 Write-Host "All tasks complete."

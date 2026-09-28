@@ -562,8 +562,5 @@ wait
 echo "Cleaning up leftover [Trans] files..."
 
 find . -type f -regex '.*\[Trans\]\.tmp$' -delete
-find . -type f -regex '.*\[Trans\]\.nfo$' -delete
-find . -type f -regex '.*\[Trans\]\.jpg$' -delete
-find . -type d -regex '.*\[Trans\]\.trickplay$' -exec rm -rf {} +
 
 echo "All tasks complete."

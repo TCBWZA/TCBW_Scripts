@@ -147,11 +147,21 @@ $AllFiles | ForEach-Object -Parallel {
     $Dir  = $_.DirectoryName
 
     $episode_skip_file = Join-Path $Dir ".skip_$Base"
+    # Show-level marker: the first word of the filename groups an episode under
+    # its show, so one uncompressible show can be marked as a whole rather than
+    # re-probing every episode after each failed size gate.
+    $show_name      = ($Base -split '\s+')[0]
+    $show_skip_file = Join-Path $Dir ".skip_$show_name"
     $parent_skip_file = Join-Path (Split-Path -LiteralPath $Dir) ".skip"
 
     # Check for skip markers
     if (Test-Path -LiteralPath $parent_skip_file) {
         Write-Host "Skipping $File -- parent directory marked as done"
+        $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
+        return
+    }
+    if (Test-Path -LiteralPath $show_skip_file) {
+        Write-Host "Skipping $File -- show marked as uncompressible"
         $null = $Progress.AddOrUpdate("Completed", 1, { param($k, $old) $old + 1 })
         return
     }
@@ -344,7 +354,8 @@ $AllFiles | ForEach-Object -Parallel {
             else {
                 $origMB = [math]::Round($origSize / 1MB, 2)
                 $newMB = [math]::Round($newSize / 1MB, 2)
-                Write-Host "Skipped: new file not smaller (${origMB}MB -> ${newMB}MB) - creating .skip_$Base"
+                Write-Host "Skipped: new file not smaller (${origMB}MB -> ${newMB}MB) - creating .skip_$show_name and .skip_$Base"
+                New-Item -Path $show_skip_file -ItemType File -Force | Out-Null
                 New-Item -Path $episode_skip_file -ItemType File -Force | Out-Null
                 Remove-Item -LiteralPath $Tmp -Force
             }
@@ -382,18 +393,10 @@ Write-Host "Cleaning up leftover [Trans] files..."
 
 Get-ChildItem -Recurse -File |
     Where-Object {
-        $_.Name -match '\[Trans\]\.tmp' -or
-        $_.Name -match '\[Trans\]\.nfo' -or
-        $_.Name -match '\[Trans\]\.jpg'
+        $_.Name -match '\[Trans\]\.tmp'
     } |
     ForEach-Object {
         Remove-Item -LiteralPath $_.FullName -Force
-    }
-
-Get-ChildItem -Recurse -Directory |
-    Where-Object { $_.Name -match '\[Trans\]\.trickplay' } |
-    ForEach-Object {
-        Remove-Item -LiteralPath $_.FullName -Recurse -Force
     }
 
 Write-Host "All tasks complete."

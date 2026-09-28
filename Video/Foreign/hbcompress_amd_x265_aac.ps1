@@ -568,18 +568,10 @@ Write-Host "Cleaning up leftover Trans files..."
 
 Get-ChildItem -LiteralPath $root -Recurse -File |
     Where-Object {
-        $_.Name -match "\[Trans\]\.tmp" -or
-        $_.Name -match "\[Trans\]\.nfo" -or
-        $_.Name -match "\[Trans\]\.jpg"
+        $_.Name -match "\[Trans\]\.tmp"
     } |
     ForEach-Object {
         Remove-Item -LiteralPath $_.FullName -Force
-    }
-
-Get-ChildItem -LiteralPath $root -Recurse -Directory |
-    Where-Object { $_.Name -match "\[Trans\]\.trickplay" } |
-    ForEach-Object {
-        Remove-Item -LiteralPath $_.FullName -Recurse -Force
     }
 
 Write-Host "All tasks complete."
