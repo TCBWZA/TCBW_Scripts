@@ -54,7 +54,6 @@ TCBW_Scripts/
 |   |   |--  hb 1080 profile.json          - HandBrake 1080p user preset (import into HandBrake)
 |   |   |--  hb 1080p SDR AMD profile.json - HandBrake 1080p SDR user preset (import into HandBrake)
 |   |   |--  listuhd.sh                    - Lists UHD files in a directory (bash)
-|   |   |--  metadata-cleanup.sh           - Cleans metadata sidecar files (bash)
 |   |   |--  organize-chapters.ps1         - Moves *_chapters.xml files into chapters/ subdirectory (PowerShell)
 |   |   |--  setairdate.sh                 - NFO air date to file timestamp setter for TV episodes (bash)
 |   |   |--  setairdate.ps1                - NFO air date to file timestamp setter for TV episodes (PowerShell)
@@ -352,7 +351,6 @@ bash ./Linux/general/usb-poweron.sh
 
 # Directory and metadata cleanup
 bash ./Video/General/dircleanup.sh
-bash ./Video/General/metadata-cleanup.sh
 bash ./Video/General/listuhd.sh
   bash ./Video/General/fixmkvproperties.sh
   bash ./Video/General/setairdate.sh
