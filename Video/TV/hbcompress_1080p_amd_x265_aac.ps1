@@ -269,8 +269,8 @@ function Invoke-AtomicReplace {
         if (-not $SkipSizeCheck) {
             # Require the new file to be at least 10% smaller
             if (($newSize * 10) -ge ($origSize * 9)) {
-                Write-Host "Skipped: new file not 10% smaller (${origMB}MB -> ${newMB}MB)"
-                Debug "New file not 10% smaller, marking skip"
+                Write-Host "Skipped: new file not at least 10% smaller (${origMB}MB -> ${newMB}MB)"
+                Debug "New file not at least 10% smaller, marking skip"
                 New-Item -Path $SkipFile -ItemType File -Force | Out-Null
                 Remove-Item -LiteralPath $TmpFile -Force
                 return
