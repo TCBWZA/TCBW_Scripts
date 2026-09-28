@@ -57,7 +57,8 @@ function Test-ContainerProblem {
 
 $MaxJobs = 2
 
-Get-ChildItem -Recurse -Filter *.mkv | Where-Object { $_.BaseName -notmatch '-(trailer|behindthescenes|featurette|interview|scene|short|deleted|sample)$' }  | ForEach-Object {
+Get-ChildItem -Recurse -Filter *.mkv | Where-Object { $_.BaseName -notmatch '-(trailer|behindthescenes|featurette|interview|scene|short|deleted|sample)$' -and
+        $_.FullName -notlike '*\behind the scenes\*' -and $_.FullName -notlike '*\deleted scenes\*' -and $_.FullName -notlike '*\interviews\*' -and $_.FullName -notlike '*\scenes\*' -and $_.FullName -notlike '*\samples\*' -and $_.FullName -notlike '*\shorts\*' -and $_.FullName -notlike '*\featurettes\*' -and $_.FullName -notlike '*\clips\*' -and $_.FullName -notlike '*\other\*' -and $_.FullName -notlike '*\extras\*' -and $_.FullName -notlike '*\trailers\*' -and $_.FullName -notlike '*\theme-music\*' -and $_.FullName -notlike '*\backdrops\*' }  | ForEach-Object {
 
     $File = $_.FullName
     $Base = [System.IO.Path]::GetFileNameWithoutExtension($File)

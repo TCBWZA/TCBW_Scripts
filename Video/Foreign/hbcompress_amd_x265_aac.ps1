@@ -318,6 +318,9 @@ $files = foreach ($path in [System.IO.Directory]::EnumerateFiles($root, "*", "Al
         $path.EndsWith(".mp4", [System.StringComparison]::OrdinalIgnoreCase) -or
         $path.EndsWith(".ts",  [System.StringComparison]::OrdinalIgnoreCase)) {
 
+        $base = [System.IO.Path]::GetFileNameWithoutExtension($path)
+        if ($base -match '-(trailer|behindthescenes|featurette|interview|scene|short|deleted|sample)$') { continue }
+        if ($path -notlike '*\behind the scenes\*' -and $path -notlike '*\deleted scenes\*' -and $path -notlike '*\interviews\*' -and $path -notlike '*\scenes\*' -and $path -notlike '*\samples\*' -and $path -notlike '*\shorts\*' -and $path -notlike '*\featurettes\*' -and $path -notlike '*\clips\*' -and $path -notlike '*\other\*' -and $path -notlike '*\extras\*' -and $path -notlike '*\trailers\*' -and $path -notlike '*\theme-music\*' -and $path -notlike '*\backdrops\*') { continue }
         $info = [System.IO.FileInfo]::new($path)
 
         if ($info.Length -ge 950MB) {

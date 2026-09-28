@@ -376,7 +376,21 @@ while IFS= read -r -d '' video; do
         errors=$((errors + 1))
     fi
 
-done < <(find . -type f \( -iname '*.mkv' -o -iname '*.mp4' \) -print0)
+done < <(find . -type f \( -iname '*.mkv' -o -iname '*.mp4' \) \
+    ! -ipath '*/behind the scenes/*' \
+    ! -ipath '*/deleted scenes/*' \
+    ! -ipath '*/interviews/*' \
+    ! -ipath '*/scenes/*' \
+    ! -ipath '*/samples/*' \
+    ! -ipath '*/shorts/*' \
+    ! -ipath '*/featurettes/*' \
+    ! -ipath '*/clips/*' \
+    ! -ipath '*/other/*' \
+    ! -ipath '*/extras/*' \
+    ! -ipath '*/trailers/*' \
+    ! -ipath '*/theme-music/*' \
+    ! -ipath '*/backdrops/*' \ \
+    -print0)
 
 printf '\nDone.  Processed: %d   Already done: %d   Skipped (no NFO): %d   Filtered (extras/trailers): %d   Errors: %d\n' \
     "$processed" "$already" "$skipped" "$filtered" "$errors"

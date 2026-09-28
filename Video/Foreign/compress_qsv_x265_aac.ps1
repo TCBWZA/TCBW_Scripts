@@ -94,6 +94,7 @@ $AllFiles = Get-ChildItem -Recurse -Include *.mkv,*.ts,*.mp4 -File | Where-Objec
     $FileSizeGB = [math]::Floor($_.Length / 1GB)
     -not ($Base.Contains("[Cleaned]") -or $Base.Contains("[Trans]")) -and
     $_.BaseName -notmatch '-(trailer|behindthescenes|featurette|interview|scene|short|deleted|sample)$' -and
+    $_.FullName -notlike '*\behind the scenes\*' -and $_.FullName -notlike '*\deleted scenes\*' -and $_.FullName -notlike '*\interviews\*' -and $_.FullName -notlike '*\scenes\*' -and $_.FullName -notlike '*\samples\*' -and $_.FullName -notlike '*\shorts\*' -and $_.FullName -notlike '*\featurettes\*' -and $_.FullName -notlike '*\clips\*' -and $_.FullName -notlike '*\other\*' -and $_.FullName -notlike '*\extras\*' -and $_.FullName -notlike '*\trailers\*' -and $_.FullName -notlike '*\theme-music\*' -and $_.FullName -notlike '*\backdrops\*' -and
     $FileSizeGB -ge $MinFileSize
 }
 

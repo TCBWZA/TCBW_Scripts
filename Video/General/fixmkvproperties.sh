@@ -220,9 +220,27 @@ log_audit "=== Unified run started ==="
 # trailers/extras folders so the cleaner never touches promotional files.
 tmpfile=$(mktemp)
 find . -type f -iname '*.mkv' \
-    ! -iname '*-trailer*' \
-    ! -path '*/trailers/*' \
-    ! -path '*/extras/*' \
+    ! -iname '*-trailer.*' \
+    ! -iname '*-behindthescenes.*' \
+    ! -iname '*-featurette.*' \
+    ! -iname '*-interview.*' \
+    ! -iname '*-scene.*' \
+    ! -iname '*-short.*' \
+    ! -iname '*-deleted.*' \
+    ! -iname '*-sample.*' \
+    ! -ipath '*/behind the scenes/*' \
+    ! -ipath '*/deleted scenes/*' \
+    ! -ipath '*/interviews/*' \
+    ! -ipath '*/scenes/*' \
+    ! -ipath '*/samples/*' \
+    ! -ipath '*/shorts/*' \
+    ! -ipath '*/featurettes/*' \
+    ! -ipath '*/clips/*' \
+    ! -ipath '*/other/*' \
+    ! -ipath '*/extras/*' \
+    ! -ipath '*/trailers/*' \
+    ! -ipath '*/theme-music/*' \
+    ! -ipath '*/backdrops/*' \
     -print0 > "$tmpfile"
 
 while IFS= read -r -d '' mkv; do

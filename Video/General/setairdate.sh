@@ -162,7 +162,29 @@ while IFS= read -r -d '' video; do
         errors=$((errors + 1))
     fi
 
-done < <(find . -type f \( -iname '*.mkv' -o -iname '*.mp4' ! -iname "*-trailer.*" \) -print0)
+done < <(find . -type f \( -iname '*.mkv' -o -iname '*.mp4' \) \
+    ! -iname '*-trailer.*' \
+    ! -iname '*-behindthescenes.*' \
+    ! -iname '*-featurette.*' \
+    ! -iname '*-interview.*' \
+    ! -iname '*-scene.*' \
+    ! -iname '*-short.*' \
+    ! -iname '*-deleted.*' \
+    ! -iname '*-sample.*' \
+    ! -ipath '*/behind the scenes/*' \
+    ! -ipath '*/deleted scenes/*' \
+    ! -ipath '*/interviews/*' \
+    ! -ipath '*/scenes/*' \
+    ! -ipath '*/samples/*' \
+    ! -ipath '*/shorts/*' \
+    ! -ipath '*/featurettes/*' \
+    ! -ipath '*/clips/*' \
+    ! -ipath '*/other/*' \
+    ! -ipath '*/extras/*' \
+    ! -ipath '*/trailers/*' \
+    ! -ipath '*/theme-music/*' \
+    ! -ipath '*/backdrops/*' \ \
+    -print0)
 
 printf '\nDone.  Processed: %d   Skipped (no NFO): %d   Errors: %d\n' \
     "$processed" "$skipped" "$errors"

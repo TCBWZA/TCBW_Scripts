@@ -290,7 +290,9 @@ $files = [System.IO.Directory]::EnumerateFiles(
     "*.*",
     [System.IO.SearchOption]::AllDirectories
 ) | Where-Object {
-    $_ -match '\.(mkv|mp4|ts)$'
+    $_ -match '\.(mkv|mp4|ts)$' -and
+    [System.IO.Path]::GetFileNameWithoutExtension($_) -notmatch '-(trailer|behindthescenes|featurette|interview|scene|short|deleted|sample)$' -and
+    $_ -notlike '*\behind the scenes\*' -and $_ -notlike '*\deleted scenes\*' -and $_ -notlike '*\interviews\*' -and $_ -notlike '*\scenes\*' -and $_ -notlike '*\samples\*' -and $_ -notlike '*\shorts\*' -and $_ -notlike '*\featurettes\*' -and $_ -notlike '*\clips\*' -and $_ -notlike '*\other\*' -and $_ -notlike '*\extras\*' -and $_ -notlike '*\trailers\*' -and $_ -notlike '*\theme-music\*' -and $_ -notlike '*\backdrops\*'
 } | ForEach-Object {
     Get-Item -LiteralPath $_
 }
