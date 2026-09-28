@@ -31,7 +31,8 @@ TCBW_Scripts/
 |   |   \--  usb-poweron.sh                - Powers on the USB external drive
 |--  Video/
 |   |--  Anime/                             - Animation-specific variants of the TV compression scripts
-|   |   \--  compress_amd_x265_aac.sh       - AMD GPU VAAPI x265 compression at QP 32 for animation (bash)
+|   |   |--  compress_amd_x265_aac.sh       - AMD GPU VAAPI x265 compression at QP 32 for animation (bash)
+|   |   \--  findunsubbed.sh                - Finds Japanese-audio titles with no English subtitles (bash)
 |   |--  Foreign/                          - Compression scripts for foreign language content
 |   |   |--  README.md
 |   |   |--  compress_amd_x265_aac.sh      - AMD GPU VAAPI x265 compression (bash)
@@ -47,14 +48,14 @@ TCBW_Scripts/
 |   |   |--  dircleanup.ps1                - Removes orphaned trickplay dirs, stale .skip markers, dangling NFOs (PowerShell)
 |   |   |--  fixSpecials.ps1               - Renames Specials folders to Season 00, merging if needed (PowerShell)
 |   |   |--  fixmkvproperties.sh           - Fixes MKV container properties (bash)
+|   |   |--  fixunnamedvideo.sh           - Renames extension-less downloads to <dirname>.mkv (bash)
 |   |   |--  hb 1080 profile.json          - HandBrake 1080p user preset (import into HandBrake)
+|   |   |--  hb 1080p SDR AMD profile.json - HandBrake 1080p SDR user preset (import into HandBrake)
 |   |   |--  listuhd.sh                    - Lists UHD files in a directory (bash)
 |   |   |--  metadata-cleanup.sh           - Cleans metadata sidecar files (bash)
 |   |   |--  organize-chapters.ps1         - Moves *_chapters.xml files into chapters/ subdirectory (PowerShell)
 |   |   |--  setairdate.sh                 - NFO air date to file timestamp setter for TV episodes (bash)
 |   |   |--  setairdate.ps1                - NFO air date to file timestamp setter for TV episodes (PowerShell)
-|   |   |--  setreleasedate.sh             - NFO release date to file timestamp setter for movies (bash)
-|   |   |--  setreleasedate.ps1            - NFO release date to file timestamp setter for movies (PowerShell)
 |   |   \--  sync_robo.ps1                 - Robocopy-based sync helper (PowerShell)
 |   |--  Movies/                           - Compression, deduplication, and maintenance scripts for movies
 |   |   |--  README.md
@@ -66,6 +67,8 @@ TCBW_Scripts/
 |   |   |--  findcorrupt.ps1               - Corrupt MKV detection with Radarr integration (PowerShell)
 |   |   |--  hbcompress_amd_av1_4k.ps1     - HandBrake AMD VCE AV1 4K compression (PowerShell)
 |   |   |--  hbcompress_amd_x265_aac.ps1   - HandBrake AMD VCE x265 compression (PowerShell)
+|   |   |--  setreleasedate.sh             - NFO release date to file timestamp setter for movies (bash)
+|   |   |--  setreleasedate.ps1            - NFO release date to file timestamp setter for movies (PowerShell)
 |   |   \--  remuxmp4.sh                   - MP4 to MKV container remux with Radarr integration (bash)
 |   \--  TV/                               - Compression, deduplication, and maintenance scripts for TV shows
 |       |--  README.md
@@ -81,6 +84,7 @@ TCBW_Scripts/
 |       |--  findcorrupt.ps1               - Corrupt MKV detection with Sonarr integration (PowerShell)
 |       |--  findforeign.ps1               - Foreign-audio detection with Sonarr integration (PowerShell)
 |       |--  findforeign.sh                - Foreign-audio detection (bash)
+|       |--  hbcompress_1080p_amd_x265_aac.ps1 - HandBrake AMD VCE x265 1080p SDR compression (PowerShell)
 |       |--  hbcompress_amd_x265_aac.ps1   - HandBrake AMD VCE x265 compression (PowerShell)
 |       |--  hbcompress_qsv_x265_aac.ps1   - HandBrake Intel QSV x265 compression (PowerShell)
 |       |--  remux.ps1                     - Container-repair remux without re-encoding (PowerShell)
@@ -350,7 +354,7 @@ bash ./Video/General/metadata-cleanup.sh
 bash ./Video/General/listuhd.sh
   bash ./Video/General/fixmkvproperties.sh
   bash ./Video/General/setairdate.sh
-bash ./Video/General/setreleasedate.sh
+bash ./Video/Movies/setreleasedate.sh
 ```
 
 For detailed usage instructions and script options, see the README files in each folder:

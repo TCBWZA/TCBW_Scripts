@@ -145,7 +145,7 @@ if [[ $ENABLE_SONARR -eq 1 ]]; then
 
     if [[ -z "$SONARR_API_KEY" || "$SONARR_API_KEY" == "YOUR_API_KEY_HERE" ]]; then
         print_error "ERROR: Sonarr enabled but API key missing"
-        print_error "Create $HOME/.config/tcbw/sonarr.conf or set TCBW_SONARR_API_KEY."
+        print_error "Set SONARR_API_KEY near the top of this script."
         exit 1
     fi
 fi
