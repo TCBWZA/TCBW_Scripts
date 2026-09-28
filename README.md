@@ -32,7 +32,9 @@ TCBW_Scripts/
 |--  Video/
 |   |--  Anime/                             - Animation-specific variants of the TV compression scripts
 |   |   |--  compress_amd_x265_aac.sh       - AMD GPU VAAPI x265 compression at QP 32 for animation (bash)
-|   |   \--  findunsubbed.sh                - Finds Japanese-audio titles with no English subtitles (bash)
+|   |   |--  findunsubbed.sh                - Finds Japanese-audio titles with no English subtitles (bash)
+|   |   |--  hbcompress_amd_x265_aac.ps1    - HandBrake AMD VCE x265 compression (PowerShell)
+|   |   \--  hbcompress_qsv_x265_aac.ps1    - HandBrake Intel QSV x265 compression (PowerShell)
 |   |--  Foreign/                          - Compression scripts for foreign language content
 |   |   |--  README.md
 |   |   |--  compress_amd_x265_aac.sh      - AMD GPU VAAPI x265 compression (bash)
