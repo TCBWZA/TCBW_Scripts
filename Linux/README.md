@@ -13,7 +13,7 @@ This folder contains utility scripts for Linux/Proxmox environments.
 
 ### lxc-upgrade.sh
 
-Automated LXC container update script for Proxmox VE. Updates the host system and all LXC containers in parallel with configurable job limits. Automatically handles container startup, package updates, and reboots when needed. Where a container carries a community-scripts `/usr/bin/update` entrypoint, it is invoked with the project's supported `PHS_SILENT=1` environment variable, forcing silent (unattended) operation without the interactive update menu. Logs all operations to `/var/log/lxc-update-*.log`.
+Automated LXC container update script for Proxmox VE. Updates the host system and all LXC containers in parallel with configurable job limits. Automatically handles container startup, package updates, and reboots when needed. Where a container carries a community-scripts `/usr/bin/update` entrypoint, it is run unattended by pinning stdin to `/dev/null` and `TERM` to a working terminfo entry and bounding it with `timeout`, with the exit status checked so a failed or hung update is reported rather than silently passed. Addon update scripts are invoked directly, because the helper would otherwise skip them under `pct exec`. Stopping the containers the script started is bounded too, because a dead init can deadlock `pct stop` indefinitely and leave the remaining containers running. Logs all operations to `/var/log/lxc-update-*.log`.
 
 **Usage**: Run as root on Proxmox VE host.
 

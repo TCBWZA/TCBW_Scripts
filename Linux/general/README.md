@@ -265,7 +265,21 @@ Stops LXC container 100 (if running), rsyncs system Docker data from `/mnt/sysda
 
 Performs package upgrades for all LXC containers on the Proxmox host. Detects the package manager inside each container (apt, apk, dnf, yum, pacman, or xbps) and runs the appropriate upgrade command; containers that were stopped are started for the run and stopped again afterwards. Containers flagged as needing an APT reboot are rebooted and waited on to come back online. Containers are updated in parallel with up to **3 concurrent jobs**; all operations are logged to `/var/log/lxc-update-<CTID>.log`.
 
-When a container provides a `/usr/bin/update` entrypoint (installed at build time by the community-scripts project for Proxmox VE LXC apps), the script also runs it to apply the app-level update. Community-scripts update entrypoints support unattended operation, so the script invokes them as `env PHS_SILENT=1 /usr/bin/update` -- `PHS_SILENT=1` is the project's supported environment variable for silent mode: it skips the interactive update menu, auto-selects the default option, and suppresses addon prompts (the project's own batch `update-apps.sh` uses the same switch). Update scripts that do not honour the variable simply run normally.
+When a container provides a `/usr/bin/update` entrypoint (installed at build time by the community-scripts project for Proxmox VE LXC apps), the script also runs it to apply the app-level update. That entrypoint is a generated stub: it fetches the project's shared helper and delegates to it, so its interactive behaviour is decided by the helper, not by the container. See `briefings/bash.md` for the menu-gating conditions and how this script forces unattended mode.
+
+The script invokes it as `env TERM=xterm timeout -k 30 1800 /usr/bin/update < /dev/null`, which pins the run to unattended mode without relying on the project honouring any environment variable:
+
+- `< /dev/null` makes `[ -t 0 ]` false, so a console-gated menu never renders, and the parallel jobs cannot consume each other's stdin
+- `TERM=xterm` supplies a working terminfo entry. It must not be `dumb` or unset: either makes the helper's exit-time `clear` fail, which aborts the whole update with rc=1. The menu needs no help from `TERM`, because `[ -t 0 ]` is already false
+- `timeout` bounds the run, so a hang is killed and reported rather than waited on
+
+Exit status is checked. A timeout (`124` or `137`) or any other non-zero status prints a `WARNING` naming the container and log file, so a failed update is never reported as success.
+
+Both variables that cross into the per-container job must be `export`ed. Each container runs in a `bash -c`, so only exported functions and exported variables reach it; an unexported timeout arrives empty, `timeout` rejects the blank interval with rc=125, and the container is reported as updated having updated nothing.
+
+Stopping the containers the script started is also bounded. A container whose init is already dead can deadlock `lxc-stop` indefinitely -- `pct stop` was observed sitting blocked on a socket read for minutes against a container PVE still reported as running and which had no PID. Left unbounded that stalls the whole stop loop and leaves every later container running. `pct stop` is therefore wrapped in a timeout; a container that does not stop within it prints a `WARNING` to stderr naming the container, and the loop continues. It does not abort the run, because by that point the updates have already completed.
+
+**Addons are updated separately.** The helper only runs an installed addon when it can prompt for permission, and it reads that answer from `/dev/tty`, which does not exist under `pct exec`. Left alone it therefore skips every addon -- which would silently drop part of the pihole and Docker delivery. The script instead invokes each `/usr/local/bin/update_*` directly, giving every addon its own timeout so one stuck addon cannot block the others or occupy a job slot. The helper still logs a `Skipped addon: <name>` line of its own before that; it is the helper's dead-end prompt failing on the missing `/dev/tty`, not the outcome -- the addon's own output follows under an `--- addon: <name> ---` heading.
 
 ```bash
 ./lxc-upgrade.sh

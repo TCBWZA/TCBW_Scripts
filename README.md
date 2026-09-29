@@ -11,7 +11,7 @@ TCBW_Scripts/
 |   |   |--  backup_docker.sh              - Stops LXC container, backs up Docker data volume, restarts container
 |   |   |--  backup_etc.sh                 - Archives /etc to a network mount
 |   |   |--  backup_root.sh                - Archives /root to a network mount
-|   |   |--  lxc-upgrade.sh                - Updates Proxmox host and all LXC containers in parallel (autoremove; runs /usr/bin/update hooks in silent mode where supported)
+|   |   |--  lxc-upgrade.sh                - Updates Proxmox host and all LXC containers in parallel (autoremove; runs /usr/bin/update and addon update hooks unattended, timeout-bounded, with exit status checked)
 |   |   |--  setperm.sh                    - Sets permissions on media directories
 |   |   |--  showswap.sh                   - Displays swap usage
 |   |   |--  shrink_boot_disk.sh           - Shrinks a raw-image LXC rootfs on directory storage
