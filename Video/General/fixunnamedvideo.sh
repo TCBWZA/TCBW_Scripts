@@ -11,6 +11,11 @@ set -uo pipefail
 #  the folder holds exactly one file with no extension and
 #  no video files at all, that file is renamed to <dirname>.mkv.
 #
+#  A name with no dot cannot tell a stripped video apart from
+#  a stray text file, a checksum, or a truncated download, so the
+#  candidate is probed with ffprobe first and skipped unless it
+#  has a video stream and a positive duration.
+#
 #  Flags:
 #      -r|--root <dir>       folder root to scan
 #                            (default /main/downloads/completed/Series)
@@ -62,6 +67,13 @@ if [[ ! -d "$ROOT" ]]; then
     exit 1
 fi
 
+# Required rather than optional: without ffprobe the video check below cannot
+# run, and silently renaming unprobed files would defeat the point of the gate.
+if ! command -v ffprobe >/dev/null 2>&1; then
+    echo "ERROR: ffprobe not found on PATH; refusing to rename unprobed files"
+    exit 1
+fi
+
 # -------- Helpers --------
 video_files() {
     find "$1" -maxdepth 1 -type f \( \
@@ -74,6 +86,33 @@ video_files() {
 
 noext_files() {
     find "$1" -maxdepth 1 -type f ! -name "*.*" ! -name ".*" 2>/dev/null
+}
+
+# A stripped extension leaves no clue in the name, so confirm the bytes are
+# actually a video before the rename. Two conditions, both required:
+#   - ffprobe reports at least one video stream, and
+#   - the container reports a positive duration.
+# The duration test is what separates a real file from a truncated or
+# placeholder download that still parses as a stream header. Failures are
+# treated as "not a video": the cost of a false negative is a skipped rename
+# someone re-runs by hand, while a false positive is a .mkv that is not video.
+probe_reason() {
+    local path="$1" json duration
+    json=$(ffprobe -v quiet -print_format json -show_format -show_streams "$path" 2>/dev/null)
+    if [[ -z "$json" ]]; then
+        printf 'ffprobe produced no output (not a media file?)'
+        return 1
+    fi
+    if ! echo "$json" | jq -e '[.streams[]? | select(.codec_type=="video")] | length > 0' >/dev/null 2>&1; then
+        printf 'no video stream (audio, subtitle or data only?)'
+        return 1
+    fi
+    duration=$(echo "$json" | jq -r '.format.duration // "N/A"')
+    if [[ "$duration" == "N/A" ]] || ! [[ "$duration" =~ ^[0-9]+([.][0-9]+)?$ ]] || (( $(printf '%s' "$duration" | cut -d. -f1) < 1 )); then
+        printf 'duration is %s (empty or truncated download?)' "$duration"
+        return 1
+    fi
+    return 0
 }
 
 # -------- Build suffix find args --------
@@ -110,6 +149,13 @@ while IFS= read -r dir; do
 
     noext="$noexts"
     target="$dir/$dname$target_ext"
+
+    if ! reason=$(probe_reason "$noext"); then
+        echo "SKIP: $dir -- $noext is not a video: $reason"
+        debug "probe rejected: $noext ($reason)"
+        continue
+    fi
+    debug "probe passed: $noext"
 
     if [[ $AUDIT -eq 1 ]]; then
         echo "[AUDIT] would rename: $noext -> $target"
