@@ -29,13 +29,15 @@ apt install zstd
 
 All `sync_*.sh` and `backup_*.sh` scripts skip files with a `.tmp` extension (`--exclude='*.tmp'` for rsync; `--exclude='*.tmp'` for tar).
 
-The media/video sync scripts use local Promox paths (`/main/media/...`) for sources and `/mnt/nmedia` mount for destinations, running on the Proxmox host.
+The media/video sync scripts use local Promox paths (`<media-root>/...`) for sources and `<usb-share>` mount for destinations, running on the Proxmox host.
 
-The `/mnt/nmedia` target is a direct-attached NTFS drive (fstab `UUID -- /mnt/nmedia ntfs-3g`), so syncs use full archive semantics minus POSIX perms/owner/group (ntfs-3g cannot store them). FAT32-era workarounds from the old SMB mount (`--size-only`, `--no-times`, `--omit-dir-times`, `--modify-window=5`) are gone, and `--inplace` was dropped in favor of atomic temp-file-plus-rename semantics. `sync_etv.sh` keeps those SMB-era flags because `/mnt/emedia` is still a CIFS share.
+The `<usb-share>` target is a direct-attached NTFS drive (fstab `UUID -- <usb-share> ntfs-3g`), so syncs use full archive semantics minus POSIX perms/owner/group (ntfs-3g cannot store them). The FAT32-era workarounds from the old SMB mount (`--size-only`, `--no-times`, `--omit-dir-times`) and `--inplace` are gone from the `<usb-share>` scripts, in favour of atomic temp-file-plus-rename semantics.
 
-Each `/mnt/nmedia` sync script mounts the target itself if it is not already mounted, and unmounts it **only if this script mounted it**. When run through `sync.sh`, the drive is already power-on mounted, so no per-job unmount happens and the power-off happens once at the end.
+`sync_etv.sh` is the exception: it targets `<alt-share>` and still uses `--size-only --no-times --omit-dir-times --inplace`. It also checks rsync's exit status and prints an error rather than reporting success, because an unchecked rsync will otherwise report a failed copy as a successful one. Note it does **not** use `--modify-window`, and its destination is a different mount from `<usb-share>`, so it is not just the standard sync pointed elsewhere.
 
-`/mnt/emedia` (the `sync_etv.sh` target) is a systemd automount unit, not the local USB drive; the script triggers the automount on demand and leaves teardown to the unit's idle timeout.
+Each `<usb-share>` sync script mounts the target itself if it is not already mounted, and unmounts it **only if this script mounted it**. When run through `sync.sh`, the drive is already power-on mounted, so no per-job unmount happens and the power-off happens once at the end.
+
+`<alt-share>` (the `sync_etv.sh` target) is a systemd automount unit, not the local USB drive; the script triggers the automount on demand and leaves teardown to the unit's idle timeout.
 
 ---
 
@@ -59,11 +61,20 @@ Scripts called (in order):
 7. `sync_sysdocker_maindocker.sh`
 8. `sync_tv.sh`
 
+`sync_etv.sh` is present in the `JOBS` array but **commented out**, so it does not run as part of a full pass. Uncomment it in the script if you want it included.
+
+**Failure handling:** each job is an independent target, so a failure does not stop the run. Failures are collected into a `FAILED` array and reported at the end:
+
+- On any failure it prints `SYNC FINISHED WITH N FAILURE(S)`, lists the failed jobs on stderr, and **exits 1**.
+- On full success it prints `ALL SYNC JOBS COMPLETE` and exits 0.
+
+Note that the USB power-off runs **before** the failure report, so the drive is powered off either way. The exit status is the reliable signal, not the drive state.
+
 ---
 
 ### sync_tv.sh
 
-Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/nmedia/Media/Video/TV`. Mounts `/mnt/nmedia` if not already mounted (and unmounts it only when this script mounted it). Flushes write buffers on the backing block device for `/mnt/nmedia` before returning.
+Rsyncs the TV library from `<media-root>/Video/TV/` to `<alt-share>/Media/Video/TV`. Mounts `<usb-share>` if not already mounted (and unmounts it only when this script mounted it). Flushes write buffers on the backing block device for `<usb-share>` before returning.
 
 ```bash
 ./sync_tv.sh
@@ -75,7 +86,7 @@ Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/nmedia/Media/Video/T
 
 ### sync_etv.sh
 
-Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/emedia/Media/Video/TV`. Secondary/emergency backup to the emedia mount, which is a systemd automount unit (not the local USB drive). Accessing the path triggers the automount; teardown is left to the unit's idle timeout. Skips `*.tmp`. Not included in the `sync.sh` orchestrator; run manually when syncing to emedia.
+Rsyncs the TV library from `<media-root>/Video/TV/` to `<alt-share>/Media/Video/TV`. Secondary/emergency backup to a different mount from `<usb-share>`, which is a systemd automount unit. Accessing the path triggers the automount; teardown is left to the unit's idle timeout. Skips `*.tmp`. Not included in the `sync.sh` orchestrator; run manually.
 
 ```bash
 ./sync_etv.sh
@@ -87,7 +98,7 @@ Rsyncs the TV library from `/main/media/Video/TV/` to `/mnt/emedia/Media/Video/T
 
 ### sync_movies.sh
 
-Rsyncs the movie library from `/main/media/Video/Movies/` to `/mnt/nmedia/Media/Video/Movies`. Mounts `/mnt/nmedia` if needed (unmounts only when this script mounted it) and flushes the backing block device before returning.
+Rsyncs the movie library from `<media-root>/Video/Movies/` to `<usb-share>/Media/Video/Movies`. Mounts `<usb-share>` if needed (unmounts only when this script mounted it) and flushes the backing block device before returning.
 
 ```bash
 ./sync_movies.sh
@@ -99,7 +110,7 @@ Rsyncs the movie library from `/main/media/Video/Movies/` to `/mnt/nmedia/Media/
 
 ### sync_anime.sh
 
-Rsyncs the anime library from `/main/media/Video/Anime/` to `/mnt/nmedia/Media/Video/Anime`. Mounts `/mnt/nmedia` if needed (unmounts only when this script mounted it) and flushes the backing block device before returning.
+Rsyncs the anime library from `<media-root>/Video/Anime/` to `<usb-share>/Media/Video/Anime`. Mounts `<usb-share>` if needed (unmounts only when this script mounted it) and flushes the backing block device before returning.
 
 ```bash
 ./sync_anime.sh
@@ -111,7 +122,7 @@ Rsyncs the anime library from `/main/media/Video/Anime/` to `/mnt/nmedia/Media/V
 
 ### sync_audiobooks.sh
 
-Rsyncs the audiobook library from `/main/media/audiobooks/` to `/mnt/nmedia/Media/audiobooks`. Mounts `/mnt/nmedia` if needed (unmounts only when this script mounted it) and flushes the backing block device before returning.
+Rsyncs the audiobook library from `<media-root>/audiobooks/` to `<usb-share>/Media/audiobooks`. Mounts `<usb-share>` if needed (unmounts only when this script mounted it) and flushes the backing block device before returning.
 
 ```bash
 ./sync_audiobooks.sh
@@ -123,7 +134,7 @@ Rsyncs the audiobook library from `/main/media/audiobooks/` to `/mnt/nmedia/Medi
 
 ### sync_books.sh
 
-Rsyncs the book library from `/main/media/books/` to `/mnt/nmedia/Media/books`. Mounts `/mnt/nmedia` if needed (unmounts only when this script mounted it) and flushes the backing block device before returning.
+Rsyncs the book library from `<media-root>/books/` to `<usb-share>/Media/books`. Mounts `<usb-share>` if needed (unmounts only when this script mounted it) and flushes the backing block device before returning.
 
 ```bash
 ./sync_books.sh
@@ -135,7 +146,7 @@ Rsyncs the book library from `/main/media/books/` to `/mnt/nmedia/Media/books`. 
 
 ### sync_docker.sh
 
-Stops LXC container 100 (if running), rsyncs the Docker data volume from `/mnt/sysdata_docker/` to `/mnt/nmedia/DATA/sysdata_docker/`, then restarts the container if it was originally running. Mounts `/mnt/nmedia` if not already mounted (and unmounts it only when this script mounted it). Flushes block device buffers on `/mnt/nmedia` before returning.
+Stops LXC container 100 (if running), rsyncs the Docker data volume from `<sysdata-share>/` to `<usb-share>/DATA/sysdata_docker/`, then restarts the container if it was originally running. Mounts `<usb-share>` if not already mounted (and unmounts it only when this script mounted it). Flushes block device buffers on `<usb-share>` before returning.
 
 ```bash
 ./sync_docker.sh
@@ -147,7 +158,7 @@ Stops LXC container 100 (if running), rsyncs the Docker data volume from `/mnt/s
 
 ### sync_backups.sh
 
-Rsyncs system backup data from `/mnt/sysdata_backups/` to `/mnt/nmedia/DATA/sysdata_backups/`. Mounts `/mnt/nmedia` if needed (unmounts only when this script mounted it). Flushes block device buffers on `/mnt/nmedia` before returning.
+Rsyncs system backup data from `<sysdata-share>/` to `<usb-share>/DATA/sysdata_backups/`. Mounts `<usb-share>` if needed (unmounts only when this script mounted it). Flushes block device buffers on `<usb-share>` before returning.
 
 ```bash
 ./sync_backups.sh
@@ -159,7 +170,16 @@ Rsyncs system backup data from `/mnt/sysdata_backups/` to `/mnt/nmedia/DATA/sysd
 
 ### backup_docker.sh
 
-Stops LXC container 100 (if running), compresses `/mnt/sysdata_docker/` into a tar archive on `/mnt/nmedia/pve/`, then restarts the container if it was originally running. Powers on the USB drive first and powers it off at the end. Moves any previous backup archive to a `hold/` subfolder before writing the new one. Skips `*.tmp`. Supports three compressors via the `COMPRESSOR` variable at the top of the script.
+Stops LXC container 100 (if running), compresses `<sysdata-share>/` into a tar archive on `<usb-share>/pve/`, then restarts the container if it was originally running. Powers on the USB drive first and powers it off at the end. Skips `*.tmp`. Supports three compressors via the `COMPRESSOR` variable at the top of the script.
+
+**Write ordering is stage, verify, then promote**, which is the point of the current implementation:
+
+1. The archive is written to a staging path (`<dest>.inprogress.<ext>`), never directly to the final name.
+2. The staged archive is verified: the compressor's own test (`pigz -t`, `zstd -t`, or `tar -tzf`) plus a full `tar -tf` listing. A truncated or corrupt archive fails here.
+3. Only on success is the previous archive at the destination moved into `hold/`, and the verified file moved into its place.
+4. A failed run deletes the staging file and leaves the previous backup untouched.
+
+So an interrupted or failed run can never leave a truncated archive sitting at the destination under the real name, and the last known-good backup is preserved in `hold/` rather than deleted outright.
 
 | Value | Tool | Notes |
 |---|---|---|
@@ -168,9 +188,9 @@ Stops LXC container 100 (if running), compresses `/mnt/sysdata_docker/` into a t
 | `gzip` | gzip | Standard; no extra dependencies. |
 
 Archive output names:
-- pigz -> `/mnt/nmedia/pve/docker-backup.tar.gz`
-- zstd -> `/mnt/nmedia/pve/docker-backup.tar.zst`
-- gzip -> `/mnt/nmedia/pve/docker-backup.tar.gz`
+- pigz -> `<usb-share>/pve/docker-backup.tar.gz`
+- zstd -> `<usb-share>/pve/docker-backup.tar.zst`
+- gzip -> `<usb-share>/pve/docker-backup.tar.gz`
 
 All compressor paths use `ionice -c3 nice -n 19` to minimize system impact during backup.
 
@@ -190,7 +210,7 @@ apt install zstd
 
 ### backup_etc.sh
 
-Archives `/etc` to `/mnt/nmedia/pve/etc-backup.tar.gz` using `tar`. Skips `*.tmp`. Powers on the USB drive, aborts if `/mnt/nmedia` is not mounted, and powers the drive off at the end. Run on the Proxmox host to back up host configuration.
+Archives `/etc` to `<usb-share>/pve/etc-backup.tar.gz` using `tar`. Skips `*.tmp`. Powers on the USB drive, aborts if `<usb-share>` is not mounted, and powers the drive off at the end. Run on the Proxmox host to back up host configuration.
 
 ```bash
 ./backup_etc.sh
@@ -202,7 +222,7 @@ Archives `/etc` to `/mnt/nmedia/pve/etc-backup.tar.gz` using `tar`. Skips `*.tmp
 
 ### backup_root.sh
 
-Archives `/root` to `/mnt/nmedia/pve/root-backup.tar.gz` using `tar`. Skips `*.tmp`. Powers on the USB drive, aborts if `/mnt/nmedia` is not mounted, and powers the drive off at the end. Run on the Proxmox host to back up the root home directory.
+Archives `/root` to `<usb-share>/pve/root-backup.tar.gz` using `tar`. Skips `*.tmp`. Powers on the USB drive, aborts if `<usb-share>` is not mounted, and powers the drive off at the end. Run on the Proxmox host to back up the root home directory.
 
 ```bash
 ./backup_root.sh
@@ -239,25 +259,25 @@ Recursively sets ownership and permissions on a directory tree. Intended to run 
 
 ### sync_main_backups.sh
 
-Rsyncs primary host-level backup targets from `/mnt/sysdata_backups/` to `/mnt/main_backups/`. Checks that the destination ZFS dataset is mounted before syncing. Use this when you want a focused backup pass without triggering the full media sync sequence.
+Rsyncs primary host-level backup targets from `<sysdata-share>/` to `<zfs-pool>/main_backups/`. Checks that the destination ZFS dataset is mounted before syncing. Use this when you want a focused backup pass without triggering the full media sync sequence.
 
 ```bash
 ./sync_main_backups.sh
 ```
 
-**Requirements:** `rsync`, ZFS dataset mounted at `/mnt/main_backups/`
+**Requirements:** `rsync`, ZFS dataset mounted at `<zfs-pool>/main_backups/`
 
 ---
 
 ### sync_sysdocker_maindocker.sh
 
-Stops LXC container 100 (if running), rsyncs system Docker data from `/mnt/sysdata_docker/` to `/mnt/main_docker/`, then restarts the container if it was originally running. Checks that the ZFS destination dataset at `/mnt/main_docker/` is mounted before syncing. Waits for LXC mount-namespace teardown before accessing container volumes.
+Stops LXC container 100 (if running), rsyncs system Docker data from `<sysdata-share>/` to `<zfs-pool>/main_docker/`, then restarts the container if it was originally running. Checks that the ZFS destination dataset at `<zfs-pool>/main_docker/` is mounted before syncing. Waits for LXC mount-namespace teardown before accessing container volumes.
 
 ```bash
 ./sync_sysdocker_maindocker.sh
 ```
 
-**Requirements:** `rsync`, `pct` (Proxmox host only), ZFS dataset mounted at `/mnt/main_docker/`
+**Requirements:** `rsync`, `pct` (Proxmox host only), ZFS dataset mounted at `<zfs-pool>/main_docker/`
 
 ---
 
@@ -333,9 +353,9 @@ Displays the top 10 processes consuming swap, sorted by swap usage (descending).
 
 ### usb-poweroff.sh / usb-poweron.sh
 
-Small helpers to toggle USB-powered devices (power off / power on). `usb-poweroff.sh` unmounts `/mnt/nmedia` and calls `udisksctl power-off` on `/dev/sdk`.
+Small helpers to toggle USB-powered devices (power off / power on). `usb-poweroff.sh` unmounts `<usb-share>` and calls `udisksctl power-off` on `/dev/sdk`.
 
-`usb-poweron.sh` first skips entirely if `/mnt/nmedia` is already mounted. Otherwise it performs a logical reset of the AMD XHCI PCI controller (`0000:30:00.4`), waits for the block device with UUID `5422D89122D87986` to reappear (up to 20 seconds), then mounts it back to `/mnt/nmedia`. This reset sequence handles AMD USB controller quirks with certain USB hubs.
+`usb-poweron.sh` first skips entirely if `<usb-share>` is already mounted. Otherwise it performs a logical reset of the AMD XHCI PCI controller (`0000:30:00.4`), waits for the block device with UUID `5422D89122D87986` to reappear (up to 20 seconds), then mounts it back to `<usb-share>`. This reset sequence handles AMD USB controller quirks with certain USB hubs.
 
 You will need to update the `DEVICE`, `UUID`, and `XHCI` variables in each script to match your system hardware.
 

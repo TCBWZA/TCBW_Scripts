@@ -82,7 +82,7 @@ Batch video compression script using AMD/Intel GPU hardware acceleration (VAAPI)
   - `progressive`: no filter
 - Encodes with `hevc_vaapi` at QP 28, audio and subtitle streams are copied without modification (`-c:a copy`). MP4 files with `mov_text` subtitles are converted to `srt` before muxing into MKV.
 - Runs at low scheduling priority (`nice -n 10`, `ionice -c 3`).
-- Writes to `[Trans].tmp`; replaces the original only if the new file is at least 10% smaller. Otherwise creates a `.skip_<basename>` marker.
+- Writes to `[Trans].tmp`; replaces the original only if the new file is more than 10% smaller. Otherwise creates a `.skip_<basename>` marker.
 - Sets ownership to `1000:1000` and permissions to `666` after each replacement.
 - Runs 1 encoding job at a time.
 
@@ -97,7 +97,7 @@ Batch video compression script using AMD/Intel GPU hardware acceleration (VAAPI)
 
 ```bash
 # Run from within the TV directory to compress all eligible files
-cd /mnt/media/TV
+cd <media-root>/TV
 ./compress_amd_x265_aac.sh
 
 # With debug output
@@ -119,7 +119,7 @@ Batch video compression script using AMD/Intel GPU hardware acceleration (VAAPI)
 - Detects interlacing / telecine with a two-pass approach: a fast pass reads `field_order` from stream metadata (hard interlace flags resolve immediately), and a slow pass runs `ffmpeg -vf idet` on ~1000 frames starting at the 5-minute mark when metadata is inconclusive.
 - Applies `bwdif=mode=send_frame` for interlaced content, `pullup,dejudder` for telecine.
 - Encodes with `hevc_vaapi` at QP 28, audio is copied, and subtitles are copied or converted from `mov_text` to `srt` for MP4 inputs.
-- Replaces the original only if the new file is at least 10% smaller; otherwise creates a `.skip_<basename>` marker.
+- Replaces the original only if the new file is more than 10% smaller; otherwise creates a `.skip_<basename>` marker.
 - Runs up to 2 parallel encoding jobs.
 
 **Parameters:**
@@ -133,7 +133,7 @@ Batch video compression script using AMD/Intel GPU hardware acceleration (VAAPI)
 
 ```bash
 # Run from within the TV directory
-cd /mnt/media/TV
+cd <media-root>/TV
 ./compress_lang_amd_x265_aac.sh
 
 # With debug output
@@ -156,7 +156,7 @@ High-resolution TV variant of `compress_lang_amd_x265_aac.sh`: language-filtered
 - Interlace / telecine detection follows the same two-pass `field_order` + `idet` scan as `compress_lang`; filters run before the tonemap/scale chain (base = `bwdif=mode=send_frame` interlaced / `pullup,dejudder` telecine / none progressive).
 - `needs_convert` triggers when the video codec/bitrate/scan-type changes, or a track change, downscale, or tonemap is needed. Tracks-only pruning never skips as already-compliant.
 - Encodes with `hevc_vaapi` at QP 28; video track is retagged `-metadata:s:v:0 language=zxx`.
-- Replaces the original only if the new file is at least 10% smaller; otherwise creates a `.skip_<basename>` marker.
+- Replaces the original only if the new file is more than 10% smaller; otherwise creates a `.skip_<basename>` marker.
 - When the transcode succeeds but is not 10% smaller and tracks were filtered, strips the unwanted audio/subs via an `mkvmerge` stream-copy remux (`[Strip].tmp`), video language set to `zxx`; the video bitstream is unchanged.
 - Runs up to 2 parallel encoding jobs.
 
@@ -171,7 +171,7 @@ High-resolution TV variant of `compress_lang_amd_x265_aac.sh`: language-filtered
 
 ```bash
 # Run from within the TV directory
-cd /mnt/media/TV
+cd <media-root>/TV
 ./compress_1080p_lang_amd_x265_aac.sh
 
 # With debug output
@@ -189,6 +189,43 @@ Byte-identical copy of `compress_1080p_lang_amd_x265_aac.sh` (kept under a disti
 ### compress_1080p_anime_amd_x265_aac.sh
 
 Anime variant of `compress_1080p_lang_amd_x265_aac.sh`. Identical except the audio language filter is widened to keep Japanese and Chinese tracks alongside English: `eng`/`en`, `jpn`/`ja`, `chi`/`zho`/`zh`, `und`, `unk`. Subtitle filtering is unchanged (`eng`/`en`/`und`/`unk`). Same name/parameters/execution as the 1080p lang variant.
+
+---
+
+### compress_mp4ts_amd_x265_aac.sh
+
+MP4/TS-specific variant. Transcodes **only `.mp4` and `.ts` sources** to MKV and leaves `.mkv` input alone, so it is safe to point at a folder that mixes containers. The one deliberate deviation from every other compressor in this folder is the replace gate: it is **not** a double-compression guard.
+
+**What it does:**
+
+- Pre-flight checks for `ffprobe`, `ffmpeg`, and `jq`.
+- **No size threshold.** Unlike the other bash compressors here, files of any size are processed.
+- Skips AV1-encoded sources, files with no video stream, and files with no audio stream.
+- Interlace / telecine detection uses the same `idet` deep scan as the other bash compressors; filters run before the encode (base = `bwdif=mode=send_frame` interlaced / `pullup,dejudder` telecine / none progressive).
+- Encodes with `hevc_vaapi` at QP 28. Video track is retagged `-metadata:s:v:0 language=zxx`; attached pictures are dropped.
+- **Audio and subtitles are stream-copied, never re-encoded**, and are not language-filtered. Subtitle codec args are chosen per stream so the remux stays valid in Matroska.
+- **Replaces the original unconditionally**, including when the new file is *larger* than the source. There is no 10% gate and no `.skip_<basename>` marker on growth. The size change is still reported.
+- Output verification: `verify_output` requires the encode to produce **exactly one video stream** and a **positive duration** before the temp file is accepted. A file that fails verification is discarded and the source is kept.
+- Already-compliant input (HEVC within the bitrate threshold) is **remuxed, never re-encoded**, and that remux is verified the same way. There is no `-r` flag here; the remux is unconditional.
+- On success, runs `apply-metadata.sh` from the same directory. `deploy` ships the two side by side, so the script looks for it next to itself and only prints a debug message if it is absent -- it does not fail the run.
+- Runs up to 2 parallel encoding jobs.
+
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-d` / `--debug` | Enable verbose debug output. |
+
+**Execution:**
+
+```bash
+# Run from within the TV directory
+cd <media-root>/TV
+./compress_mp4ts_amd_x265_aac.sh
+
+# With debug output
+./compress_mp4ts_amd_x265_aac.sh --debug
+```
 
 ---
 
@@ -220,7 +257,7 @@ PowerShell compression script using AMD GPU hardware acceleration (`hevc_amf` vi
 
 ```powershell
 # Run from within the TV directory
-Set-Location "Z:\Media\TV"
+Set-Location "<media-root>\TV"
 .\compress_amd_x265_aac.ps1
 
 # Enable debug output
@@ -259,7 +296,7 @@ PowerShell compression script using Intel Quick Sync Video (QSV) hardware accele
 
 ```powershell
 # Run from within the TV directory
-Set-Location "Z:\Media\TV"
+Set-Location "<media-root>\TV"
 .\compress_qsv_x265_aac.ps1
 
 # Enable debug output
@@ -284,7 +321,7 @@ PowerShell batch compression script using HandBrakeCLI with AMD VCE hardware enc
 - Applies `--deinterlace=slower` for interlaced content; `--detelecine --deinterlace=slower` for suspected telecine.
 - Encodes with HandBrakeCLI using `vce_h265` encoder at quality RF 24, re-encoding all audio tracks to AAC at 160 kbps.
 - Filters subtitle streams to English (`eng`) and undefined (`und`) language tracks; other subtitle languages are dropped.
-- Writes to a temporary file; atomically replaces the original only if the new file is at least 10% smaller and non-empty. The container-repair remux path skips the 10% size check (stream copy does not shrink files).
+- Writes to a temporary file; atomically replaces the original only if the new file is more than 10% smaller and non-empty. The container-repair remux path skips the 10% size check (stream copy does not shrink files).
 - Creates a `.skip_<basename>` marker when output is not smaller, preventing repeated re-encode attempts.
 - Supports recursive `.skip` directory markers and per-file `.skip_<basename>` markers.
 - Updates the terminal title during encoding to show the current file name.
@@ -299,7 +336,7 @@ PowerShell batch compression script using HandBrakeCLI with AMD VCE hardware enc
 
 ```powershell
 # Run from within the TV directory
-Set-Location "Z:\Media\TV"
+Set-Location "<media-root>\TV"
 .\hbcompress_amd_x265_aac.ps1
 
 # Enable debug output
@@ -321,7 +358,7 @@ PowerShell batch compression script using HandBrakeCLI with Intel Quick Sync Vid
 - Detects file locks before and after encoding.
 - Performs deferred two-pass interlace detection with the same frame-skip logic.
 - Filters subtitle streams to English and undefined language tracks.
-- Atomically replaces originals only when the new file is at least 10% smaller; creates `.skip_<basename>` markers otherwise (the container-repair remux path skips the size check).
+- Atomically replaces originals only when the new file is more than 10% smaller; creates `.skip_<basename>` markers otherwise (the container-repair remux path skips the size check).
 
 **Parameters:**
 
@@ -333,11 +370,41 @@ PowerShell batch compression script using HandBrakeCLI with Intel Quick Sync Vid
 
 ```powershell
 # Run from within the TV directory
-Set-Location "Z:\Media\TV"
+Set-Location "<media-root>\TV"
 .\hbcompress_qsv_x265_aac.ps1
 
 # Enable debug output
 .\hbcompress_qsv_x265_aac.ps1 -Debug
+```
+
+---
+
+### hbcompress_1080p_amd_x265_aac.ps1
+
+HandBrake variant that forces 1080p SDR output. Unlike the other compressors in this folder it does **not** skip UHD or HDR input: it transcodes them down.
+
+**What it does:**
+
+- Encodes via the HandBrakeCLI preset `"1080p SDR AMD x265"`.
+- Skips files under 1 GB.
+- **Accepts UHD and HDR input** and transcodes it rather than skipping it.
+- Resolution: scales to a box of at most 1920x1080 with no upscaling and **no padding**, passed as explicit `--width`/`--height` rather than `--maxWidth`/`--maxHeight`. The explicit values are deliberate: the preset already pins `PictureWidth`/`PictureHeight` to 1920x1080, so a cap has nothing left to clamp, and the preset's anamorphic mode would otherwise derive 2160x1080 (SAR 9:8) from a 1920x1080 display. `--non-anamorphic` forces SAR 1:1.
+- HDR detection matches `smpte2084`, `arib-std-b67`, **and `bt2020-10`**. The third value matters: `bt2020-10` is how ffprobe reports HDR10 in Matroska, so matching only `smpte2084` silently certifies an HDR10 file as SDR. HDR is tone-mapped to SDR.
+- **Post-encode checks**: verifies the encoded resolution is within 1920x1080 and that an HDR source actually came out SDR. A bad or missing tone map in the preset therefore fails loudly instead of quietly.
+- Replaces the original only if the new file is more than 10% smaller.
+- Supports both skip-marker forms: a `.skip` file in the directory, and a `.skip_<basename>` file next to the video.
+- Audio and subtitle handling come entirely from the preset.
+- `-Debug` (alias `-d`) enables verbose output. There is no concurrency setting; this script is single-threaded.
+
+**Execution:**
+
+```powershell
+# Run from within the TV directory
+Set-Location "<media-root>\TV"
+.\hbcompress_1080p_amd_x265_aac.ps1
+
+# Enable debug output
+.\hbcompress_1080p_amd_x265_aac.ps1 -Debug
 ```
 
 ---
@@ -371,16 +438,16 @@ SONARR_API_KEY="YOUR_API_KEY_HERE"
 ./findforeign.sh
 
 # Scan a specific root directory
-./findforeign.sh --root /mnt/media/TV
+./findforeign.sh --root <media-root>/TV
 
 # Scan with CSV output
-./findforeign.sh --root /mnt/media/TV --csv /tmp/foreign.csv
+./findforeign.sh --root <media-root>/TV --csv /tmp/foreign.csv
 
 # Scan and trigger Sonarr replacement for flagged episodes
-./findforeign.sh --root /mnt/media/TV --sonarr
+./findforeign.sh --root <media-root>/TV --sonarr
 
 # Full example with all options
-./findforeign.sh --root /mnt/media/TV --csv /tmp/foreign.csv --sonarr
+./findforeign.sh --root <media-root>/TV --csv /tmp/foreign.csv --sonarr
 ```
 
 **Sonarr integration (Bash):**
@@ -426,13 +493,13 @@ $SonarrApiKey = "YOUR_API_KEY_HERE"
 .\findforeign.ps1 -CsvFile ".\foreign.csv"
 
 # Scan a specific directory
-.\findforeign.ps1 -Root "Z:\Media\TV" -CsvFile ".\foreign.csv"
+.\findforeign.ps1 -Root "<media-root>\TV" -CsvFile ".\foreign.csv"
 
 # Scan and trigger Sonarr replacement for flagged episodes
-.\findforeign.ps1 -Root "Z:\Media\TV" -CsvFile ".\foreign.csv" -EnableSonarr
+.\findforeign.ps1 -Root "<media-root>\TV" -CsvFile ".\foreign.csv" -EnableSonarr
 
 # Append results to existing CSV
-.\findforeign.ps1 -Root "Z:\Media\TV" -CsvFile ".\foreign.csv" -Append
+.\findforeign.ps1 -Root "<media-root>\TV" -CsvFile ".\foreign.csv" -Append
 ```
 
 **Sonarr integration (PowerShell):**
@@ -489,23 +556,23 @@ $SonarrApiKey = "YOUR_API_KEY_HERE"
 .\findcorrupt.ps1 -Help
 
 # Audit mode -- print corrupt files, make no changes
-.\findcorrupt.ps1 -Root "Z:\Media\TV" -Audit
+.\findcorrupt.ps1 -Root "<media-root>\TV" -Audit
 
 # Scan and log corrupt files to CSV
-.\findcorrupt.ps1 -Root "Z:\Media\TV" -CsvFile ".\corrupt.csv"
+.\findcorrupt.ps1 -Root "<media-root>\TV" -CsvFile ".\corrupt.csv"
 
 # Scan and trigger Sonarr replacement for corrupt episodes
-.\findcorrupt.ps1 -Root "Z:\Media\TV" -EnableSonarr
+.\findcorrupt.ps1 -Root "<media-root>\TV" -EnableSonarr
 
 # Full example: audit with CSV and custom Sonarr URL
-.\findcorrupt.ps1 -Root "Z:\Media\TV" -CsvFile ".\corrupt.csv" -Audit -SonarrUrl "http://192.168.1.100:8989"
+.\findcorrupt.ps1 -Root "<media-root>\TV" -CsvFile ".\corrupt.csv" -Audit -SonarrUrl "http://your-sonarr-host:8989"
 
 # Full production run with Sonarr and all logs
 .\findcorrupt.ps1 `
-    -Root "Z:\Media\TV" `
+    -Root "<media-root>\TV" `
     -EnableSonarr `
     -CsvFile "D:\Logs\corrupt.csv" `
-    -SonarrUrl "http://192.168.1.100:8989" `
+    -SonarrUrl "http://your-sonarr-host:8989" `
     -SonarrLogFile "D:\Logs\SonarrLog.txt" `
     -MissingSeriesLog "D:\Logs\MissingSeries.txt"
 ```
@@ -553,7 +620,7 @@ PowerShell container-repair script that remuxes MKV files with detected structur
 .\remux.ps1
 
 # Run on a specific directory with debug output
-.\remux.ps1 -Root "Z:\Media\TV" -EnableDebug
+.\remux.ps1 -Root "<media-root>\TV" -EnableDebug
 ```
 
 ---
@@ -586,7 +653,7 @@ Bash remux script using `mkvmerge` (mkvtoolnix) that repacks MKV files applying 
 
 ```bash
 # Run from within a TV directory to repack all MKV files
-cd /mnt/z/media/Video/TV/General
+cd <media-root>/TV
 ./repack_mkv_lang.sh
 
 # With debug output
@@ -597,18 +664,7 @@ cd /mnt/z/media/Video/TV/General
 
 ### apply-metadata.sh
 
-Bash utility that reads NFO metadata for both movies and episodes and writes it into MKV container tags using `mkvpropedit`. It decides MOVIE vs EPISODE from the XML root element, so one script replaces the retired `apply-episode-metadata.sh` and `apply-movie-metadata.sh` along with their PowerShell equivalents.
-
-`movie.nfo` is consulted only when the NFO is a movie; the episode path resolves the series name from the NFO and falls back to the series folder name instead. Extras are excluded from the scan by filename suffix and by Jellyfin extras directory.
-
-Deployed alongside whatever script calls it -- `compress_mp4ts_amd_x265_aac.sh` resolves it from its own directory -- so the call is not bound to the repo or live folder layout.
-
-```bash
-./apply-metadata.sh               # apply to the current directory
-./apply-metadata.sh --dry-run     # report what would change, change nothing
-./apply-metadata.sh --debug       # verbose
-./apply-metadata.sh --audit-log "./audit.log"
-```
+Not part of this folder. The script lives in [Video/General/](../General/README.md#apply-metadatash) and is shared by every content type. It matters here because `compress_mp4ts_amd_x265_aac.sh` calls it automatically after a successful encode, resolving it from its own directory.
 
 ---
 

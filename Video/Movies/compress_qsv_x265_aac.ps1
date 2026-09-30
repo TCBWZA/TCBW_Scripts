@@ -11,7 +11,7 @@
     jobs run at once.
 
 .NOTES
-    - Edit $MaxJobs and $TempDir at the top of the script.
+    - Edit $MaxJobs at the top of the script.
     - Requires ffmpeg and ffprobe on PATH.
     - Requires an Intel CPU or GPU with Quick Sync Video support.
     - Files tagged [Cleaned] or [Trans] are deleted automatically.

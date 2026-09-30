@@ -3,6 +3,14 @@
 # =============================================================================
 # UNIFIED MOVIE + EPISODE METADATA APPLIER + REMUX + TRACK CLEANER (2026)
 # MKVToolNix + Jellyfin Tag Set + BOM-safe XML parsing + Double-processing prevention
+#
+# Usage: apply-metadata.sh [OPTIONS] [FILE]
+#   With no FILE, every .mkv under the current directory is processed.
+#   With FILE, only that MKV is processed and the directory walk is skipped.
+#   Callers that just produced one file should pass it: it is the work they
+#   actually want, and it keeps two concurrent workers off the same file.
+#
+# Options: --dry-run, --debug, --audit-log FILE
 # =============================================================================
 
 set -uo pipefail
@@ -18,26 +26,42 @@ DRYRUN=0
 DEBUG=0
 AUDIT_LOG=""
 LOGGING_ENABLED=0
+TARGET=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --dry-run) DRYRUN=1 ;;
         --debug)   DEBUG=1 ;;
         --audit-log) AUDIT_LOG="$2"; shift ;;
-        *) echo "Unknown argument: $1" >&2; exit 1 ;;
+        # A leading dash means a mistyped option, not a path. Catching it here
+        # keeps a typo from being taken as a filename and failing the existence
+        # check with a misleading message.
+        -*) echo "Unknown option: $1" >&2; exit 1 ;;
+        *)
+            if [[ -n "$TARGET" ]]; then
+                echo "Only one file may be given (already have: $TARGET)" >&2; exit 1
+            fi
+            TARGET="$1"
+            ;;
     esac
     shift
 done
 
 [[ -n "$AUDIT_LOG" ]] && LOGGING_ENABLED=1
 
+# Both helpers use an if rather than && on the last statement: a short-circuit
+# that evaluates false makes the function return 1, and log's final call is the
+# last command in the script. That made every run report failure to callers
+# that check the exit status, however well the run had actually gone.
 log() {
     local lvl="$1"; shift
     echo "[$lvl] $*"
-    [[ $LOGGING_ENABLED -eq 1 ]] && printf '%s  [%s] %s\n' "$(date '+%F %T')" "$lvl" "$*" >> "$AUDIT_LOG"
+    if [[ $LOGGING_ENABLED -eq 1 ]]; then
+        printf '%s  [%s] %s\n' "$(date '+%F %T')" "$lvl" "$*" >> "$AUDIT_LOG"
+    fi
 }
 
-debug() { [[ $DEBUG -eq 1 ]] && log DEBUG "$*"; }
+debug() { if [[ $DEBUG -eq 1 ]]; then log DEBUG "$*"; fi; }
 
 # ------------------------------
 # Dependency check
@@ -74,7 +98,10 @@ build_tags_xml() {
         echo "  </Tag>"
         # Series root at TargetTypeValue 70 (VLC showName).
         # Empty Targets defaults to target 50, which VLC reads as Album.
-        if [[ -n "${TAGS[SHOW]}" && "$TYPE" == "EPISODE" ]]; then
+        # TYPE is tested FIRST and the key is read through a default: the MOVIE
+        # branch never assigns TAGS[SHOW], so dereferencing it under `set -u`
+        # aborted every movie mid-run, before any tag was written.
+        if [[ "$TYPE" == "EPISODE" && -n "${TAGS[SHOW]:-}" ]]; then
             local esc70
             esc70=$(printf '%s' "${TAGS[SHOW]}" | xmlstarlet esc)
             echo "  <Tag>"
@@ -104,15 +131,31 @@ trim_trailing_dash() {
 }
 
 resolve_series_root() {
-    local d="$1"
+    local d orig f="" t=""
+    # Canonicalise before walking. dirname "." is ".", so a relative start path
+    # never changes and the loop below spins forever. Single-file mode hands us
+    # whatever path the caller passed, and a scan started from a directory yields
+    # "./file.mkv", so this is reachable in normal use, not a corner case.
+    orig=$(cd "${1:-.}" 2>/dev/null && pwd) || orig=""
+    d="$orig"
     while [[ -n "$d" && "$d" != "/" ]]; do
-        if find "$d" -maxdepth 1 -type f \( -iname 'series.nfo' -o -iname 'tvshow.nfo' \) -print -quit 2>/dev/null | grep -q .; then
+        f=$(find "$d" -maxdepth 1 -type f \( -iname 'series.nfo' -o -iname 'tvshow.nfo' \) -print -quit 2>/dev/null)
+        if [[ -n "$f" ]]; then
+            # Prefer the title recorded in the series NFO itself. The folder name
+            # is only a fallback, because the directory holding the NFO can be
+            # named for the show, for a season, or for a release group.
+            t=$(xml_get "$f" "/*/title")
+            [[ -n "$t" ]] && { printf '%s' "$t"; return 0; }
             basename "$d"
             return 0
         fi
         d=$(dirname "$d")
     done
-    basename "$(dirname "$1")"
+    # No series NFO anywhere above the episode: fall back to the parent of the
+    # episode's own folder, computed from the canonical path so it cannot
+    # degrade to ".".
+    [[ -n "$orig" ]] && basename "$(dirname "$orig")" && return 0
+    printf '%s' "${1:-}"
 }
 
 # ------------------------------
@@ -170,13 +213,31 @@ remux_mkv() {
 # ------------------------------
 # Begin
 # ------------------------------
-log INFO "Scanning for MKV files..."
 tmpfile=$(mktemp)
-# Suffix extras (setreleasedate list) and Jellyfin extras directories are both
-# excluded: a promo can be flagged by name or by the folder it sits in, and the
-# live tree uses capitalised Trailers/Extras, so -path (case-sensitive) would
-# miss every one of them -- hence -ipath.
-find . -type f -iname '*.mkv' \
+
+if [[ -n "$TARGET" ]]; then
+    # Single-file mode. The extras filters below are deliberately NOT applied:
+    # an explicit argument is explicit intent, and a caller that just produced
+    # the file has already filtered it. The work list is still NUL-delimited so
+    # the processing loop is the same code either way, which also means a path
+    # containing a space needs no special handling.
+    if [[ ! -f "$TARGET" ]]; then
+        echo "Not a readable file: $TARGET" >&2
+        exit 1
+    fi
+    case "$TARGET" in
+        *.mkv) ;;
+        *) echo "Not an MKV: $TARGET" >&2; exit 1 ;;
+    esac
+    log INFO "Single file: $TARGET"
+    printf '%s\0' "$TARGET" > "$tmpfile"
+else
+    log INFO "Scanning for MKV files..."
+    # Suffix extras (setreleasedate list) and Jellyfin extras directories are both
+    # excluded: a promo can be flagged by name or by the folder it sits in, and the
+    # live tree uses capitalised Trailers/Extras, so -path (case-sensitive) would
+    # miss every one of them -- hence -ipath.
+    find . -type f -iname '*.mkv' \
     ! -iname '*-trailer.*' \
     ! -iname '*-behindthescenes.*' \
     ! -iname '*-featurette.*' \
@@ -197,8 +258,9 @@ find . -type f -iname '*.mkv' \
     ! -ipath '*/extras/*' \
     ! -ipath '*/trailers/*' \
     ! -ipath '*/theme-music/*' \
-    ! -ipath '*/backdrops/*' \
-    -print0 > "$tmpfile"
+        ! -ipath '*/backdrops/*' \
+        -print0 > "$tmpfile"
+fi
 
 while IFS= read -r -d '' mkv; do
     log INFO "Processing: $mkv"
@@ -277,12 +339,30 @@ while IFS= read -r -d '' mkv; do
     if [[ $apply_tags -eq 1 ]]; then
         root=$(xml_root "$nfo_clean")
 
+        # Field-based classification fallback. The root element alone is not a
+        # reliable discriminator, because not every NFO writer emits the
+        # Sonarr/Radarr root. The field set still identifies the content: an
+        # episode NFO carries showtitle, or at least a season number, while a
+        # movie NFO carries a bare title with neither. Probing the fields lets an
+        # unrecognised root classify correctly instead of being discarded.
+        if [[ "$root" != "movie" && "$root" != "episodedetails" ]]; then
+            if [[ -n "$(xml_get "$nfo_clean" '/*/showtitle')" || -n "$(xml_get "$nfo_clean" '/*/season')" ]]; then
+                root="episodedetails"
+            elif [[ -n "$(xml_get "$nfo_clean" '/*/title')" ]]; then
+                root="movie"
+            fi
+        fi
+
+        # XPaths are rooted at the detected element rather than hardcoded, so a
+        # non-standard root still extracts its own fields.
+        xp="/$root"
+
         case "$root" in
             movie)
                 TYPE="MOVIE"
-                title=$(xml_get "$nfo_clean" "/movie/title")
-                plot=$(xml_get "$nfo_clean" "/movie/plot")
-                premiered=$(xml_get "$nfo_clean" "/movie/premiered")
+                title=$(xml_get "$nfo_clean" "$xp/title")
+                plot=$(xml_get "$nfo_clean" "$xp/plot")
+                premiered=$(xml_get "$nfo_clean" "$xp/premiered")
                 year="${premiered:0:4}"
 
                 [[ -z "$title" ]] && title="$base"
@@ -298,12 +378,12 @@ while IFS= read -r -d '' mkv; do
 
             episodedetails)
                 TYPE="EPISODE"
-                showtitle=$(xml_get "$nfo_clean" "/episodedetails/showtitle")
-                etitle=$(xml_get "$nfo_clean" "/episodedetails/title")
-                season=$(xml_get "$nfo_clean" "/episodedetails/season")
-                episode=$(xml_get "$nfo_clean" "/episodedetails/episode")
-                plot=$(xml_get "$nfo_clean" "/episodedetails/plot")
-                aired=$(xml_get "$nfo_clean" "/episodedetails/aired")
+                showtitle=$(xml_get "$nfo_clean" "$xp/showtitle")
+                etitle=$(xml_get "$nfo_clean" "$xp/title")
+                season=$(xml_get "$nfo_clean" "$xp/season")
+                episode=$(xml_get "$nfo_clean" "$xp/episode")
+                plot=$(xml_get "$nfo_clean" "$xp/plot")
+                aired=$(xml_get "$nfo_clean" "$xp/aired")
                 year="${aired:0:4}"
 
                 [[ -z "$showtitle" ]] && showtitle=$(resolve_series_root "$dir")

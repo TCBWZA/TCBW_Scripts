@@ -8,6 +8,12 @@ This folder contains utility scripts for Linux/Proxmox environments.
 - **Bash**: v4.0 or later
 - **Root access**: Scripts must be run as root to manage containers
 - **Standard utilities**: `pct`, `apt`, utilities commonly available on Debian-based systems
+- **`rsync`**: used by every `sync_*.sh` script
+- **`tar`** plus a compressor: `pigz`, `zstd`, or `gzip` for the `backup_*.sh` scripts
+- **`util-linux`**: `lsblk` and `blockdev`, used by the sync scripts to find the backing device and flush write buffers
+- **`ionice` and `nice`**: used to keep backup and sync I/O off the critical path
+- **`udisksctl`**: used to power the USB drive on and off
+- **`pvesm` and LVM tools**: used by `shrinkvol.sh`; `lxc-upgrade.sh` and `shrink_boot_disk.sh` also drive `pct`
 
 ## Files
 

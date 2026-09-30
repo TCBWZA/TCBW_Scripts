@@ -16,7 +16,11 @@ for arg in "$@"; do
     esac
 done
 
-debug() { $DEBUG && echo "[DEBUG] $*"; }
+# if rather than && on the last statement: a false short-circuit makes the
+# function return 1, and the metadata call below is chained as
+# "applier && debug '...' || echo Warning", so a 1 here printed a false
+# "metadata apply failed" on every run.
+debug() { if [[ "$DEBUG" == true ]]; then echo "[DEBUG] $*"; fi; }
 
 #####################################################
 # RADARR CONFIG
@@ -328,7 +332,13 @@ for f in "${files[@]}"; do
 
         if [[ -x "$metadata_script" ]]; then
             echo "Applying metadata to $output_mkv"
-            (cd "$dir" && bash "$metadata_script") && debug "Metadata applied OK" || echo "Warning: metadata apply failed for $output_mkv"
+            # The committed file is passed explicitly and no cd is needed: the
+            # applier derives the directory, basename and NFO candidates from
+            # the path it is given. Letting it walk the folder instead would
+            # re-inspect every movie already tagged, once per movie remuxed.
+            bash "$metadata_script" "$output_mkv" \
+                && debug "Metadata applied OK" \
+                || echo "Warning: metadata apply failed for $output_mkv"
         else
             debug "apply-metadata.sh not found or not executable at $metadata_script -- skipping"
         fi

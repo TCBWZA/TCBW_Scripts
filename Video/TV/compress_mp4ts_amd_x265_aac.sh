@@ -49,7 +49,11 @@ for arg in "$@"; do
     esac
 done
 
-debug() { $DEBUG && echo "[DEBUG] $*"; }
+# if rather than && on the last statement: a false short-circuit makes the
+# function return 1, and callers chain this as
+# "cmd && debug '...' || echo Warning", so a 1 here turned every successful
+# metadata apply into a false "metadata apply failed" warning.
+debug() { if [[ "$DEBUG" == true ]]; then echo "[DEBUG] $*"; fi; }
 
 #####################################################
 # Allow nice to be used without breaking exit code
@@ -80,6 +84,10 @@ commit_as_mkv() {
     [[ "$dest_file" == "$src_file" ]] || rm -f -- "$src_file"
     chown 1000:1000 "$dest_file" 2>/dev/null
     chmod 666 "$dest_file" 2>/dev/null
+    # The committed path is the caller's only route to the file just written,
+    # and the metadata pass is given exactly that file. Diagnostics stay on
+    # stderr so they cannot be captured as the path by the caller.
+    printf '%s\n' "$dest_file"
     return 0
 }
 
@@ -166,17 +174,21 @@ report_size_change() {
 #####################################################
 
 apply_episode_metadata() {
-    local target_dir="$1"
+    local target_file="$1"
     local script_dir
     script_dir="$(dirname -- "$(realpath -- "$0")")"
     # Same-directory reference: deploy ships apply-metadata.sh alongside this
     # script, so the call is independent of the repo vs live folder layout.
+    # The committed file is passed explicitly and no cd is needed: it is the
+    # only file this run produced, and a directory scan would re-inspect every
+    # sibling episode, which is O(n^2) across a season and races a parallel
+    # worker onto the same file.
     local metadata_script="$script_dir/apply-metadata.sh"
 
     if [[ -x "$metadata_script" ]]; then
-        (cd "$target_dir" && bash "$metadata_script") \
+        bash "$metadata_script" "$target_file" \
             && debug "Metadata applied OK" \
-            || echo "Warning: metadata apply failed in $target_dir"
+            || echo "Warning: metadata apply failed on $target_file"
     else
         debug "apply-metadata.sh not found or not executable at $metadata_script -- skipping"
     fi
@@ -206,7 +218,7 @@ echo "Scanning for MP4 and TS files..."
 
 # MP4 and TS only, any size, trailers excluded.
 mapfile -t files < <(
-    find . -type f \( -iname "*.mp4" -o -iname "*.ts" \) ! -iname "*-trailer.*" ! -iname "*-behindthescenes.*" ! -iname "*-featurette.*" ! -iname "*-interview.*" ! -iname "*-scene.*" ! -iname "*-short.*" ! -iname "*-deleted.*" ! -iname "*-sample.*" ! -iname "*-sample.*" ! -ipath '*/behind the scenes/*' ! -ipath '*/deleted scenes/*' ! -ipath '*/interviews/*' ! -ipath '*/scenes/*' ! -ipath '*/samples/*' ! -ipath '*/shorts/*' ! -ipath '*/featurettes/*' ! -ipath '*/clips/*' ! -ipath '*/other/*' ! -ipath '*/extras/*' ! -ipath '*/trailers/*' ! -ipath '*/theme-music/*' ! -ipath '*/backdrops/*'
+    find . -type f \( -iname "*.mp4" -o -iname "*.ts" \) ! -iname "*-trailer.*" ! -iname "*-behindthescenes.*" ! -iname "*-featurette.*" ! -iname "*-interview.*" ! -iname "*-scene.*" ! -iname "*-short.*" ! -iname "*-deleted.*" ! -iname "*-sample.*" ! -ipath '*/behind the scenes/*' ! -ipath '*/deleted scenes/*' ! -ipath '*/interviews/*' ! -ipath '*/scenes/*' ! -ipath '*/samples/*' ! -ipath '*/shorts/*' ! -ipath '*/featurettes/*' ! -ipath '*/clips/*' ! -ipath '*/other/*' ! -ipath '*/extras/*' ! -ipath '*/trailers/*' ! -ipath '*/theme-music/*' ! -ipath '*/backdrops/*'
 )
 
 echo "Found ${#files[@]} files."
@@ -471,7 +483,6 @@ for f in "${files[@]}"; do
         )
 
         interlaced_count=$(echo "$idet_output" | grep -oP 'Interlaced:\s*\K[0-9]+' | head -n1)
-        progressive_count=$(echo "$idet_output" | grep -oP 'Progressive:\s*\K[0-9]+' | head -n1)
         tff_count=$(echo "$idet_output" | grep -oP 'TFF:\s*\K[0-9]+' | head -n1)
         bff_count=$(echo "$idet_output" | grep -oP 'BFF:\s*\K[0-9]+' | head -n1)
 
@@ -545,13 +556,13 @@ for f in "${files[@]}"; do
         orig_size=$(stat -c%s "$f")
         new_size=$(stat -c%s "$tmpfile")
 
-        if commit_as_mkv "$tmpfile" "$f"; then
+        if dest=$(commit_as_mkv "$tmpfile" "$f"); then
             report_size_change "$orig_size" "$new_size" "remux"
+            apply_episode_metadata "$dest"
         else
             rm -f -- "$tmpfile"
         fi
 
-        apply_episode_metadata "$dir"
         continue
     fi
 
@@ -608,12 +619,12 @@ for f in "${files[@]}"; do
         else
             orig_size=$(stat -c%s "$f")
             new_size=$(stat -c%s "$tmpfile")
-            if commit_as_mkv "$tmpfile" "$f"; then
+            if dest=$(commit_as_mkv "$tmpfile" "$f"); then
                 report_size_change "$orig_size" "$new_size" "transcode"
+                apply_episode_metadata "$dest"
             else
                 rm -f -- "$tmpfile"
             fi
-            apply_episode_metadata "$dir"
         fi
     ) &
 

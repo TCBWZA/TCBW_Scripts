@@ -66,7 +66,7 @@ Batch video compression script using AMD GPU hardware acceleration (VAAPI) via `
 - Converts files that are not already HEVC+AAC or that exceed 2.5 Mbps video bitrate.
 - Movies content is always progressive -- no telecine/interlace detection or filters.
 - Encodes with `hevc_vaapi`; all kept audio is re-encoded to AAC 160k.
-- Replaces original only when the new file is at least 10% smaller; otherwise a `.skip_<basename>` marker is written.
+- Replaces original only when the new file is more than 10% smaller; otherwise a `.skip_<basename>` marker is written.
 - If a transcode is not 10% smaller but tracks were filtered, strips the unwanted audio/subs via an `mkvmerge` stream-copy remux (video track re-tagged `zxx`) instead.
 - Remuxes container-repair cases with `-r` (`--remux-check`) when already in the desired format.
 - Runs up to 2 parallel encoding jobs.
@@ -83,7 +83,7 @@ Batch video compression script using AMD GPU hardware acceleration (VAAPI) via `
 **Execution:**
 
 ```bash
-cd /mnt/media/Movies
+cd <media-root>/Movies
 ./compress_amd_x265_aac.sh
 ```
 
@@ -97,17 +97,23 @@ PowerShell wrapper for AMD VAAPI-based compression workflows. Provides the same 
 
 - Targets `.mkv` files 5 GB or larger.
 - Checks codec and bitrate; converts files that are not HEVC+AAC or exceed 2.5 Mbps.
-- Interlace detection via `ffprobe` stream metadata.
+- Interlace detection: two-pass. Reads `field_order` from stream metadata first, and when that is inconclusive runs a deep `idet` scan (200 frames from the 5-minute mark).
 - Encodes with `hevc_amf` via AMD VCE (`-hwaccel dxva2`).
 - Replaces original only if the new file is smaller.
 - Runs up to 2 parallel encoding jobs (configurable via `$MaxJobs` at top of script).
 
-No command-line parameters. Edit the threshold constants at the top of the script before running.
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-Debug` (alias `-d`) | Enable verbose debug output |
+
+The size threshold is a variable at the top of the script.
 
 **Execution:**
 
 ```powershell
-Set-Location "Z:\Media\Movies"
+Set-Location "<media-root>\Movies"
 .\compress_amd_x265_aac.ps1
 ```
 
@@ -115,23 +121,29 @@ Set-Location "Z:\Media\Movies"
 
 ### compress_qsv_x265_aac.ps1
 
-PowerShell compression script using Intel Quick Sync Video (QSV) encoding. Targets `.mkv` and `.ts` files 5 GB or larger.
+PowerShell compression script using Intel Quick Sync Video (QSV) encoding. Enumerates **`.mkv` files only** 5 GB or larger (`Get-ChildItem -Filter *.mkv`); it does not pick up `.mp4` or `.ts` despite handling them later in the encode path.
 
 **What it does:**
 
 - Checks codec, audio codec, and bitrate; converts files that are not HEVC+AAC or exceed 2.5 Mbps.
-- Interlace detection via `ffprobe`.
+- Interlace detection: two-pass. Reads `field_order` from stream metadata first, and when that is inconclusive runs a deep `idet` scan (200 frames from the 5-minute mark).
 - Encodes with `hevc_qsv`.
-- Configurable optional temporary directory (`$TempDir`) for intermediate files.
 - Replaces original only if the new file is smaller.
 - Runs up to 2 parallel encoding jobs (configurable via `$MaxJobs` at top of script).
+- There is no `$TempDir`. Output goes to a `[Trans].tmp` file beside the source. The script's own header comment says to edit `$TempDir`, which is copy-pasted from the Foreign script and does not exist here.
 
-No command-line parameters. Edit the threshold and path constants at the top of the script before running.
+**Parameters:**
+
+| Parameter | Description |
+|---|---|
+| `-Debug` (alias `-d`) | Enable verbose debug output |
+
+The size threshold is a variable at the top of the script.
 
 **Execution:**
 
 ```powershell
-Set-Location "Z:\Media\Movies"
+Set-Location "<media-root>\Movies"
 .\compress_qsv_x265_aac.ps1
 ```
 
@@ -139,7 +151,7 @@ Set-Location "Z:\Media\Movies"
 
 ### hbcompress_amd_x265_aac.ps1
 
-PowerShell compression script using AMD GPU (AMF/VCE) hardware acceleration with MKV container repair, file-lock detection, and atomic replacement. Targets `.mkv`, `.mp4`, and `.ts` files 1 GB or larger.
+PowerShell compression script using AMD GPU (AMF/VCE) hardware acceleration with MKV container repair, file-lock detection, and atomic replacement. Targets `.mkv`, `.mp4`, and `.ts` files 5 GB or larger -- the whole Movies family uses 5 GB, not the 1 GB used by the TV and Foreign PowerShell scripts.
 
 **What it does:**
 
@@ -148,8 +160,8 @@ PowerShell compression script using AMD GPU (AMF/VCE) hardware acceleration with
 - MKV container health check: broken containers (bad `start_time`, corrupt or non-positive duration, or ffmpeg demux errors such as non-monotonic timestamps, truncated streams, or missing moov atom) are remuxed before transcoding.
 - File-lock detection: files currently open by other processes are skipped.
 - Atomic replacement: writes to a temp file and swaps in place only when the result is smaller and valid.
-- 4K (UHD) and AV1 guards: those files are skipped automatically.
-- `.skip` directory marker and `.skip_<basename>` per-file marker support.
+- 4K (UHD) and AV1 guards: skipped automatically, by a filename match for `2160p` and a `height > 1100` ffprobe check.
+- `.skip` directory marker and `.skip_<basename>` per-file marker support. A compliant file's marker carries a `compliant-v1|<size>|<mtime>` fingerprint, honoured only while both values still match.
 - Encodes with `vce_h265` via HandBrakeCLI AMD VCE.
 
 **Parameters:**
@@ -161,7 +173,7 @@ PowerShell compression script using AMD GPU (AMF/VCE) hardware acceleration with
 **Execution:**
 
 ```powershell
-Set-Location "Z:\Media\Movies"
+Set-Location "<media-root>\Movies"
 .\hbcompress_amd_x265_aac.ps1
 
 # Run with debug output
@@ -198,7 +210,7 @@ PowerShell compression script using AMD GPU (AMF/VCE) hardware acceleration to e
 **Execution:**
 
 ```powershell
-Set-Location "Z:\Media\Movies"
+Set-Location "<media-root>\Movies"
 .\hbcompress_amd_av1_4k.ps1
 
 # Run with debug output
@@ -262,16 +274,16 @@ $RadarrApiKey = "YOUR_API_KEY_HERE"
 .\findcorrupt.ps1 -Help
 
 # Audit mode -- detect corrupt files, make no changes
-.\findcorrupt.ps1 -Root "Z:\Media\Movies" -Audit
+.\findcorrupt.ps1 -Root "<media-root>\Movies" -Audit
 
 # Scan and log corrupt files to CSV (Radarr replacement also runs)
-.\findcorrupt.ps1 -Root "Z:\Media\Movies" -CsvFile ".\corrupt.csv"
+.\findcorrupt.ps1 -Root "<media-root>\Movies" -CsvFile ".\corrupt.csv"
 
 # Full production run with all logs and custom Radarr URL
 .\findcorrupt.ps1 `
-    -Root "Z:\Media\Movies" `
+    -Root "<media-root>\Movies" `
     -CsvFile "D:\Logs\corrupt.csv" `
-    -RadarrUrl "http://192.168.1.100:7878" `
+    -RadarrUrl "http://your-radarr-host:7878" `
     -RadarrLogFile "D:\Logs\RadarrLog.txt" `
     -MissingMovieLog "D:\Logs\MissingMovies.txt"
 ```
@@ -325,7 +337,7 @@ MISSING_LOG="/tmp/remux_missing.log"
 **Execution:**
 
 ```bash
-cd /mnt/media/Movies
+cd <media-root>/Movies
 ./remuxmp4.sh
 
 # Debug mode
@@ -336,16 +348,7 @@ cd /mnt/media/Movies
 
 ### apply-metadata.sh
 
-Bash utility that reads NFO metadata for movies and episodes and writes it into MKV container tags using `mkvpropedit`. It decides MOVIE vs EPISODE from the XML root element, so one script replaces the retired `apply-movie-metadata.sh` and `apply-episode-metadata.sh` along with their PowerShell equivalents.
-
-Movies resolve their title from `<basename>.nfo` with `movie.nfo` as the folder-level fallback. It is deployed alongside the script that calls it, so `remuxmp4.sh` finds it in its own directory regardless of folder layout.
-
-```bash
-./apply-metadata.sh               # apply to the current directory
-./apply-metadata.sh --dry-run     # report what would change, change nothing
-./apply-metadata.sh --debug       # verbose
-./apply-metadata.sh --audit-log "./audit.log"
-```
+Not part of this folder. The script lives in [Video/General/](../General/README.md#apply-metadatash) and is shared by every content type. It matters here because `remuxmp4.sh` calls it automatically after a successful remux, resolving it from its own directory.
 
 ---
 
@@ -426,7 +429,7 @@ PowerShell equivalent of `setreleasedate.sh`. Sets file timestamps on movie vide
 
 ```powershell
 # Run from within the Movies directory
-Set-Location "Z:\Media\Movies"
+Set-Location "<media-root>\Movies"
 .\setreleasedate.ps1
 
 # Dry-run preview
