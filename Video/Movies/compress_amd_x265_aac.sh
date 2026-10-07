@@ -453,13 +453,13 @@ for f in "${files[@]}"; do
     debug "Transcode path: PROGRESSIVE -> CPU decode + VAAPI encode"
     vf_args="format=nv12,hwupload"
     enc_profile_args=()
-    enc_quality_args=(-rc_mode icq -qp 24)
+    enc_quality_args=(-rc_mode CQP -qp 24)
     if $is_uhd && $is_hdr; then
-        debug "UHD HDR -> 10-bit HEVC (main10, ICQ 24), HDR passthrough"
+        debug "UHD HDR -> 10-bit HEVC (main10, CQP 24), HDR passthrough"
         vf_args="format=p010,hwupload"
         enc_profile_args=(-profile:v:0 main10)
     elif $is_uhd; then
-        debug "UHD SDR -> 8-bit HEVC (ICQ 24)"
+        debug "UHD SDR -> 8-bit HEVC (CQP 24)"
     else
         debug "1080p -> 8-bit HEVC (CQP 28)"
         enc_quality_args=(-qp 28)

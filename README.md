@@ -124,7 +124,7 @@ See [Linux/README.md](Linux/README.md) for detailed descriptions of Linux utilit
 
 **USE AT YOUR OWN RISK**
 
-The settings in use work for me. You need to make sure things like bitrate meet your quality requirements. **UHD HANDLING DIFFERS BY SCRIPT, SO CHECK WHICH ONE YOU ARE POINTING AT A 4K FILE. ONLY TWO SCRIPTS ENCODE UHD: `Video/Movies/compress_amd_x265_aac.sh` ENCODES IT IN PLACE (ICQ 24, 10-bit main10, HDR passthrough) AND `Video/Movies/hbcompress_amd_av1_4k.ps1` ENCODES IT TO AV1. EVERY OTHER COMPRESSOR SKIPS UHD, WITH ONE EXCEPTION: THE `Video/TV/compress_1080p_*` AND `Video/TV/hbcompress_1080p_amd_x265_aac.ps1` VARIANTS DOWNSCALE IT TO 1080p INSTEAD OF SKIPPING IT.**
+The settings in use work for me. You need to make sure things like bitrate meet your quality requirements. **UHD HANDLING DIFFERS BY SCRIPT, SO CHECK WHICH ONE YOU ARE POINTING AT A 4K FILE. ONLY TWO SCRIPTS ENCODE UHD: `Video/Movies/compress_amd_x265_aac.sh` ENCODES IT IN PLACE (CQP 24, 10-bit main10, HDR passthrough) AND `Video/Movies/hbcompress_amd_av1_4k.ps1` ENCODES IT TO AV1. EVERY OTHER COMPRESSOR SKIPS UHD, WITH ONE EXCEPTION: THE `Video/TV/compress_1080p_*` AND `Video/TV/hbcompress_1080p_amd_x265_aac.ps1` VARIANTS DOWNSCALE IT TO 1080p INSTEAD OF SKIPPING IT.**
 
 ### Overview
 

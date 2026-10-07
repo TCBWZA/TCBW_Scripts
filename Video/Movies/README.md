@@ -59,7 +59,7 @@ Batch video compression script using AMD GPU hardware acceleration (VAAPI) via `
 
 - Routed per-file by ffprobe resolution (handles both HD and UHD in one pass):
   - HD (<= 1100p): CQP mode, QP 28.
-  - UHD (> 1100p, SDR): ICQ mode, QP 24.
+  - UHD (> 1100p, SDR): CQP mode, QP 24.
   - UHD HDR (> 1100p, smpte2084/arib-std-b67): 10-bit HEVC (`main10`), HDR passthrough, QP 24.
 - Inspects each file with `ffprobe` to determine video codec, bitrate, height, HDR transfer, and audio/subtitle track languages.
 - Language filtering: keeps only English/undefined/unknown tracks when an English audio stream exists, otherwise keeps all tracks. Unwanted audio/subs are stripped.
@@ -455,7 +455,7 @@ Set-Location "<media-root>\Movies"
 | Video codec (Intel QSV) | `hevc_qsv` |
 | Video codec (AMD VCE via HandBrake AV1) | `av1_amf` |
 | Quality (HD, ffmpeg) | CQP QP 28 |
-| Quality (UHD, ffmpeg) | ICQ QP 24 |
+| Quality (UHD, ffmpeg) | CQP QP 24 |
 | UHD HDR profile | `main10` (10-bit, HDR passthrough) |
 | Audio codec | AAC |
 | Audio bitrate | 160 kbps |
