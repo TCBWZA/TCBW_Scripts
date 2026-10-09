@@ -4,8 +4,8 @@
 #
 # A book is incomplete when its mp3 filenames declare "NN of NN" parts and the
 # highest declared part exceeds the file count. Such folders are moved to the
-# same archive the converter uses (`audio/books/mp3-to-m4b.sh`), with the book
-# folder renamed with an INCOMPLETE_ prefix, so the library scan leaves it
+# same archive the converter uses (`audio/books/convert-to-m4b.sh`), with the
+# book folder renamed with an INCOMPLETE_ prefix, so the library scan leaves it
 # alone and the source is not lost.
 #
 # Dry-run by default. Pass --apply to move.

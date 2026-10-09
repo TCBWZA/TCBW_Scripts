@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# mp3-to-m4b.sh -- fold each mp3-only audiobook folder into a single .m4b.
+# convert-to-m4b.sh -- fold each mp3-only audiobook folder into a single .m4b.
 #
 # For every book folder that holds mp3s and no other audio:
 #   - order the mp3s by playlist.ll when it is complete, else by version sort
@@ -8,9 +8,10 @@
 #   - concatenate and re-encode to a single AAC .m4b (64k, source layout)
 #   - embed one chapter per source file, plus cover and tags from metadata.json
 #   - verify the result, then move the source mp3s to an archive tree
-# Folders that fail an audit -- an m4b (or any other audio) alongside mp3s, or
-# a "NN of NN" naming that does not match the file count -- are never touched;
-# they are written to the audit-failure report after the dry-run.
+# Folders that fail an audit -- more than one audio media type in the folder
+# (e.g. ogg alongside flac, mp3 alongside m4b), or an "NN of NN" naming that
+# does not match the file count -- are never touched and are written to the
+# audit-failure report as corruption.
 #
 # Dry-run by default. Pass --apply to make changes.
 
@@ -18,7 +19,7 @@ set -u -o pipefail
 
 ROOT="/main/media/audiobooks"
 ARCHIVE="/main/media/audiobooks_mp3"
-AUDIT="/tmp/mp3-to-m4b-audit.txt"
+AUDIT="/tmp/convert-to-m4b-audit.txt"
 ONLY=""
 LIMIT=0
 APPLY=0
@@ -41,6 +42,19 @@ EOF
 log() { printf '%s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
 
+# Abort early when a tool the encode/verify path needs is missing.
+check_prereqs() {
+    local tool missing=0
+    # shellcheck disable=SC2016
+    while IFS= read -r tool; do
+        command -v "$tool" >/dev/null 2>&1 || { warn "missing required tool: $tool"; missing=1; }
+    done < <(printf '%s\n' ffmpeg ffprobe python3 jq)
+    if [[ $missing -eq 1 ]]; then
+        warn "install the missing tools and re-run"
+        exit 2
+    fi
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --apply) APPLY=1; shift ;;
@@ -54,12 +68,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Print the audio files in a book folder that are not mp3 (drives the audit gate).
-other_audio() {
-    find "$1" -maxdepth 1 -type f \
-        \( -iname '*.m4b' -o -iname '*.m4a' -o -iname '*.flac' \
-        -o -iname '*.ogg' -o -iname '*.opus' -o -iname '*.wav' \
-        -o -iname '*.aac' -o -iname '*.wma' \) -printf '%f\n' | sort
+check_prereqs
+
+AUDIO_FIND=(
+    -iname '*.mp3' -o -iname '*.m4b' -o -iname '*.m4a'
+    -o -iname '*.flac' -o -iname '*.ogg' -o -iname '*.opus'
+    -o -iname '*.wav' -o -iname '*.aac' -o -iname '*.wma'
+)
+
+# Distinct audio media types in a folder, one lowercase extension per line.
+audio_types() {
+    find "$1" -maxdepth 1 -type f \( "${AUDIO_FIND[@]}" \) -printf '%f\n' \
+        | sed 's/.*\.//I' | tr '[:upper:]' '[:lower:]' | sort -u
 }
 
 # Print the mp3 files in play order: playlist.ll when complete, else version sort.
@@ -83,17 +103,22 @@ ordered_files() {
 }
 
 # Return an audit-failure reason for a folder that must not be converted, or
-# nothing when the folder is safe to convert. Failures are: non-mp3 audio
-# alongside mp3s, a declared "NN of NN" count that exceeds the files present
-# (incomplete), or one that is exceeded by the files present (duplicate
-# renditions -- e.g. two numbering schemes of the same parts).
+# nothing when the folder is safe to convert. Corrupt folders: more than one
+# audio media type present (duplicate/questionable content -- the folder could
+# hold the book twice in different encodings). Then, for mp3-only folders: a
+# declared "NN of NN" count that exceeds the files present (incomplete), or one
+# that is exceeded by the files present (duplicate renditions -- e.g. two
+# numbering schemes of the same parts).
 audit_failure() {
-    local dir="$1" others count
-    others=$(other_audio "$dir")
-    if [[ -n "$others" ]]; then
-        count=$(find "$dir" -maxdepth 1 -type f -iname '*.mp3' | wc -l)
-        printf 'mixed media: %s present alongside %s mp3' \
-            "$(echo "$others" | tr '\n' ' ' | sed 's/ $//')" "$count"
+    local dir="$1" types count
+    types=$(audio_types "$dir")
+    count=$(printf '%s\n' "$types" | grep -c .)
+    if [[ "$count" -gt 1 ]]; then
+        printf 'corruption: multiple media types present (%s)' \
+            "$(printf '%s' "$types" | tr '\n' ' ' | sed 's/ $//')"
+        return 0
+    fi
+    if [[ "$types" != "mp3" ]]; then
         return 0
     fi
     local declared actual
@@ -230,12 +255,12 @@ trap cleanup EXIT
 if [[ -n "$ONLY" ]]; then
     mapfile -t DIRS < <(grep -v '^[[:space:]]*$' "$ONLY")
 else
-    mapfile -t DIRS < <(find "$ROOT" -type f -iname '*.mp3' -printf '%h\n' | sort -u)
+    mapfile -t DIRS < <(find "$ROOT" -type f \( "${AUDIO_FIND[@]}" \) -printf '%h\n' | sort -u)
 fi
 
 mode="DRY-RUN"; [[ $APPLY -eq 1 ]] && mode="APPLY"
 log "mode=$mode root=$ROOT archive=$ARCHIVE"
-log "book folders with mp3: ${#DIRS[@]}"
+log "book folders with audio media: ${#DIRS[@]}"
 : > "$AUDIT"
 
 cand=0 converted=0 failed=0 audited=0 skipped=0
@@ -285,7 +310,7 @@ for dir in "${DIRS[@]}"; do
         continue
     fi
 
-    partial="$dir/.mp3-to-m4b.partial"
+    partial="$dir/.convert-to-m4b.partial"
     rm -f "$partial"
     if ! encode "$listfile" "$cover" "$ffmeta" "$partial" 2>"$MAIN_TMP/ffmpeg.err"; then
         warn "ffmpeg failed: $dir"
