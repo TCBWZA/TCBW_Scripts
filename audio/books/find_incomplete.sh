@@ -2,11 +2,13 @@
 #
 # find_incomplete.sh -- move book folders missing parts out of the library.
 #
-# A book is incomplete when its mp3 filenames declare "NN of NN" parts and the
-# highest declared part exceeds the file count. Such folders are moved to the
-# same archive the converter uses (`audio/books/convert-to-m4b.sh`), with the
-# book folder renamed with an INCOMPLETE_ prefix, so the library scan leaves it
-# alone and the source is not lost.
+# A book is incomplete when its single-format filenames (mp3, flac, ogg, opus,
+# wav, aac, wma) declare "NN of NN" parts and the highest declared part exceeds
+# the file count. Such folders are moved to the same archive the converter uses
+# (`audio/books/convert-to-m4b.sh`), with the book folder renamed with an
+# INCOMPLETE_ prefix, so the library scan leaves it alone and the source is not
+# lost. Folders holding more than one media type are corruption, not incomplete,
+# and are left for the converter's audit.
 #
 # Dry-run by default. Pass --apply to move.
 
@@ -32,6 +34,23 @@ EOF
 log() { printf '%s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
 
+# Source formats folded into m4b; m4b/m4a are book containers, not sources.
+is_source_type() {
+    case "$1" in
+        mp3|flac|ogg|opus|wav|aac|wma) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Distinct source media types in a folder, one lowercase extension per line.
+source_types() {
+    find "$1" -maxdepth 1 -type f \
+        \( -iname '*.mp3' -o -iname '*.flac' -o -iname '*.ogg' \
+        -o -iname '*.opus' -o -iname '*.wav' -o -iname '*.aac' \
+        -o -iname '*.wma' \) -printf '%f\n' \
+        | sed 's/.*\.//I' | tr '[:upper:]' '[:lower:]' | sort -u
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --apply) APPLY=1; shift ;;
@@ -43,18 +62,25 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-mapfile -t DIRS < <(find "$ROOT" -type f -iname '*.mp3' -printf '%h\n' | sort -u)
+mapfile -t DIRS < <(find "$ROOT" -type f \
+    \( -iname '*.mp3' -o -iname '*.flac' -o -iname '*.ogg' \
+    -o -iname '*.opus' -o -iname '*.wav' -o -iname '*.aac' \
+    -o -iname '*.wma' \) -printf '%h\n' | sort -u)
 
 mode="DRY-RUN"; [[ $APPLY -eq 1 ]] && mode="APPLY"
 log "mode=$mode root=$ROOT archive=$ARCHIVE"
 
 found=0 moved=0 collisions=0
 for dir in "${DIRS[@]}"; do
-    declared=$(find "$dir" -maxdepth 1 -type f -iname '*.mp3' -printf '%f\n' \
+    src=$(source_types "$dir")
+    [[ "$(printf '%s\n' "$src" | grep -c .)" -eq 1 ]] || continue
+    is_source_type "$src" || continue
+
+    declared=$(find "$dir" -maxdepth 1 -type f -iname "*.$src" -printf '%f\n' \
         | grep -oiE 'of[._ -]+[0-9]+' | grep -oE '[0-9]+' \
         | sed 's/^0*//' | sort -n | tail -1)
     [[ -z "$declared" ]] && continue
-    actual=$(find "$dir" -maxdepth 1 -type f -iname '*.mp3' | wc -l)
+    actual=$(find "$dir" -maxdepth 1 -type f -iname "*.$src" | wc -l)
     [[ "$declared" -le "$actual" ]] && continue
 
     found=$((found + 1))

@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 #
-# convert-to-m4b.sh -- fold each mp3-only audiobook folder into a single .m4b.
+# convert-to-m4b.sh -- fold each single-format audiobook folder into one .m4b.
 #
-# For every book folder that holds mp3s and no other audio:
-#   - order the mp3s by playlist.ll when it is complete, else by version sort
+# For every book folder that holds exactly one audio media type (mp3, flac,
+# ogg, opus, wav, aac, wma; m4b/m4a are treated as already-book containers):
+#   - order the files by playlist.ll when it is complete, else by version sort
 #   - refuse folders whose "NN of NN" naming declares parts that are missing
 #   - concatenate and re-encode to a single AAC .m4b (64k, source layout)
 #   - embed one chapter per source file, plus cover and tags from metadata.json
-#   - verify the result, then move the source mp3s to an archive tree
+#   - verify the result, then move the source files to an archive tree
 # Folders that fail an audit -- more than one audio media type in the folder
 # (e.g. ogg alongside flac, mp3 alongside m4b), or an "NN of NN" naming that
 # does not match the file count -- are never touched and are written to the
@@ -31,7 +32,7 @@ Usage: $(basename "$0") [options]
 
   --apply             make changes (default is dry-run)
   --root DIR          library root (default: $ROOT)
-  --archive DIR       where source mp3s are moved (default: $ARCHIVE)
+  --archive DIR       where source files are moved (default: $ARCHIVE)
   --audit FILE        audit-failure report path (default: $AUDIT)
   --only FILE         process only the book dirs listed in FILE (one per line)
   --limit N           stop after N candidate folders
@@ -82,9 +83,32 @@ audio_types() {
         | sed 's/.*\.//I' | tr '[:upper:]' '[:lower:]' | sort -u
 }
 
-# Print the mp3 files in play order: playlist.ll when complete, else version sort.
+# True when an extension is a source format we fold into m4b. m4b/m4a are
+# themselves book containers and are never re-encoded.
+is_source_type() {
+    case "$1" in
+        mp3|flac|ogg|opus|wav|aac|wma) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Numeric part index for a filename: the number before "of NN" when present,
+# else the first integer run. 0 when the name carries no number. Sorting on
+# this (not the whole name) keeps order correct when a series/book number leads
+# the name, and when the part number widens from NN to NNN.
+part_number() {
+    local name="${1%.*}" n
+    n=$(printf '%s' "$name" | grep -oiE '[0-9]+[._ -]+of[._ -]+[0-9]+' \
+        | head -1 | grep -oE '^[0-9]+')
+    if [[ -z "$n" ]]; then
+        n=$(printf '%s' "$name" | grep -oE '[0-9]+' | head -1)
+    fi
+    printf '%d' "$((10#${n:-0}))"
+}
+
+# Print the files in play order: playlist.ll when complete, else by part number.
 ordered_files() {
-    local dir="$1" pl="$1/playlist.ll" f
+    local dir="$1" src="$2" pl="$1/playlist.ll" f
     if [[ -f "$pl" ]]; then
         local complete=1 listed=0
         while IFS= read -r f; do
@@ -93,40 +117,46 @@ ordered_files() {
             listed=$((listed + 1))
         done < "$pl"
         local actual
-        actual=$(find "$dir" -maxdepth 1 -type f -iname '*.mp3' | wc -l)
+        actual=$(find "$dir" -maxdepth 1 -type f -iname "*.$src" | wc -l)
         if [[ $complete -eq 1 && $listed -eq $actual ]]; then
             sed "s|^|$dir/|" "$pl"
             return 0
         fi
     fi
-    find "$dir" -maxdepth 1 -type f -iname '*.mp3' -printf '%p\n' | sort -V
+    find "$dir" -maxdepth 1 -type f -iname "*.$src" -printf '%f\n' \
+        | while IFS= read -r f; do
+            printf '%010d\t%s\n' "$(part_number "$f")" "$f"
+        done \
+        | sort -k1,1n -k2,2V \
+        | cut -f2- \
+        | sed "s|^|$dir/|"
 }
 
 # Return an audit-failure reason for a folder that must not be converted, or
 # nothing when the folder is safe to convert. Corrupt folders: more than one
 # audio media type present (duplicate/questionable content -- the folder could
-# hold the book twice in different encodings). Then, for mp3-only folders: a
-# declared "NN of NN" count that exceeds the files present (incomplete), or one
-# that is exceeded by the files present (duplicate renditions -- e.g. two
-# numbering schemes of the same parts).
+# hold the book twice in different encodings). Then, for single-source
+# folders: a declared "NN of NN" count that exceeds the files present
+# (incomplete), or one that is exceeded by the files present (duplicate
+# renditions -- e.g. two numbering schemes of the same parts).
 audit_failure() {
-    local dir="$1" types count
-    types=$(audio_types "$dir")
+    local dir="$1" types="$2" src count
     count=$(printf '%s\n' "$types" | grep -c .)
     if [[ "$count" -gt 1 ]]; then
         printf 'corruption: multiple media types present (%s)' \
             "$(printf '%s' "$types" | tr '\n' ' ' | sed 's/ $//')"
         return 0
     fi
-    if [[ "$types" != "mp3" ]]; then
+    src="$types"
+    if ! is_source_type "$src"; then
         return 0
     fi
     local declared actual
-    declared=$(find "$dir" -maxdepth 1 -type f -iname '*.mp3' -printf '%f\n' \
+    declared=$(find "$dir" -maxdepth 1 -type f -iname "*.$src" -printf '%f\n' \
         | grep -oiE 'of[._ -]+[0-9]+' | grep -oE '[0-9]+' \
         | sed 's/^0*//' | sort -n | tail -1)
     [[ -z "$declared" ]] && return 0
-    actual=$(find "$dir" -maxdepth 1 -type f -iname '*.mp3' | wc -l)
+    actual=$(find "$dir" -maxdepth 1 -type f -iname "*.$src" | wc -l)
     if [[ "$declared" -gt "$actual" ]]; then
         printf 'incomplete: names declare %s parts, %s present (%s missing)' \
             "$declared" "$actual" "$((declared - actual))"
@@ -266,8 +296,10 @@ log "book folders with audio media: ${#DIRS[@]}"
 cand=0 converted=0 failed=0 audited=0 skipped=0
 for dir in "${DIRS[@]}"; do
     [[ -d "$dir" ]] || continue
+    types=$(audio_types "$dir")
+    src="$types"
 
-    reason=$(audit_failure "$dir")
+    reason=$(audit_failure "$dir" "$types")
     if [[ -n "$reason" ]]; then
         printf '%s\t%s\n' "$dir" "$reason" >> "$AUDIT"
         log "[audit failure] $reason :: $dir"
@@ -275,7 +307,12 @@ for dir in "${DIRS[@]}"; do
         continue
     fi
 
-    mapfile -t files < <(ordered_files "$dir")
+    if ! is_source_type "$src"; then
+        skipped=$((skipped + 1))
+        continue
+    fi
+
+    mapfile -t files < <(ordered_files "$dir" "$src")
     if [[ ${#files[@]} -eq 0 ]]; then
         skipped=$((skipped + 1))
         continue
@@ -289,7 +326,7 @@ for dir in "${DIRS[@]}"; do
 
     out=$(output_name "$dir")
     if [[ $APPLY -eq 0 ]]; then
-        log "[dry-run] ${#files[@]} mp3 -> $(basename "$out") :: $dir"
+        log "[dry-run] ${#files[@]} $src -> $(basename "$out") :: $dir"
         continue
     fi
 
@@ -339,7 +376,7 @@ for dir in "${DIRS[@]}"; do
     mkdir -p "$ARCHIVE/$rel"
     for f in "${files[@]}"; do mv -f "$f" "$ARCHIVE/$rel/"; done
     converted=$((converted + 1))
-    log "[ok] ${#files[@]} mp3 -> $(basename "$out") ($got s) :: $dir"
+    log "[ok] ${#files[@]} $src -> $(basename "$out") ($got s) :: $dir"
 done
 
 log "---"
