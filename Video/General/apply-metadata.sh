@@ -27,12 +27,18 @@ DEBUG=0
 AUDIT_LOG=""
 LOGGING_ENABLED=0
 TARGET=""
+had_error=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --dry-run) DRYRUN=1 ;;
         --debug)   DEBUG=1 ;;
-        --audit-log) AUDIT_LOG="$2"; shift ;;
+        --audit-log)
+            if [[ $# -lt 2 ]]; then
+                echo "Missing value for --audit-log" >&2; exit 1
+            fi
+            AUDIT_LOG="$2"; shift
+            ;;
         # A leading dash means a mistyped option, not a path. Catching it here
         # keeps a typo from being taken as a filename and failing the existence
         # check with a misleading message.
@@ -51,8 +57,7 @@ done
 
 # Both helpers use an if rather than && on the last statement: a short-circuit
 # that evaluates false makes the function return 1, and log's final call is the
-# last command in the script. That made every run report failure to callers
-# that check the exit status, however well the run had actually gone.
+# last command in the script.
 log() {
     local lvl="$1"; shift
     echo "[$lvl] $*"
@@ -62,6 +67,20 @@ log() {
 }
 
 debug() { if [[ $DEBUG -eq 1 ]]; then log DEBUG "$*"; fi; }
+
+# ------------------------------
+# Cleanup trap for interruption
+# ------------------------------
+# Temp files are removed on exit or on SIGINT/SIGTERM.
+temp_files=()
+cleanup() {
+    local f
+    for f in "${temp_files[@]}"; do
+        rm -f -- "$f" 2>/dev/null
+    done
+}
+trap 'cleanup; exit 1' INT TERM
+trap cleanup EXIT
 
 # ------------------------------
 # Dependency check
@@ -98,9 +117,8 @@ build_tags_xml() {
         echo "  </Tag>"
         # Series root at TargetTypeValue 70 (VLC showName).
         # Empty Targets defaults to target 50, which VLC reads as Album.
-        # TYPE is tested FIRST and the key is read through a default: the MOVIE
-        # branch never assigns TAGS[SHOW], so dereferencing it under `set -u`
-        # aborted every movie mid-run, before any tag was written.
+        # The EPISODE test comes first and the key is read through a default,
+        # because the MOVIE branch never assigns TAGS[SHOW].
         if [[ "$TYPE" == "EPISODE" && -n "${TAGS[SHOW]:-}" ]]; then
             local esc70
             esc70=$(printf '%s' "${TAGS[SHOW]}" | xmlstarlet esc)
@@ -214,6 +232,7 @@ remux_mkv() {
 # Begin
 # ------------------------------
 tmpfile=$(mktemp)
+temp_files+=("$tmpfile")
 
 if [[ -n "$TARGET" ]]; then
     # Single-file mode. The extras filters below are deliberately NOT applied:
@@ -295,7 +314,8 @@ while IFS= read -r -d '' mkv; do
     # NFO detection
     # ------------------------------
     dir=$(dirname "$mkv")
-    base=$(basename "$mkv" .mkv)
+    base=$(basename "$mkv")
+    base="${base%.[mM][kK][vV]}"
 
     nfo_candidates=(
         "$dir/$base.nfo"
@@ -320,6 +340,7 @@ while IFS= read -r -d '' mkv; do
     # ------------------------------
     if [[ $apply_tags -eq 1 ]]; then
         nfo_clean=$(mktemp)
+        temp_files+=("$nfo_clean")
         sed $'1s/^\uFEFF//' "$nfo" | sed 's/^[[:space:]]*//' > "$nfo_clean"
 
         # Validate XML
@@ -391,10 +412,15 @@ while IFS= read -r -d '' mkv; do
                 [[ -z "$etitle" ]] && etitle="Episode $episode"
                 etitle=$(trim_trailing_dash "$etitle")
 
-                s=$(printf '%02d' "$season")
-                e=$(printf '%02d' "$episode")
-
-                new_title="$showtitle $EN_DASH S${s}E${e} $EN_DASH $etitle"
+                # Some NFOs carry showtitle with no season or episode numbers.
+                if [[ "$season" =~ ^[0-9]+$ && "$episode" =~ ^[0-9]+$ ]]; then
+                    s=$(printf '%02d' "$season")
+                    e=$(printf '%02d' "$episode")
+                    new_title="$showtitle $EN_DASH S${s}E${e} $EN_DASH $etitle"
+                else
+                    debug "Season/episode not numeric ('$season'/'$episode') -- omitting SxxEyy from title"
+                    new_title="$showtitle $EN_DASH $etitle"
+                fi
 
                 TAGS[TITLE]="$etitle"
                 TAGS[DESCRIPTION]="$plot"
@@ -411,6 +437,7 @@ while IFS= read -r -d '' mkv; do
                 apply_tags=0
                 ;;
         esac
+        rm -f "$nfo_clean"
     fi
 
     # ------------------------------
@@ -418,6 +445,7 @@ while IFS= read -r -d '' mkv; do
     # ------------------------------
     if [[ $apply_tags -eq 1 ]]; then
         tags_tmp=$(mktemp)
+        temp_files+=("$tags_tmp")
         mkvextract "$mkv" tags "$tags_tmp" 2>/dev/null || true
 
         if [[ -s "$tags_tmp" ]]; then
@@ -452,45 +480,56 @@ while IFS= read -r -d '' mkv; do
     fi
 
     # ------------------------------
-    # Normalise container title
+    # Container title (empty when the file has no NFO)
     # ------------------------------
     if [[ $DRYRUN -eq 0 ]]; then
-        mkvmerge --title "" -o "$dir/$base.tmp" "$mkv" >/dev/null 2>&1
-        mv -f "$dir/$base.tmp" "$mkv"
+        cur_title=$(jq -r '.container.properties.title // ""' <<< "$json")
+        if [[ "$cur_title" != "$new_title" ]]; then
+            if mkvpropedit "$mkv" --edit info --set "title=$new_title" >/dev/null 2>&1; then
+                debug "Container title: '$cur_title' -> '$new_title'"
+            else
+                log ERROR "mkvpropedit container title failed: $mkv"
+                had_error=1
+            fi
+        fi
     fi
 
     # ------------------------------
-    # Track renaming by UID
+    # Track renaming by UID (mkvpropedit selector track:=<uid>)
     # ------------------------------
     if [[ $DRYRUN -eq 0 ]]; then
+        rename_args=()
         while read -r track; do
             uid=$(echo "$track" | jq -r '.properties.uid')
             ttype=$(echo "$track" | jq -r '.type')
             tname=$(echo "$track" | jq -r '.properties.track_name // ""')
 
-            real_raw=$(mkvpropedit "$mkv" --edit "track:@$uid" --get name 2>&1 || true)
-            real_name=""
-            [[ "$real_raw" == name=* ]] && real_name="${real_raw#name=}"
-
-            cleaned=$(clean_name "${real_name:-$tname}")
-
+            cleaned=$(clean_name "$tname")
             if [[ "$ttype" == "video" ]]; then
                 cleaned="Video"
             fi
 
-            mkvpropedit "$mkv" --edit "track:@$uid" --set "name=$cleaned" >/dev/null 2>&1 || true
+            rename_args+=( --edit "track:=$uid" --set "name=$cleaned" )
         done < <(echo "$json" | jq -c '.tracks[]')
+
+        if [[ ${#rename_args[@]} -gt 0 ]]; then
+            mkvpropedit "$mkv" "${rename_args[@]}" >/dev/null 2>&1 \
+                || debug "Track rename failed (non-fatal): $mkv"
+        fi
     fi
 
     # ------------------------------
-    # Apply tags + container title
+    # Apply tags
     # ------------------------------
     if [[ $apply_tags -eq 1 && $DRYRUN -eq 0 ]]; then
         temp_tags="$dir/$base.tags.tmp"
+        temp_files+=("$temp_tags")
         build_tags_xml "$temp_tags"
 
-        mkvpropedit "$mkv" --edit info --set "title=$new_title" >/dev/null 2>&1 || true
-        mkvpropedit "$mkv" --tags all:"$temp_tags" >/dev/null 2>&1 || true
+        if ! mkvpropedit "$mkv" --tags all:"$temp_tags" >/dev/null 2>&1; then
+            log ERROR "mkvpropedit tag write failed: $mkv"
+            had_error=1
+        fi
 
         rm -f "$temp_tags"
     fi
@@ -501,4 +540,8 @@ while IFS= read -r -d '' mkv; do
 done < "$tmpfile"
 
 rm -f "$tmpfile"
+if [[ $had_error -ne 0 ]]; then
+    log ERROR "Unified metadata run complete with errors."
+    exit 1
+fi
 log INFO "Unified metadata run complete."
