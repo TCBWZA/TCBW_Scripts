@@ -371,10 +371,27 @@ for dir in "${DIRS[@]}"; do
         continue
     fi
 
-    mv -f "$partial" "$out"
+    if ! mv -f "$partial" "$out"; then
+        warn "output move failed: $dir"
+        rm -f "$partial"
+        failed=$((failed + 1))
+        continue
+    fi
     rel="${dir#"$ROOT"/}"
-    mkdir -p "$ARCHIVE/$rel"
-    for f in "${files[@]}"; do mv -f "$f" "$ARCHIVE/$rel/"; done
+    if ! mkdir -p "$ARCHIVE/$rel"; then
+        warn "archive mkdir failed, output written but sources left in place: $dir"
+        failed=$((failed + 1))
+        continue
+    fi
+    mv_fail=0
+    for f in "${files[@]}"; do
+        mv -f "$f" "$ARCHIVE/$rel/" || mv_fail=1
+    done
+    if [[ $mv_fail -ne 0 ]]; then
+        warn "source move incomplete, check $dir and $ARCHIVE/$rel"
+        failed=$((failed + 1))
+        continue
+    fi
     converted=$((converted + 1))
     log "[ok] ${#files[@]} $src -> $(basename "$out") ($got s) :: $dir"
 done

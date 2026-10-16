@@ -183,7 +183,7 @@ done < <(find . -type f \( -iname '*.mkv' -o -iname '*.mp4' \) \
     ! -ipath '*/extras/*' \
     ! -ipath '*/trailers/*' \
     ! -ipath '*/theme-music/*' \
-    ! -ipath '*/backdrops/*' \ \
+    ! -ipath '*/backdrops/*' \
     -print0)
 
 printf '\nDone.  Processed: %d   Skipped (no NFO): %d   Errors: %d\n' \

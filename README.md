@@ -98,8 +98,8 @@ TCBW_Scripts/
 |       \--  sync_robo.ps1                 - Robocopy-based sync helper for Windows (PowerShell)
 \--  audio/
     \--  books/
-        |--  listcorrupt.ps1               - Scans for zero-byte audiobook files and optionally deletes directories (PowerShell)
-        \--  listcorrupt.sh                - Scans for zero-byte audiobook files (bash)
+        |--  listcorrupt.ps1               - Flags corrupt book folders (zero-byte files, no audio, missing parts) and optionally cleans them (PowerShell)
+        \--  listcorrupt.sh                - Flags corrupt book folders (zero-byte files, no audio, missing parts) and optionally cleans them (bash)
 ```
 
 ### Path Placeholders

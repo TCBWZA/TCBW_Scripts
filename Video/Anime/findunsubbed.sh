@@ -373,11 +373,14 @@ while read -r file; do
             continue
         fi
 
+        if ! rm -f "$file"; then
+            print_error "Delete failed: $file"
+            continue
+        fi
+
         if [[ -n "$CSV_FILE" ]]; then
             echo "\"$file\"" >> "$CSV_FILE"
         fi
-
-        rm -f "$file"
         print_ok "Deleted: $file"
 
         [[ $ENABLE_SONARR -eq 1 ]] && sonarr_request "$file"

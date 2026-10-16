@@ -51,6 +51,16 @@ source_types() {
         | sed 's/.*\.//I' | tr '[:upper:]' '[:lower:]' | sort -u
 }
 
+# Distinct audio media types in a folder, containers included.
+all_audio_types() {
+    find "$1" -maxdepth 1 -type f \
+        \( -iname '*.mp3' -o -iname '*.m4b' -o -iname '*.m4a' \
+        -o -iname '*.flac' -o -iname '*.ogg' -o -iname '*.opus' \
+        -o -iname '*.wav' -o -iname '*.aac' -o -iname '*.wma' \) \
+        -printf '%f\n' \
+        | sed 's/.*\.//I' | tr '[:upper:]' '[:lower:]' | sort -u
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --apply) APPLY=1; shift ;;
@@ -72,6 +82,11 @@ log "mode=$mode root=$ROOT archive=$ARCHIVE"
 
 found=0 moved=0 collisions=0
 for dir in "${DIRS[@]}"; do
+    types=$(all_audio_types "$dir")
+    if [[ "$(printf '%s\n' "$types" | grep -c .)" -gt 1 ]]; then
+        warn "multiple audio media types (corruption), left untouched: $dir"
+        continue
+    fi
     src=$(source_types "$dir")
     [[ "$(printf '%s\n' "$src" | grep -c .)" -eq 1 ]] || continue
     is_source_type "$src" || continue
@@ -99,7 +114,10 @@ for dir in "${DIRS[@]}"; do
         continue
     fi
     mkdir -p "$ARCHIVE/$rel_author"
-    mv -f "$dir" "$target"
+    if ! mv -f "$dir" "$target"; then
+        warn "move failed: $dir"
+        continue
+    fi
     moved=$((moved + 1))
     log "[moved] $dir -> $target"
 done

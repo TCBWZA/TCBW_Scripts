@@ -389,7 +389,7 @@ done < <(find . -type f \( -iname '*.mkv' -o -iname '*.mp4' \) \
     ! -ipath '*/extras/*' \
     ! -ipath '*/trailers/*' \
     ! -ipath '*/theme-music/*' \
-    ! -ipath '*/backdrops/*' \ \
+    ! -ipath '*/backdrops/*' \
     -print0)
 
 printf '\nDone.  Processed: %d   Already done: %d   Skipped (no NFO): %d   Filtered (extras/trailers): %d   Errors: %d\n' \
