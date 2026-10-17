@@ -17,12 +17,12 @@ sleep 2
 echo "Fetching container list..."
 pct list
 echo
-read -p "Enter the VMID of the container you want to resize: " VMID
-read -p "Enter the new size (e.g., 5G): " NEW_SIZE
+read -r -p "Enter the VMID of the container you want to resize: " VMID
+read -r -p "Enter the new size (e.g., 5G): " NEW_SIZE
 
 #Confirm with the user
 echo "You have selected VMID: $VMID and new size: $NEW_SIZE"
-read -p "Are you sure you want to continue? (y/n): " CONFIRM
+read -r -p "Are you sure you want to continue? (y/n): " CONFIRM
 if [[ "$CONFIRM" != "y" ]]; then
     echo "Operation aborted."
     exit 1
@@ -87,7 +87,7 @@ fi
 echo "Container $VMID resized successfully!"
 
 #Confirm with the user
-read -p "Do you want to start the container? (y/n): " CONFIRM
+read -r -p "Do you want to start the container? (y/n): " CONFIRM
 if [[ "$CONFIRM" != "y" ]]; then
     echo "Container will not be started but the resizing process was completed successfully!"
     exit 1
