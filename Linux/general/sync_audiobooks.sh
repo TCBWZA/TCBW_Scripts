@@ -11,6 +11,14 @@ MOUNT="/mnt/nmedia"
 # we only unmount targets we mounted; sync.sh powers the drive and keeps
 # it mounted for the whole job sequence.
 MOUNTED_BY_SCRIPT=false
+
+for cmd in mountpoint mount rsync; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "ERROR: Required command '$cmd' not found." >&2
+        exit 1
+    fi
+done
+
 if ! mountpoint -q "$MOUNT"; then
     echo "Mounting $MOUNT..."
     if ! mount "$MOUNT"; then

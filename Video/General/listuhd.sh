@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 
+for cmd in find ffprobe; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "ERROR: Required command '$cmd' not found." >&2
+        exit 1
+    fi
+done
+
 start_dir="."
 
 find "$start_dir" -type f -iname '*.mkv' | while IFS= read -r file; do

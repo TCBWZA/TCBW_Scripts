@@ -2,6 +2,13 @@
 
 set -u -o pipefail
 
+for cmd in ffmpeg mkvmerge jq curl; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "ERROR: Required command '$cmd' not found." >&2
+        exit 1
+    fi
+done
+
 trap 'interrupted=1; exit 1' INT
 trap 'if [[ ${interrupted:-0} -eq 1 ]]; then echo "Interrupted -- exiting safely"; fi' EXIT
 
