@@ -49,10 +49,10 @@ YELLOW="\033[33m"
 CYAN="\033[36m"
 RESET="\033[0m"
 
-print_info()  { echo -e "${CYAN}$1${RESET}"; }
-print_warn()  { echo -e "${YELLOW}$1${RESET}"; }
-print_error() { echo -e "${RED}$1${RESET}"; }
-print_ok()    { echo -e "${GREEN}$1${RESET}"; }
+print_info()  { printf '%s%s%s\n' "${CYAN}" "$1" "${RESET}"; }
+print_warn()  { printf '%s%s%s\n' "${YELLOW}" "$1" "${RESET}"; }
+print_error() { printf '%s%s%s\n' "${RED}" "$1" "${RESET}"; }
+print_ok()    { printf '%s%s%s\n' "${GREEN}" "$1" "${RESET}"; }
 
 # -------- Defaults --------
 ROOT="."
