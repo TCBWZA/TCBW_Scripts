@@ -17,6 +17,7 @@ done
 # CLEANUP TRAP FOR INTERRUPTION
 ###############################################################
 temp_files=()
+interrupted=0
 cleanup() {
     if [[ ${#temp_files[@]} -gt 0 ]]; then
         debug "\nCleaning up temp files due to interruption..."
@@ -291,7 +292,7 @@ for f in "${files[@]}"; do
         )
 
         interlaced_count=$(echo "$idet_output" | grep -oP 'Interlaced:\s*\K[0-9]+' | head -n1)
-        progressive_count=$(echo "$idet_output" | grep -oP 'Progressive:\s*\K[0-9]+' | head -n1)
+        # progressive_count unused
         tff_count=$(echo "$idet_output" | grep -oP 'TFF:\s*\K[0-9]+' | head -n1)
         bff_count=$(echo "$idet_output" | grep -oP 'BFF:\s*\K[0-9]+' | head -n1)
 

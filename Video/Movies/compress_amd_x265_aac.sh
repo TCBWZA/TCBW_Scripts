@@ -17,6 +17,7 @@ done
 # CLEANUP TRAP FOR INTERRUPTION
 ###############################################################
 temp_files=()
+interrupted=0
 cleanup() {
     if [[ ${#temp_files[@]} -gt 0 ]]; then
         debug "\nCleaning up temp files due to interruption..."
@@ -365,7 +366,7 @@ for f in "${files[@]}"; do
     # no telecine/interlace detection or filters needed.
     #####################################################
 
-    status="progressive"
+    # status="progressive"  # unused; movies are always progressive
 
     #####################################################
     # Needs convert?
