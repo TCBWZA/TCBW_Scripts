@@ -67,10 +67,14 @@ if [[ ! -d "$ROOT" ]]; then
     exit 1
 fi
 
-# Required rather than optional: without ffprobe the video check below cannot
+# Required rather than optional: without ffprobe/jq the video check below cannot
 # run, and silently renaming unprobed files would defeat the point of the gate.
 if ! command -v ffprobe >/dev/null 2>&1; then
     echo "ERROR: ffprobe not found on PATH; refusing to rename unprobed files"
+    exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+    echo "ERROR: jq not found on PATH; required to parse ffprobe JSON"
     exit 1
 fi
 
