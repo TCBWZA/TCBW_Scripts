@@ -15,7 +15,7 @@
 set -u -o pipefail
 
 ROOT="/main/media/audiobooks"
-ARCHIVE="/main/media/audiobooks_mp3"
+ARCHIVE="/main/work/audiobooks_mp3"
 LIMIT=0
 APPLY=0
 

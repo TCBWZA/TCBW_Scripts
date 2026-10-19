@@ -19,7 +19,7 @@
 set -u -o pipefail
 
 ROOT="/main/media/audiobooks"
-ARCHIVE="/main/media/audiobooks_mp3"
+ARCHIVE="/main/work/audiobooks_mp3"
 AUDIT="/tmp/convert-to-m4b-audit.txt"
 ONLY=""
 LIMIT=0
