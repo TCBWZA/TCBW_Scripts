@@ -131,9 +131,9 @@ update_container() {
             < /dev/null >> "$LOGFILE" 2>&1
         rc=$?
         if (( rc == 124 || rc == 137 )); then
-            echo "WARNING: /usr/bin/update timed out after ${UPDATE_TIMEOUT}s in CT $CTID -- see $LOGFILE"
+            echo "WARNING: /usr/bin/update timed out after ${UPDATE_TIMEOUT}s in CT $CTID -- see $LOGFILE" >&2
         elif (( rc != 0 )); then
-            echo "WARNING: /usr/bin/update exited rc=$rc in CT $CTID -- see $LOGFILE"
+            echo "WARNING: /usr/bin/update exited rc=$rc in CT $CTID -- see $LOGFILE" >&2
         fi
 
         # The app script only runs addons when it can ask about them, and it reads
@@ -168,12 +168,12 @@ update_container() {
             # guarantee. `pct reboot` blocks on the PVE task until the container
             # is running again and reports whether that actually happened.
             if ! pct reboot "$CTID"; then
-                echo "WARNING: pct reboot returned non-zero for CT $CTID"
+                echo "WARNING: pct reboot returned non-zero for CT $CTID" >&2
             fi
 
             echo "Waiting for container $CTID to come back online..."
             restarted=0
-            for i in {1..60}; do
+            for _ in {1..60}; do
                 if pct status "$CTID" | grep -q "running"; then
                     restarted=1
                     break
@@ -181,7 +181,7 @@ update_container() {
                 sleep 2
             done
             if (( restarted == 0 )); then
-                echo "WARNING: container $CTID did not return to running within 120s of reboot -- check $CTID manually"
+                echo "WARNING: container $CTID did not return to running within 120s of reboot -- check $CTID manually" >&2
             fi
         fi
     fi

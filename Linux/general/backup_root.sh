@@ -9,7 +9,7 @@ usb-poweron.sh
 
 # Check if destination is mounted
 if ! mountpoint -q "/mnt/nmedia"; then
-    echo "ERROR: $DEST is not mounted. Aborting backup."
+    echo "ERROR: $DEST is not mounted. Aborting backup." >&2
     exit 1
 fi
 
@@ -31,7 +31,7 @@ fi
 echo "=== POWERING OFF USB DRIVE ==="
 usb-poweroff.sh
 
-if [ "$BACKUP_OK" = true ]; then
+if [[ "$BACKUP_OK" = true ]]; then
     exit 0
 fi
 

@@ -21,9 +21,9 @@ sleep 3
 echo "Waiting for block device with UUID $UUID to reappear..."
 
 DEVICE=""
-for i in {1..20}; do
+for _ in {1..20}; do
     DEV=$(blkid | grep "$UUID" | awk -F: '{print $1}')
-    if [ -n "$DEV" ]; then
+    if [[ -n "$DEV" ]]; then
         DEVICE="$DEV"
         echo "Detected device: $DEVICE"
         break
@@ -31,8 +31,8 @@ for i in {1..20}; do
     sleep 1
 done
 
-if [ -z "$DEVICE" ]; then
-    echo "ERROR: Device with UUID $UUID did not reappear."
+if [[ -z "$DEVICE" ]]; then
+    echo "ERROR: Device with UUID $UUID did not reappear." >&2
     exit 1
 fi
 
@@ -42,6 +42,6 @@ mount "$MOUNT"
 if mountpoint -q "$MOUNT"; then
     echo "SUCCESS: Drive mounted at $MOUNT"
 else
-    echo "ERROR: Mount failed."
+    echo "ERROR: Mount failed." >&2
     exit 1
 fi

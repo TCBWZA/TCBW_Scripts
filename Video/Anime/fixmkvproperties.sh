@@ -54,7 +54,7 @@ safe_rm() {
     local keep="$2"
 
     if [[ $DEBUG -eq 1 && "$keep" == "yes" ]]; then
-        echo "[DEBUG] Preserving temp file: $f"
+        echo "[DEBUG] Preserving temp file: $f" >&2
     else
         rm -f "$f"
     fi
@@ -62,7 +62,7 @@ safe_rm() {
 
 for cmd in xmlstarlet mkvmerge mkvpropedit mkvextract jq stat touch ffmpeg; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
-        echo "ERROR: Required command '$cmd' not found"
+        echo "ERROR: Required command '$cmd' not found" >&2
         exit 1
     fi
 done
@@ -167,7 +167,7 @@ remux_mkv() {
     local reason="$3"
 
     if [[ ! -f "$mkv" ]]; then
-        echo "ERROR: remux requested but file not found: $mkv"
+        echo "ERROR: remux requested but file not found: $mkv" >&2
         log_audit "ERROR: remux requested but file not found: $mkv (reason: $reason)"
         return 1
     fi
@@ -181,7 +181,7 @@ remux_mkv() {
     local ff_rc=$?
 
     if [[ $ff_rc -ne 0 ]]; then
-        echo "ERROR: ffmpeg remux failed for $mkv (exit $ff_rc)"
+        echo "ERROR: ffmpeg remux failed for $mkv (exit $ff_rc)" >&2
         log_audit "ERROR: ffmpeg remux failed for $mkv (exit $ff_rc)"
         safe_rm "$fixed" yes
         return $ff_rc
@@ -249,7 +249,7 @@ while IFS= read -r -d '' mkv; do
     log_audit "Processing MKV: $mkv"
 
     if [[ ! -f "$mkv" ]]; then
-        echo "WARNING: File disappeared, skipping: $mkv"
+        echo "WARNING: File disappeared, skipping: $mkv" >&2
         log_audit "WARNING: File disappeared, skipping: $mkv"
         continue
     fi
@@ -263,7 +263,7 @@ while IFS= read -r -d '' mkv; do
     if ! json=$(mkvmerge -J "$mkv" 2>/dev/null); then
         if remux_mkv "$mkv" "$orig_mtime" "mkvmerge -J failed"; then
             if ! json=$(mkvmerge -J "$mkv" 2>/dev/null); then
-                echo "ERROR: mkvmerge still fails after remux, skipping: $mkv"
+                echo "ERROR: mkvmerge still fails after remux, skipping: $mkv" >&2
                 log_audit "ERROR: mkvmerge still fails after remux, skipping: $mkv"
                 continue
             fi
@@ -279,12 +279,12 @@ while IFS= read -r -d '' mkv; do
             continue
         fi
         if ! json=$(mkvmerge -J "$mkv" 2>/dev/null); then
-            echo "ERROR: mkvmerge failed after UID remux, skipping: $mkv"
+            echo "ERROR: mkvmerge failed after UID remux, skipping: $mkv" >&2
             log_audit "ERROR: mkvmerge failed after UID remux, skipping: $mkv"
             continue
         fi
         if [[ "$(uids_invalid "$json")" -eq 1 ]]; then
-            echo "ERROR: UIDs still broken after remux, skipping: $mkv"
+            echo "ERROR: UIDs still broken after remux, skipping: $mkv" >&2
             log_audit "ERROR: UIDs still broken after remux, skipping: $mkv"
             continue
         fi
@@ -387,7 +387,7 @@ while IFS= read -r -d '' mkv; do
     container_title=$(echo "$json" | jq -r '.container.properties.title // ""')
 
     # 4) Track rename plan (positional selectors -- track:@n is the TrackNumber,
-    #    not the TrackUID, so uid-based edits were silently no-ops)
+    #    not the TrackUID)
     declare -A rename_plan
     rename_needed=0
     v_idx=1
@@ -470,7 +470,7 @@ while IFS= read -r -d '' mkv; do
         mkvmerge --title "" -o "$norm_tmp" "$mkv" >/dev/null 2>&1
         mkv_rc=$?
         if (( mkv_rc != 0 )) || [[ ! -s "$norm_tmp" ]] || ! mkvmerge -J "$norm_tmp" >/dev/null 2>&1; then
-            echo "ERROR: normalizing failed for $mkv, keeping original"
+            echo "ERROR: normalizing failed for $mkv, keeping original" >&2
             log_audit "ERROR: normalizing failed for $mkv, keeping original"
             rm -f "$norm_tmp"
             continue

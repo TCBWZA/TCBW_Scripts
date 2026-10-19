@@ -27,12 +27,12 @@ wait_for_lxc_teardown() {
     local ctpid
     ctpid=$(pct pid "$CTID" 2>/dev/null || true)
 
-    if [ -z "$ctpid" ]; then
+    if [[ -z "$ctpid" ]]; then
         return 0
     fi
 
     log "Waiting for LXC teardown (PID $ctpid)..."
-    while [ -e "/proc/$ctpid/ns/mnt" ]; do
+    while [[ -e "/proc/$ctpid/ns/mnt" ]]; do
         sleep 1
     done
     log "LXC teardown complete."
@@ -72,7 +72,7 @@ else
 fi
 
 ### --- RESTORE CONTAINER STATE --- ###
-if [ "$ORIGINALLY_RUNNING" = true ]; then
+if [[ "$ORIGINALLY_RUNNING" = true ]]; then
     log "Starting container $CTID..."
     pct start "$CTID"
     log "Container $CTID started."
@@ -83,4 +83,4 @@ fi
 log "All done."
 
 # Restored above, so report rather than exit and strand CT $CTID stopped.
-[ "$SYNC_OK" = true ] || exit 1
+[[ "$SYNC_OK" = true ]] || exit 1

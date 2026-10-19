@@ -2,7 +2,6 @@
 set -uo pipefail
 
 ### --- CONFIGURATION --- ###
-CTID=100
 
 SOURCE="/mnt/sysdata_backups/"
 DEST="/mnt/main_backups/"

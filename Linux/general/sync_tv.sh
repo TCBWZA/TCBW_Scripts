@@ -14,7 +14,7 @@ MOUNTED_BY_SCRIPT=false
 if ! mountpoint -q "$MOUNT"; then
     echo "Mounting $MOUNT..."
     if ! mount "$MOUNT"; then
-        echo "ERROR: Failed to mount $MOUNT. Aborting sync."
+        echo "ERROR: Failed to mount $MOUNT. Aborting sync." >&2
         exit 1
     fi
     MOUNTED_BY_SCRIPT=true
@@ -24,8 +24,8 @@ fi
 # An unchecked rsync reported a failed copy as success.
 if ! rsync -avh --no-perms --no-owner --no-group --delete --itemize-changes --progress --exclude='*.tmp' "$SOURCE" "$DEST"; then
     echo "ERROR: rsync failed for $SOURCE -> $DEST. Not reporting success." >&2
-    if [ "$MOUNTED_BY_SCRIPT" = true ]; then
-        umount "$MOUNT" || echo "WARN: Failed to unmount $MOUNT."
+    if [[ "$MOUNTED_BY_SCRIPT" = true ]]; then
+        umount "$MOUNT" || echo "WARN: Failed to unmount $MOUNT." >&2
     fi
     exit 1
 fi
@@ -36,7 +36,7 @@ DEV=$(lsblk -no NAME,MOUNTPOINT \
     | awk -v m="$MOUNT" '$2==m{print "/dev/"$1; exit}')
 
 # An unresolved device must fail rather than skip the flush.
-if [ -z "$DEV" ]; then
+if [[ -z "$DEV" ]]; then
     echo "ERROR: could not resolve the device backing $MOUNT -- not flushing, not unmounting." >&2
     exit 1
 fi
@@ -45,9 +45,9 @@ echo "Flushing write buffers on $DEV..."
 sync
 blockdev --flushbufs "$DEV"
 
-if [ "$MOUNTED_BY_SCRIPT" = true ]; then
+if [[ "$MOUNTED_BY_SCRIPT" = true ]]; then
     echo "Unmounting $MOUNT (mounted by this script)..."
-    umount "$MOUNT" || echo "WARN: Failed to unmount $MOUNT."
+    umount "$MOUNT" || echo "WARN: Failed to unmount $MOUNT." >&2
 else
     echo "$MOUNT left mounted (was already mounted)."
 fi

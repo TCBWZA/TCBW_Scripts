@@ -13,7 +13,7 @@ set -u -o pipefail
 ###############################################################
 for tool in ffprobe ffmpeg jq; do
     if ! command -v "$tool" &> /dev/null; then
-        echo "ERROR: $tool not found in PATH"
+        echo "ERROR: $tool not found in PATH" >&2
         echo "Please install or add to PATH before running this script."
         exit 1
     fi
@@ -23,6 +23,7 @@ done
 # CLEANUP TRAP FOR INTERRUPTION
 ###############################################################
 temp_files=()
+interrupted=0
 cleanup() {
     if [[ ${#temp_files[@]} -gt 0 ]]; then
         for file in "${temp_files[@]}"; do
@@ -44,11 +45,10 @@ for arg in "$@"; do
     esac
 done
 
-# if rather than && on the last statement: a false short-circuit makes the
-# function return 1, and callers chain this as
-# "cmd && debug '...' || echo Warning", so a 1 here turned every successful
-# metadata apply into a false "metadata apply failed" warning.
-debug() { if [[ "$DEBUG" == true ]]; then echo "[DEBUG] $*"; fi; }
+# if rather than && on the last statement: && returns 1 when DEBUG is false,
+# and callers chain this as "cmd && debug '...' || echo Warning", so a 1 here
+# is reported by every caller as a failed apply.
+debug() { if [[ "$DEBUG" == true ]]; then echo "[DEBUG] $*" >&2; fi; }
 
 #####################################################
 # Allow nice to be used without breaking exit code
@@ -136,9 +136,8 @@ verify_output() {
 #
 # This script replaces unconditionally, so a larger result is
 # a normal outcome rather than a reason to hold on to the source.
-# Sizes are formatted by magnitude: plain integer MB always
-# printed 0MB for sub-megabyte inputs, which hid a change that
-# had actually been made.
+# Sizes are formatted by magnitude: a plain integer MB rounds
+# sub-megabyte inputs down to 0.
 #####################################################
 
 human_size() {

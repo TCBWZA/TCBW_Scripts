@@ -93,12 +93,10 @@ set_timestamp() {
 # Dependency check
 # ---------------------------------------------------------------------------
 
-for cmd in xmlstarlet; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-        printf 'ERROR: Required command "%s" not found\n' "$cmd" >&2
-        exit 1
-    fi
-done
+if ! command -v xmlstarlet >/dev/null 2>&1; then
+    printf 'ERROR: Required command "xmlstarlet" not found\n' >&2
+    exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # Main

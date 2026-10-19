@@ -9,6 +9,7 @@ for cmd in ffmpeg mkvmerge jq curl; do
     fi
 done
 
+interrupted=0
 trap 'interrupted=1; exit 1' INT
 trap 'if [[ ${interrupted:-0} -eq 1 ]]; then echo "Interrupted -- exiting safely"; fi' EXIT
 
@@ -27,7 +28,7 @@ done
 # function return 1, and the metadata call below is chained as
 # "applier && debug '...' || echo Warning", so a 1 here printed a false
 # "metadata apply failed" on every run.
-debug() { if [[ "$DEBUG" == true ]]; then echo "[DEBUG] $*"; fi; }
+debug() { if [[ "$DEBUG" == true ]]; then echo "[DEBUG] $*" >&2; fi; }
 
 #####################################################
 # RADARR CONFIG
@@ -314,8 +315,8 @@ for f in "${files[@]}"; do
 
           touch -r "$f" "$tmpfile"
 
-          # Move first, delete second: a failed mv used to leave nothing behind.
-          # The source is dropped only when the container extension changed.
+          # Move first, delete second: the source is dropped only when the
+          # container extension changed.
           if ! mv -- "$tmpfile" "$output_mkv"; then
               echo "ERROR: could not move remux into place -- source left untouched: $f" >&2
               continue

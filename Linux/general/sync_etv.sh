@@ -14,13 +14,13 @@ MOUNTED_TIMEOUT=10
 
 # Trigger automount and fail fast if remote is offline
 if ! timeout ${MOUNTED_TIMEOUT}s ls "$MOUNT" >/dev/null 2>&1; then
-    echo "ERROR: Remote share unavailable. Aborting sync."
+    echo "ERROR: Remote share unavailable. Aborting sync." >&2
     exit 1
 fi
 
 # Confirm mount succeeded
 if ! grep -qs "$MOUNT" /proc/mounts; then
-    echo "ERROR: $MOUNT did not mount. Aborting."
+    echo "ERROR: $MOUNT did not mount. Aborting." >&2
     exit 1
 fi
 

@@ -63,18 +63,18 @@ done
 
 # -------- Parameter Validation --------
 if [[ ! -d "$ROOT" ]]; then
-    echo "ERROR: root path does not exist or is not a directory: $ROOT"
+    echo "ERROR: root path does not exist or is not a directory: $ROOT" >&2
     exit 1
 fi
 
 # Required rather than optional: without ffprobe/jq the video check below cannot
 # run, and silently renaming unprobed files would defeat the point of the gate.
 if ! command -v ffprobe >/dev/null 2>&1; then
-    echo "ERROR: ffprobe not found on PATH; refusing to rename unprobed files"
+    echo "ERROR: ffprobe not found on PATH; refusing to rename unprobed files" >&2
     exit 1
 fi
 if ! command -v jq >/dev/null 2>&1; then
-    echo "ERROR: jq not found on PATH; required to parse ffprobe JSON"
+    echo "ERROR: jq not found on PATH; required to parse ffprobe JSON" >&2
     exit 1
 fi
 
@@ -175,6 +175,6 @@ while IFS= read -r dir; do
     if [[ $? -eq 0 && -f "$target" ]]; then
         echo "Renamed: $noext -> $target"
     else
-        echo "ERROR: rename failed: $noext -> $target"
+        echo "ERROR: rename failed: $noext -> $target" >&2
     fi
 done < <(find "$ROOT" -type d \( "${suffix_args[@]}" \) 2>/dev/null)

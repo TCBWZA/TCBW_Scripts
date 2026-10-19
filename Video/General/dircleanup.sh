@@ -121,9 +121,9 @@ video_exists() {
 
 # Returns 0 (true) if the given directory contains at least one video file.
 dir_has_videos() {
-    local dir="$1" ext f
+    local dir="$1" ext _
     for ext in "${VIDEO_EXTENSIONS[@]}"; do
-        while IFS= read -r -d '' f; do
+        while IFS= read -r -d '' _; do
             return 0
         done < <(find "$dir" -maxdepth 1 -name "*.$ext" -print0 2>/dev/null)
     done

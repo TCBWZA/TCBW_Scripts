@@ -11,19 +11,19 @@ fi
 
 echo "Unmounting $MOUNT..."
 if ! umount "$MOUNT"; then
-	echo "ERROR: unmount failed."
+	echo "ERROR: unmount failed." >&2
 	exit 1
 fi
 
 # If device disappeared already, skip
-if [ ! -b "$DEVICE" ]; then
+if [[ ! -b "$DEVICE" ]]; then
     echo "Block device already gone -- nothing to power off."
     exit 0
 fi
 
 echo "Powering off USB HDD..."
 if ! udisksctl power-off -b "$DEVICE"; then
-	echo "Error: drive did not power off."
+	echo "Error: drive did not power off." >&2
 	exit 1
 fi
 

@@ -149,12 +149,10 @@ set_timestamp() {
 # Dependency check
 # ---------------------------------------------------------------------------
 
-for cmd in xmlstarlet; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-        printf 'ERROR: Required command "%s" not found\n' "$cmd" >&2
-        exit 1
-    fi
-done
+if ! command -v xmlstarlet >/dev/null 2>&1; then
+    printf 'ERROR: Required command "xmlstarlet" not found\n' >&2
+    exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # Main
@@ -252,8 +250,7 @@ while IFS= read -r -d '' video; do
     if [[ "$premiered" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
         # Treat dates more than 30 days in the future as corrupted metadata
         # (e.g. typos like 2038-01-01). Leave target_date empty so the
-        # file-timestamp -> folder-date fallback chain resolves the date,
-        # which also retroactively corrects files set by a previous bad run.
+        # file-timestamp -> folder-date fallback chain resolves the date.
         _premiered_epoch=$(date -d "$premiered" '+%s' 2>/dev/null \
             || date -jf '%Y-%m-%d' "$premiered" '+%s' 2>/dev/null \
             || echo 0)

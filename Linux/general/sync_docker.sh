@@ -16,7 +16,7 @@ MOUNTED_BY_SCRIPT=false
 if ! mountpoint -q "$MOUNT"; then
     echo "Mounting $MOUNT..."
     if ! mount "$MOUNT"; then
-        echo "ERROR: Failed to mount $MOUNT. Aborting sync."
+        echo "ERROR: Failed to mount $MOUNT. Aborting sync." >&2
         exit 1
     fi
     MOUNTED_BY_SCRIPT=true
@@ -48,12 +48,12 @@ if ! rsync -avhL --no-perms --no-owner --no-group --delete --itemize-changes --p
 fi
 
 # An unresolved device must fail rather than skip the flush.
-if [ "$SYNC_OK" = true ]; then
+if [[ "$SYNC_OK" = true ]]; then
     DEV=$(lsblk -no NAME,MOUNTPOINT \
         | sed 's/^[^a-zA-Z0-9]*//' \
         | awk -v m="$MOUNT" '$2==m{print "/dev/"$1; exit}')
 
-    if [ -z "$DEV" ]; then
+    if [[ -z "$DEV" ]]; then
         echo "ERROR: could not resolve the device backing $MOUNT -- not flushing, not unmounting." >&2
         SYNC_OK=false
     else
@@ -63,23 +63,23 @@ if [ "$SYNC_OK" = true ]; then
     fi
 fi
 
-if [ "$SYNC_OK" = true ]; then
+if [[ "$SYNC_OK" = true ]]; then
     echo "Sync complete."
 fi
 
 # Restore container state
-if [ "$ORIGINALLY_RUNNING" = true ]; then
+if [[ "$ORIGINALLY_RUNNING" = true ]]; then
     echo "Starting container $CTID..."
     pct start $CTID
 else
     echo "Container was originally stopped. Leaving it stopped."
 fi
 
-if [ "$MOUNTED_BY_SCRIPT" = true ]; then
+if [[ "$MOUNTED_BY_SCRIPT" = true ]]; then
     echo "Unmounting $MOUNT (mounted by this script)..."
-    umount "$MOUNT" || echo "WARN: Failed to unmount $MOUNT."
+    umount "$MOUNT" || echo "WARN: Failed to unmount $MOUNT." >&2
 else
     echo "$MOUNT left mounted (was already mounted)."
 fi
 
-[ "$SYNC_OK" = true ] || exit 1
+[[ "$SYNC_OK" = true ]] || exit 1

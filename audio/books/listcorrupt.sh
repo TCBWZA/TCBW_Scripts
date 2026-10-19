@@ -25,7 +25,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 debug() {
-    [[ $DEBUG_MODE -eq 1 ]] && echo "[DEBUG] $*"
+    [[ $DEBUG_MODE -eq 1 ]] && echo "[DEBUG] $*" >&2
 }
 
 # Match every audio media file directly inside a folder.

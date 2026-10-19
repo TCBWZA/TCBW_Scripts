@@ -7,7 +7,7 @@ set -u -o pipefail
 ###############################################################
 for tool in ffprobe ffmpeg jq bc mkvmerge; do
     if ! command -v "$tool" &> /dev/null; then
-        echo "ERROR: $tool not found in PATH"
+        echo "ERROR: $tool not found in PATH" >&2
         echo "Please install or add to PATH before running this script."
         exit 1
     fi
@@ -42,7 +42,7 @@ for arg in "$@"; do
     esac
 done
 
-debug() { $DEBUG && echo "[DEBUG] $*"; }
+debug() { $DEBUG && echo "[DEBUG] $*" >&2; }
 
 #####################################################
 # CONTAINER HEALTH CHECK
@@ -366,7 +366,6 @@ for f in "${files[@]}"; do
     # no telecine/interlace detection or filters needed.
     #####################################################
 
-    # status="progressive"  # unused; movies are always progressive
 
     #####################################################
     # Needs convert?
@@ -488,7 +487,7 @@ for f in "${files[@]}"; do
                         8) std=7.1 ;;
                     esac
                     if [[ -n "$std" ]]; then
-                        audio_norm_args+=( -filter:a:$k "aformat=channel_layouts=$std" )
+                        audio_norm_args+=("-filter:a:$k" "aformat=channel_layouts=$std")
                     fi
                     ;;
             esac

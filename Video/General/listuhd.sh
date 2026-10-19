@@ -16,7 +16,7 @@ find "$start_dir" -type f -iname '*.mkv' | while IFS= read -r file; do
         -of csv=p=0 "$file" | tr -dc '0-9')
 
     # Skip if height is empty or zero
-    [ -n "$height" ] || continue
+    [[ -n "$height" ]] || continue
 
     # Treat anything above 1100 as >1080p
     if (( height > 1100 )); then

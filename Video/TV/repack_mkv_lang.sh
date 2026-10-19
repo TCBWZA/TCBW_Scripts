@@ -7,7 +7,7 @@ set -u -o pipefail
 ###############################################################
 for tool in mkvmerge ffprobe jq; do
     if ! command -v "$tool" &> /dev/null; then
-        echo "ERROR: $tool not found in PATH"
+        echo "ERROR: $tool not found in PATH" >&2
         echo "Please install or add to PATH before running this script."
         exit 1
     fi
@@ -40,7 +40,7 @@ for arg in "$@"; do
     esac
 done
 
-debug() { $DEBUG && echo "[DEBUG] $*"; }
+debug() { $DEBUG && echo "[DEBUG] $*" >&2; }
 
 echo "Starting up..."
 echo "Scanning for files..."

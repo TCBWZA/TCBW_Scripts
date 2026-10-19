@@ -7,7 +7,7 @@ set -u -o pipefail
 ###############################################################
 for tool in ffprobe ffmpeg jq bc mkvmerge; do
     if ! command -v "$tool" &> /dev/null; then
-        echo "ERROR: $tool not found in PATH"
+        echo "ERROR: $tool not found in PATH" >&2
         echo "Please install or add to PATH before running this script."
         exit 1
     fi
@@ -17,6 +17,7 @@ done
 # CLEANUP TRAP FOR INTERRUPTION
 ###############################################################
 temp_files=()
+interrupted=0
 cleanup() {
     if [[ ${#temp_files[@]} -gt 0 ]]; then
         debug "\nCleaning up temp files due to interruption..."
@@ -41,7 +42,7 @@ for arg in "$@"; do
     esac
 done
 
-debug() { $DEBUG && echo "[DEBUG] $*"; }
+debug() { $DEBUG && echo "[DEBUG] $*" >&2; }
 
 #####################################################
 # CONTAINER HEALTH CHECK
@@ -415,7 +416,6 @@ for f in "${files[@]}"; do
         )
 
         interlaced_count=$(echo "$idet_output" | grep -oP 'Interlaced:\s*\K[0-9]+' | head -n1)
-        progressive_count=$(echo "$idet_output" | grep -oP 'Progressive:\s*\K[0-9]+' | head -n1)
         tff_count=$(echo "$idet_output" | grep -oP 'TFF:\s*\K[0-9]+' | head -n1)
         bff_count=$(echo "$idet_output" | grep -oP 'BFF:\s*\K[0-9]+' | head -n1)
 
@@ -591,7 +591,7 @@ for f in "${files[@]}"; do
                         8) std=7.1 ;;
                     esac
                     if [[ -n "$std" ]]; then
-                        audio_norm_args+=( -filter:a:$k "aformat=channel_layouts=$std" )
+                        audio_norm_args+=("-filter:a:$k" "aformat=channel_layouts=$std")
                     fi
                     ;;
             esac

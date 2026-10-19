@@ -229,7 +229,7 @@ sonarr_resolve() {
     series_json="$SONARR_SERIES_JSON"
 
     # Matched locally, not searched: /series?term= returns the whole library for
-    # every term, so taking [0] deleted the wrong episode in testing.
+    # every term, so [0] is not necessarily the wanted episode.
     matches=$(echo "$series_json" | jq -c --arg want "$series_name" '
         [ .[]
           | select(

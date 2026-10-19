@@ -85,26 +85,26 @@ if [[ -z "$VMID" ]]; then
     usage 1
 fi
 if [[ $EUID -ne 0 ]]; then
-    echo "ERROR: must run as root on the Proxmox host. Aborting."
+    echo "ERROR: must run as root on the Proxmox host. Aborting." >&2
     exit 1
 fi
 
 # Preflight: all required tools must exist before we stop anything
 for tool in stat pvesm pct losetup e2fsck resize2fs tune2fs truncate; do
     if ! command -v "$tool" >/dev/null 2>&1; then
-        echo "ERROR: required tool '$tool' not found. Aborting."
+        echo "ERROR: required tool '$tool' not found. Aborting." >&2
         exit 1
     fi
 done
 if [[ ! -f "$CONF" ]]; then
-    echo "ERROR: $CONF not found. Aborting."
+    echo "ERROR: $CONF not found. Aborting." >&2
     exit 1
 fi
 
 # Read the rootfs line and declared size from the container config
 rootfs_line=$(grep -E '^rootfs:' "$CONF")
 if [[ -z "$rootfs_line" ]]; then
-    echo "ERROR: no rootfs line in $CONF. Aborting."
+    echo "ERROR: no rootfs line in $CONF. Aborting." >&2
     exit 1
 fi
 volid=$(echo "$rootfs_line" | awk '{print $2}' | cut -d, -f1)
@@ -112,11 +112,11 @@ declared_size=$(echo "$rootfs_line" | grep -o 'size=[0-9][0-9]*[GMKm]' | cut -d=
 raw_path=$(pvesm path "$volid")
 
 if [[ -z "$raw_path" || ! -e "$raw_path" ]]; then
-    echo "ERROR: cannot resolve raw image path for '$volid'. Aborting."
+    echo "ERROR: cannot resolve raw image path for '$volid'. Aborting." >&2
     exit 1
 fi
 if [[ "$raw_path" != *.raw ]]; then
-    echo "ERROR: '$raw_path' is not a raw image file."
+    echo "ERROR: '$raw_path' is not a raw image file." >&2
     echo "       LVM-backed rootfs should be shrunk with shrinkvol.sh. Aborting."
     exit 1
 fi
@@ -127,13 +127,13 @@ if [[ -z "$NEW_SIZE" ]]; then
     read -r -p "New size (currently ${declared_size:-unknown}): " NEW_SIZE
 fi
 if ! [[ "$NEW_SIZE" =~ ^[0-9]+[GMKm]$ ]]; then
-    echo "ERROR: '$NEW_SIZE' is not a valid size (e.g. 48G). Aborting."
+    echo "ERROR: '$NEW_SIZE' is not a valid size (e.g. 48G). Aborting." >&2
     exit 1
 fi
 
 new_bytes=$(size_to_bytes "$NEW_SIZE")
 if (( new_bytes >= cur_bytes )); then
-    echo "ERROR: new size ($NEW_SIZE) is not smaller than current ($declared_size, $cur_bytes bytes). Aborting."
+    echo "ERROR: new size ($NEW_SIZE) is not smaller than current ($declared_size, $cur_bytes bytes). Aborting." >&2
     exit 1
 fi
 
@@ -160,7 +160,7 @@ if [[ "$DRY_RUN" == true ]]; then
     if (( new_bytes >= used_bytes )); then
         echo "  $NEW_SIZE fits used space."
     else
-        echo "  WARNING: $NEW_SIZE is smaller than used space -- resize2fs would refuse!"
+        echo "  WARNING: $NEW_SIZE is smaller than used space -- resize2fs would refuse!" >&2
     fi
     exit 0
 fi
@@ -179,16 +179,16 @@ if pct status "$VMID" | grep -q 'running'; then
 fi
 
 # Loopback-attach the image
-LOOPDEV=$(losetup --find --show "$raw_path") || { echo "ERROR: losetup failed. Aborting."; exit 1; }
+LOOPDEV=$(losetup --find --show "$raw_path") || { echo "ERROR: losetup failed. Aborting." >&2; exit 1; }
 echo "Attached $raw_path -> $LOOPDEV"
 
 # Filesystem integrity before shrinking
 echo "Checking filesystem..."
-e2fsck -f "$LOOPDEV" || { echo "ERROR: e2fsck reported problems. Aborting."; exit 1; }
+e2fsck -f "$LOOPDEV" || { echo "ERROR: e2fsck reported problems. Aborting." >&2; exit 1; }
 
 # Shrink the filesystem in place
 echo "Shrinking filesystem to $NEW_SIZE..."
-resize2fs "$LOOPDEV" "$NEW_SIZE" || { echo "ERROR: resize2fs failed. Aborting."; exit 1; }
+resize2fs "$LOOPDEV" "$NEW_SIZE" || { echo "ERROR: resize2fs failed. Aborting." >&2; exit 1; }
 sync
 
 # Truncate the file to the real filesystem size so no slack is kept

@@ -15,7 +15,7 @@ while getopts "n" opt; do
   esac
 done
 shift $((OPTIND-1))
-if [ $# -ge 1 ]; then
+if [[ $# -ge 1 ]]; then
   TARGET="$1"
 fi
 
@@ -27,7 +27,7 @@ case "$TARGET" in
     ;;
 esac
 
-if [ ! -d "$TARGET" ]; then
+if [[ ! -d "$TARGET" ]]; then
   echo "Error: target directory '$TARGET' does not exist." >&2
   exit 1
 fi
@@ -50,7 +50,7 @@ $DRY_RUN && echo "Dry-run mode enabled."
 # 1) Ownership (dirs + non-.sh files)
 #############################################
 
-if [ "$DRY_RUN" = true ]; then
+if [[ "$DRY_RUN" = true ]]; then
   ionice -c3 nice -n 19 find "$TARGET" \
   \( ! -uid 1000 -o ! -gid 1000 \) \
   \( -type d -o \( -type f ! -name '*.sh' ! -name '*.tmp' \) \) -print0 |
@@ -66,7 +66,7 @@ fi
 # 2) File perms (666)
 #############################################
 
-if [ "$DRY_RUN" = true ]; then
+if [[ "$DRY_RUN" = true ]]; then
   ionice -c3 nice -n 19 find "$TARGET" -type f ! -perm 666 ! -name '*.sh' ! -name '*.tmp' -print0 |
   xargs -0 -P 2 -I{} printf '+ chmod 666 %q\n' "{}"
 else
@@ -78,7 +78,7 @@ fi
 # 3) Directory perms (777)
 #############################################
 
-if [ "$DRY_RUN" = true ]; then
+if [[ "$DRY_RUN" = true ]]; then
   ionice -c3 nice -n 19 find "$TARGET" -type d ! -perm 777 -print0 |
   xargs -0 -P 2 -I{} printf '+ chmod 777 %q\n' "{}"
 else

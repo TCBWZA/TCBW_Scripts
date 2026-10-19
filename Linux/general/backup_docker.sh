@@ -32,8 +32,8 @@ fi
 
 # Check mount
 if ! mountpoint -q "/mnt/nmedia"; then
-    echo "ERROR: /mnt/nmedia is not mounted. Aborting backup."
-    if [ "$ORIGINALLY_RUNNING" = true ]; then pct start $CTID; fi
+    echo "ERROR: /mnt/nmedia is not mounted. Aborting backup." >&2
+    if [[ "$ORIGINALLY_RUNNING" = true ]]; then pct start $CTID; fi
     exit 1
 fi
 
@@ -110,10 +110,10 @@ else
 fi
 
 # Drop any partial staging file.
-[[ $BACKUP_OK -eq true ]] || rm -f -- "$OUT"
+[[ $BACKUP_OK == true ]] || rm -f -- "$OUT"
 
 # Restore container state
-if [ "$ORIGINALLY_RUNNING" = true ]; then
+if [[ "$ORIGINALLY_RUNNING" = true ]]; then
     echo "Starting container $CTID..."
     pct start $CTID
 else
@@ -123,7 +123,7 @@ fi
 echo "=== POWERING OFF USB DRIVE ==="
 usb-poweroff.sh
 
-if [ "$BACKUP_OK" = true ]; then
+if [[ "$BACKUP_OK" = true ]]; then
     echo "Done."
 else
     echo "Done, but the backup FAILED." >&2
