@@ -15,6 +15,7 @@ TCBW_Scripts/
 |       |--  backup_etc.sh                 - Archives /etc to a network mount
 |       |--  backup_root.sh                - Archives /root to a network mount
 |       |--  lxc-upgrade.sh                - Updates Proxmox host and all LXC containers in parallel (autoremove; runs /usr/bin/update and addon update hooks unattended, timeout-bounded, with exit status checked)
+|       |--  pi-update.sh                  - Updates Raspberry Pi OS host packages and reconciles Docker Compose projects under a root dir (skips a dir holding a .ignore file; never starts a project that is not already running)
 |       |--  setperm.sh                    - Sets permissions on media directories
 |       |--  showswap.sh                   - Displays swap usage
 |       |--  shrink_boot_disk.sh           - Shrinks a raw-image LXC rootfs on directory storage
@@ -352,6 +353,7 @@ bash ./Linux/general/sync_sysdocker_maindocker.sh  # Docker data to <zfs-pool>/m
 ```bash
 # Linux system maintenance
 bash ./Linux/general/lxc-upgrade.sh
+bash ./Linux/general/pi-update.sh
 bash ./Linux/general/setperm.sh
 bash ./Linux/general/showswap.sh
 bash ./Linux/general/shrinkvol.sh

@@ -1,6 +1,6 @@
 # Linux / general
 
-Utility scripts for the Proxmox host. All scripts are intended to run directly on the **Proxmox host** unless noted otherwise.
+Utility scripts for the Proxmox host. All scripts are intended to run directly on the **Proxmox host** unless noted otherwise. `pi-update.sh` is the exception: it targets a separate Raspberry Pi host, see its section below.
 
 > **LXC UID mapping note:** Proxmox unprivileged LXC containers map container UIDs to a host offset of 100000. Container UID **1000** therefore appears on the host as UID **101000**. Scripts that set ownership (e.g. `setperm.sh`) use UID **1000** and are designed to run **inside the container** where the mapping is transparent. If you run them on the host against a path owned by the container, use UID **101000** instead.
 
@@ -306,6 +306,40 @@ Stopping the containers the script started is also bounded. A container whose in
 ```
 
 **Requirements:** `pct` (Proxmox host). The host itself is updated first with `apt update && apt upgrade -y && apt autoremove -y`.
+
+---
+
+### pi-update.sh
+
+Updates the host packages and reconciles Docker Compose projects on a **Raspberry Pi** host (Debian, Raspberry Pi OS). This is not a Proxmox script and it is not covered by the LXC fleet procedure: it targets `pi4uk`, a separate host reached over SSH, and its deploy path is different from every other script in this folder.
+
+The host step runs `apt-get update`, `apt-get upgrade -y` and `apt-get autoremove -y` under `sudo`, then reclaims the dangling images that an unattended container updater leaves behind with `docker image prune -f`.
+
+Only the package steps use `sudo`. The login user on this host is a member of the `docker` group, so `docker` and `docker compose` run without it. The script checks up front that the tools exist and that passwordless `sudo` works, and aborts before touching anything if either is missing.
+
+Compose projects are discovered under a root directory, `/DATA/AppData` by default and overridable as the first argument. A directory counts as a project when it holds `docker-compose.yml`, `docker-compose.yaml`, `compose.yml` or `compose.yaml`, or else any `*.yml`/`*.yaml` carrying a top-level `services:` key. That last form exists because a project may use a non-standard filename, and matching on the standard names alone would silently skip it.
+
+Each project is handled in two halves:
+
+- `docker compose pull` always runs, so the local image is current for the next manual start
+- `docker compose up -d` runs only when that project already has a **running** container
+
+The `up -d` half is deliberately narrow. Run unconditionally it would start a project whose containers were deliberately stopped. A project whose containers all exist but are stopped, and a project with no containers at all, are pulled and reported, never started.
+
+A `.ignore` file placed in a project directory skips that project entirely, before any compose command runs:
+
+```bash
+touch /DATA/AppData/arcane/.ignore
+```
+
+Exit status is non-zero if any step fails, and a `/var/run/reboot-required` file produces a warning at the end.
+
+```bash
+./pi-update.sh              # root defaults to /DATA/AppData
+./pi-update.sh /other/root  # different root
+```
+
+**Requirements:** `docker` with the Compose v2 plugin, `apt-get`, passwordless `sudo`, run as the docker-group login user on the Raspberry Pi host.
 
 ---
 
