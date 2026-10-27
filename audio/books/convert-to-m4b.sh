@@ -92,6 +92,15 @@ is_source_type() {
     esac
 }
 
+# ffmpeg demuxer name for a source extension (opus is Ogg, wma is ASF).
+demuxer_for() {
+    case "$1" in
+        ogg|opus) printf 'ogg' ;;
+        wma) printf 'asf' ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
 # Numeric part index for a filename: the number before "of NN" when present,
 # else the first integer run. 0 when the name carries no number. Sorting on
 # this (not the whole name) keeps order correct when a series/book number leads
@@ -119,17 +128,19 @@ ordered_files() {
         local actual
         actual=$(find "$dir" -maxdepth 1 -type f -iname "*.$src" | wc -l)
         if [[ $complete -eq 1 && $listed -eq $actual ]]; then
-            sed "s|^|$dir/|" "$pl"
+            while IFS= read -r f; do
+                [[ -z "$f" ]] && continue
+                printf '%s/%s\n' "$dir" "$f"
+            done < "$pl"
             return 0
         fi
     fi
     find "$dir" -maxdepth 1 -type f -iname "*.$src" -printf '%f\n' \
         | while IFS= read -r f; do
-            printf '%010d\t%s\n' "$(part_number "$f")" "$f"
+            printf '%010d\t%s/%s\n' "$(part_number "$f")" "$dir" "$f"
         done \
         | sort -k1,1n -k2,2V \
-        | cut -f2- \
-        | sed "s|^|$dir/|"
+        | cut -f2-
 }
 
 # Return an audit-failure reason for a folder that must not be converted, or
@@ -201,11 +212,24 @@ def esc(v):
     return v.replace(";", "\\;").replace("#", "\\#").replace("=", "\\=")
 
 def dur(path):
-    r = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "a:0",
-         "-show_entries", "format=duration", "-of", "csv=p=0", path],
-        capture_output=True, text=True)
-    return float(r.stdout.strip()) if r.stdout.strip() else 0.0
+    import re
+    ext = path.rsplit(".", 1)[-1].lower()
+    demux = {"ogg": "ogg", "opus": "ogg", "wma": "asf"}.get(ext, ext)
+
+    def probe(force):
+        cmd = ["ffprobe", "-v", "error", "-select_streams", "a:0",
+               "-show_entries", "format=duration", "-of", "csv=p=0"]
+        if force:
+            cmd += ["-f", demux]
+        r = subprocess.run(cmd + [path], capture_output=True, text=True)
+        return r.stdout.strip()
+
+    out = probe(False)
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", out):
+        out = probe(True)
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", out):
+        raise RuntimeError("cannot determine duration: " + path)
+    return float(out)
 
 tags = {}
 if metafile and __import__("os").path.isfile(metafile):
@@ -236,7 +260,11 @@ for k, v in (("title", joined("title")), ("album", joined("title")),
 
 total_ms = 0
 for path in files:
-    d = dur(path)
+    try:
+        d = dur(path)
+    except RuntimeError as exc:
+        sys.stderr.write(str(exc) + "\n")
+        sys.exit(1)
     start = total_ms
     total_ms += int(round(d * 1000))
     title = path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
@@ -332,12 +360,33 @@ for dir in "${DIRS[@]}"; do
 
     pathsfile="$MAIN_TMP/paths.txt"
     listfile="$MAIN_TMP/list.txt"
+    normdir="$MAIN_TMP/norm-$cand"
     : > "$pathsfile"
     : > "$listfile"
+    expected_fmt=$(demuxer_for "$src")
+    normfail=0
     for f in "${files[@]}"; do
-        printf '%s\n' "$f" >> "$pathsfile"
-        printf "file '%s'\n" "${f//\'/\'\\\'\'}" >> "$listfile"
+        use="$f"
+        got_fmt=$(ffprobe -v error -show_entries format=format_name -of csv=p=0 "$f" 2>/dev/null)
+        if [[ "$got_fmt" != *"$expected_fmt"* ]]; then
+            mkdir -p "$normdir" || { normfail=1; break; }
+            fixed="$normdir/$(basename "$f")"
+            if ffmpeg -hide_banner -loglevel error -nostdin -y \
+                -f "$expected_fmt" -i "$f" -map 0:a -c copy -f "$expected_fmt" "$fixed"; then
+                use="$fixed"
+            else
+                warn "source not readable as $src: $f"
+                normfail=1
+                break
+            fi
+        fi
+        printf '%s\n' "$use" >> "$pathsfile"
+        printf "file '%s'\n" "${use//\'/\'\\\'\'}" >> "$listfile"
     done
+    if [[ $normfail -ne 0 ]]; then
+        failed=$((failed + 1))
+        continue
+    fi
 
     cover=$(pick_cover "$dir")
     ffmeta="$MAIN_TMP/ffmeta.txt"
