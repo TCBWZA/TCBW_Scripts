@@ -49,7 +49,8 @@ TCBW_Scripts/
 |   |   \--  hbcompress_qsv_x265_aac.ps1   - HandBrake Intel QSV x265 compression (PowerShell)
 |   |--  General/                          - Shared utility scripts used across all video content types
 |   |   |--  README.md
-|   |   |--  apply-metadata.sh             - NFO metadata writer to MKV tags (bash)
+|   |   |--  apply-metadata.sh             - NFO metadata writer to MKV tags (bash, live applier)
+|   |   |--  apply-metadata.py             - NFO metadata writer to MKV tags (python port, stdlib only, deployed to media root)
 |   |   |--  compress_amd_x265_aac.sh      - AMD GPU VAAPI x265 compression (bash)
 |   |   |--  dircleanup.sh                 - Removes orphaned trickplay dirs, stale .skip markers, dangling NFOs (bash)
 |   |   |--  dircleanup.ps1                - Removes orphaned trickplay dirs, stale .skip markers, dangling NFOs (PowerShell)
@@ -175,7 +176,7 @@ The two machines keep batch processing reliable despite the Debian FFmpeg bug, a
 - **Corrupt File Detection**: `findcorrupt.ps1` scans for unreadable MKV files and optionally triggers Sonarr or Radarr replacement
 - **Foreign Audio Detection**: `findforeign.ps1` / `findforeign.sh` flag episodes with no English or undetermined audio tracks
 - **Container Repair**: `remux.ps1` fixes MKV structural anomalies without re-encoding
-- **Metadata Sync**: `apply-metadata.sh` is the single applier for both movies and episodes. It reads the NFO, decides MOVIE vs EPISODE from the XML root element, and writes the matching tags into the MKV container. It is deployed alongside whatever script calls it, so the invocation is not bound to folder layout.
+- **Metadata Sync**: `apply-metadata.sh` is the live applier for both movies and episodes. It reads the NFO, decides MOVIE vs EPISODE from the XML root element, and writes the matching tags into the MKV container. It is deployed alongside whatever script calls it, so the invocation is not bound to folder layout. A behaviour-compatible Python port, `apply-metadata.py`, lives beside it (standard library only; requires `mkvmerge`, `mkvpropedit`, `mkvextract` and `ffmpeg` on `PATH`, no `jq`/`xmlstarlet`) and is deployed to the media root, not yet wired into the callers.
 
 ### Deduplication Scripts
 

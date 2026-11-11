@@ -25,6 +25,11 @@ Use at your own risk. Some scripts perform destructive operations on files. Alwa
 - `jq` (on `PATH`): required by `compress_amd_x265_aac.sh`.
 - `bc` (on `PATH`): required by `compress_amd_x265_aac.sh` for its size comparisons.
 
+### Python Scripts
+
+- `python3` (standard library only; no pip packages or virtualenv).
+- `mkvmerge`, `mkvpropedit`, `mkvextract`, and `ffmpeg` (on `PATH`): required by `apply-metadata.py`.
+
 ### PowerShell Scripts
 
 - `HandBrakeCLI` (on `PATH`) and its importable user presets, for the two `hb *.json` profile files below.
@@ -415,6 +420,14 @@ Unified NFO-to-MKV-tag applier for both movies and episodes, which also remuxes 
 ```
 
 > **NFO caveat:** an NFO is not self-describing. The root element (`movie` vs `episodedetails`) is the only thing that decides how the file is treated, so a mis-named or mismatched NFO produces wrong tags on the right file. Use `--dry-run` on a new library first.
+
+### apply-metadata.py
+
+Python port of `apply-metadata.sh` with the same CLI, log lines and file effects. Standard library only (XML and JSON in-process), so it needs `python3` plus `mkvmerge`, `mkvpropedit`, `mkvextract` and `ffmpeg` on `PATH`; no `jq` or `xmlstarlet`.
+
+- Deployed to the media root (`/main/media/Video/apply-metadata.py`); the bash applier remains the one the callers invoke.
+- Audio track names are corrected to the stream's actual codec (`TrueHD 5.1` -> `AAC 5.1`) instead of keeping a stale codec word, and XML is escaped once rather than twice.
+- Leading-zero season/episode values are parsed with `int()`, not as octal.
 
 ---
 
