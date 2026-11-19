@@ -47,11 +47,11 @@ if [[ $missing -eq 1 ]]; then
 fi
 
 # -------- Colour Definitions --------
-RED="\033[31m"
-GREEN="\033[32m"
-YELLOW="\033[33m"
-CYAN="\033[36m"
-RESET="\033[0m"
+RED=$'\033[31m'
+GREEN=$'\033[32m'
+YELLOW=$'\033[33m'
+CYAN=$'\033[36m'
+RESET=$'\033[0m'
 
 print_info()  { printf '%s%s%s\n' "${CYAN}" "$1" "${RESET}"; }
 print_warn()  { printf '%s%s%s\n' "${YELLOW}" "$1" "${RESET}"; }
