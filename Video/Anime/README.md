@@ -89,18 +89,18 @@ cd <media-root>/Anime/Series
 
 ### findunsubbed.sh
 
-Bash utility that scans a directory tree for MKV files whose audio is entirely Japanese and that have no English (`eng`), undefined (`und`), or unknown (`unk`) subtitle stream. These unsubbed raws are deleted, and Sonarr is asked to replace the episode with a subtitled copy. Sonarr is enabled by default; audit, CSV logging, and Sonarr can each be controlled independently.
+Bash utility that scans a directory tree for MKV files whose audio is entirely Japanese and that have no usable subtitle stream. An `eng`, `und`, `unk`, missing, English-named, or English-looking subtitle counts as usable. These unsubbed raws are deleted, and Sonarr is asked to replace the episode with a subtitled copy. Sonarr is enabled by default; audit, CSV logging, and Sonarr can each be controlled independently.
 
 **What it does:**
 
-- Uses `ffprobe` to read all stream metadata for each MKV, and `jq` to apply the language rules.
-- Flags a file only when every audio stream is tagged `jpn`, `ja`, or `jp` and no subtitle stream is tagged `eng`, `und`, or `unk`.
+- Uses `ffprobe` and `jq` to read stream metadata and apply the language rules, then `ffmpeg` to sample subtitle text when the tag or title is not enough.
+- Flags a file only when every audio stream is tagged `jpn`, `ja`, or `jp` and no subtitle stream is usable.
 - Deletes flagged files with `rm -f`, then, when Sonarr is enabled, resolves and requests a replacement episode.
 - Resolves the Sonarr series and episode **before** deleting, so a failed lookup leaves the file in place.
 - Supports `--audit` for a read-only preview and `--no-sonarr` for delete-only runs.
 - Honours `.skip` directory markers and `.skip_<basename>` per-file markers.
 - Optionally writes deleted paths to a CSV and always keeps a `sonarr_log.csv` when Sonarr is enabled.
-- Requires `ffprobe`, `jq`, and `curl`.
+- Requires `ffprobe`, `ffmpeg`, `jq`, and `curl`.
 
 **Detection rules:**
 
@@ -109,11 +109,12 @@ Bash utility that scans a directory tree for MKV files whose audio is entirely J
 | `ffprobe` returns no stream data | Not flagged; left for `findcorrupt` |
 | No audio streams | Not flagged |
 | Any audio stream is not `jpn`, `ja`, or `jp`, including an untagged or empty language | Not flagged; left for manual review |
-| Any subtitle stream is `eng`, `und`, or `unk` | Not flagged; the file already has usable subtitles |
+| Any subtitle stream is `eng`, `und`, `unk`, or untagged | Not flagged; the tag is usable or unknown |
+| Subtitle title contains `English`, or the first 120 seconds look like English text | Not flagged, even when the language tag is wrong |
 | Japanese-only subtitles, such as `jpn` signs, or any other subtitle language | Does not count as subbed; file is still flagged |
-| All audio `jpn`/`ja`/`jp` and no `eng`/`und`/`unk` subtitle | Flagged |
+| All audio `jpn`/`ja`/`jp` and no usable subtitle | Flagged |
 
-Language tags are lower-cased before comparison. Only files ending `.mkv` are scanned. Files whose name matches `*-trailer.*` are excluded.
+Language tags are lower-cased before comparison. The text check reads up to 80 subtitle cues with HTML/ASS markup stripped, and needs at least 12 Latin letters plus a Latin majority. Only files ending `.mkv` are scanned. Files whose name matches `*-trailer.*` are excluded.
 
 **Skip markers:**
 

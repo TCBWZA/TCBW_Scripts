@@ -6,7 +6,7 @@ set -u -o pipefail
 #  Japanese-Only, Unsubbed Anime Scanner
 #
 #  Flags MKV files whose audio is entirely Japanese and that
-#  have no eng/und/unk subtitle stream (unsubbed raws), deletes
+#  have no usable subtitle stream (unsubbed raws), deletes
 #  them, and triggers a Sonarr episode replacement so a
 #  subtitled copy is grabbed.
 #
@@ -35,6 +35,7 @@ check_dep() {
 }
 
 check_dep ffprobe
+check_dep ffmpeg
 check_dep jq
 check_dep curl
 
@@ -175,14 +176,27 @@ if [[ $ENABLE_SONARR -eq 1 ]]; then
     fi
 fi
 
-# -------- Detection: all audio Japanese AND no eng/und/unk subs --------
-# Subtitle check: a file counts as subbed only when at least one subtitle
-# stream is eng/und/unk; jpn-only (signs) or other-language subs do not
-# count, so those are still flagged. Conservative audio rule: untagged/und
-# audio is not treated as Japanese, so such files are left for manual
-# review. Unreadable files are left for findcorrupt.
+# -------- Detection: all audio Japanese AND no usable subs --------
+# Subtitle check: a file counts as subbed when a subtitle stream is
+# eng/und/unk (missing tags count as unk), is named English, or has
+# English-looking text. jpn-only sign tracks stay flagged. Conservative
+# audio rule: untagged/und audio is not treated as Japanese, so such files
+# are left for manual review. Unreadable files are left for findcorrupt.
+subtitle_looks_english() {
+    local file="$1" idx="$2" text latin bytes
+    text=$(ffmpeg -nostdin -v error -i "$file" -map "0:$idx" -t 120 -f srt - 2>/dev/null |
+        sed -e 's/<[^>]*>//g' -e '/^[0-9][0-9]*$/d' -e '/-->/d' -e '/^[[:space:]]*$/d' |
+        sed -n '1,80p')
+    [[ -n "$text" ]] || return 1
+    latin=$(printf '%s' "$text" | tr -cd 'A-Za-z' | wc -c)
+    bytes=$(printf '%s' "$text" | wc -c)
+    latin=${latin//[[:space:]]/}
+    bytes=${bytes//[[:space:]]/}
+    (( latin >= 12 && latin * 2 > bytes ))
+}
+
 is_japanese_no_subs() {
-    local file="$1" json audio_n eng_subs non_jp
+    local file="$1" json audio_n subs idx lang title non_jp
 
     json=$(ffprobe -v error -print_format json -show_streams "$file" 2>/dev/null)
     [[ -z "$json" ]] && return 1
@@ -190,10 +204,18 @@ is_japanese_no_subs() {
     audio_n=$(echo "$json" | jq -r '[.streams[] | select(.codec_type=="audio")] | length')
     [[ "$audio_n" -eq 0 ]] && return 1
 
-    eng_subs=$(echo "$json" | jq -r '[.streams[] | select(.codec_type=="subtitle") |
-        ((.tags.language // "") | ascii_downcase) |
-        select(. == "eng" or . == "und" or . == "unk")] | length')
-    [[ "$eng_subs" -gt 0 ]] && return 1
+    subs=$(echo "$json" | jq -r '.streams[] | select(.codec_type=="subtitle") |
+        [.index, ((.tags.language // "unk") | ascii_downcase),
+         ((.tags.title // "") | ascii_downcase)] | @tsv')
+    if [[ -n "$subs" ]]; then
+        while IFS=$'\t' read -r idx lang title; do
+            case "$lang" in
+                eng|en|und|unk|en-*) return 1 ;;
+            esac
+            [[ "$title" == *english* || "$title" == "eng" || "$title" == "en" ]] && return 1
+            subtitle_looks_english "$file" "$idx" && return 1
+        done <<< "$subs"
+    fi
 
     non_jp=$(echo "$json" | jq -r '[.streams[] | select(.codec_type=="audio") |
         ((.tags.language // "") | ascii_downcase) |
