@@ -416,7 +416,9 @@ def clean_name(name: str, codec_label: str = "") -> str:
     """
     for junk in CLEAN_JUNK_PATTERNS:
         name = name.replace(junk, "")
+    name = name.replace("_CR_", "")
     name = name.replace("_CR", "")
+    name = name.replace("CR_", "")
     name = _RELEASE_CR_RE.sub("", name)
     name = name.replace("[]_", "").replace("[]", "")
     name = re.sub(r"\s+", " ", name).strip()
