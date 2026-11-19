@@ -35,6 +35,7 @@ TCBW_Scripts/
 |       \--  usb-poweron.sh                - Powers on the USB external drive
 |--  Video/
 |   |--  Anime/                             - Animation-specific variants of the TV compression scripts
+|   |   |--  README.md
 |   |   |--  compress_amd_x265_aac.sh       - AMD GPU VAAPI x265 compression at QP 32 for animation (bash)
 |   |   |--  findunsubbed.sh                - Finds Japanese-audio titles with no English subtitles (bash)
 |   |   |--  fixmkvproperties.sh            - Fixes MKV container properties (bash)
@@ -134,7 +135,7 @@ A collection of video transcoding, compression, and deduplication scripts for ba
 
 ### Video Folder Organization
 
-- **Anime/** - Animation-specific variants of the TV compression scripts. The bash compressor is QP 32 where the TV one is QP 28, and the HandBrake pair uses animation encode flags. It has no README of its own; see the `Video/Anime/` entries in the structure tree above
+- **Anime/** - Animation-specific variants of the TV compression scripts. The bash compressor is QP 32 where the TV one is QP 28, and the HandBrake pair uses animation encode flags ([README](Video/Anime/README.md))
 - **General/** - Shared utility scripts used across all video content types ([README](Video/General/README.md))
 - **Foreign/** - Compression scripts for foreign language content ([README](Video/Foreign/README.md))
 - **Movies/** - Compression and maintenance scripts for movie content ([README](Video/Movies/README.md))
