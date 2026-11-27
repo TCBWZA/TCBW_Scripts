@@ -239,6 +239,7 @@ Recursively sets ownership and permissions on a directory tree. Intended to run 
 - Sets ownership to `1000:1000` on all directories and non-shell files
 - Sets permissions to `666` on all non-shell files
 - Sets permissions to `777` on all directories
+- Removes extended ACLs, including default ACLs, from the same directories and non-`.sh`/non-`.tmp` files before applying ownership and permissions
 - Shell scripts (`*.sh`) are excluded from ownership and permission changes
 - Dry-run mode (`-n`) prints what would be done without making any changes
 

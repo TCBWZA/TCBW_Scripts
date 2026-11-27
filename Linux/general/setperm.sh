@@ -43,8 +43,23 @@ if ! getent group 1000 >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v setfacl >/dev/null 2>&1; then
+  echo "Error: setfacl is not installed on this system." >&2
+  exit 1
+fi
+
 echo "Target directory: $TARGET"
 $DRY_RUN && echo "Dry-run mode enabled."
+
+if [[ "$DRY_RUN" = true ]]; then
+  ionice -c3 nice -n 19 find "$TARGET" \
+  \( -type d -o \( -type f ! -name '*.sh' ! -name '*.tmp' \) \) -print0 |
+  xargs -0 -P 2 -I{} printf '+ setfacl -b %q\n' "{}"
+else
+  ionice -c3 nice -n 19 find "$TARGET" \
+  \( -type d -o \( -type f ! -name '*.sh' ! -name '*.tmp' \) \) -print0 |
+  xargs -0 -P 2 -I{} setfacl -b "{}"
+fi
 
 #############################################
 # 1) Ownership (dirs + non-.sh files)
