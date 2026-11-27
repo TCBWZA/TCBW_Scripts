@@ -16,12 +16,15 @@ Requires:
     uses ffmpeg; tag and track writes use MKVToolNix.
 
 Usage:
-    apply-metadata.py [--dry-run] [--debug] [--audit-log FILE] [FILE]
+    apply-metadata.py [--dry-run] [--debug] [--audit-log FILE]
+                      [--corrupt-log FILE] [FILE]
 
 With no FILE every .mkv under the current directory is processed, excluding
 extras. With FILE only that MKV is processed.
 
-Exit codes: 0 success, 1 on a failed title/tag write or a usage error.
+Exit codes: 0 success, 1 on a failed title/tag write or a usage error. A failed
+ffmpeg remux is logged as corrupt but does not affect the exit code. Corrupt
+episodes are replaced through Sonarr and corrupt movies through Radarr.
 """
 
 from __future__ import annotations
@@ -38,14 +41,22 @@ import signal
 import subprocess
 import sys
 import tempfile
+import urllib.parse
+import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
+from urllib.error import HTTPError, URLError
 
 # U+2013 EN DASH, the generated episode-title separator. Escape keeps source ASCII.
 EN_DASH = "\u2013"
+
+SONARR_URL = "http://docker.local:8989"
+SONARR_API_KEY = "YOUR_API_KEY_HERE"
+RADARR_URL = "http://docker.local:7878"
+RADARR_API_KEY = "YOUR_API_KEY_HERE"
 
 REQUIRED_TOOLS: tuple[str, ...] = ("mkvmerge", "mkvpropedit", "mkvextract", "ffmpeg")
 
@@ -285,7 +296,287 @@ def _restore_mtime(path: Path, st: os.stat_result) -> None:
         os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))
 
 
-def remux_mkv(path: Path, st: os.stat_result, logger: Logger, reason: str, display: str) -> bool:
+def _path_leaf(value: object) -> str:
+    """Last component of a service path, accepting either separator."""
+    return value.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1] if isinstance(value, str) else ""
+
+
+def _api_call(
+    logger: Logger,
+    service: str,
+    base_url: str,
+    api_key: str,
+    method: str,
+    endpoint: str,
+    payload: Json | None = None,
+) -> tuple[int, object] | None:
+    """Call an Arr service, returning (status, parsed body) or None on failure."""
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {"X-Api-Key": api_key, "Content-Type": "application/json"}
+    request = urllib.request.Request(
+        f"{base_url.rstrip('/')}{endpoint}", data=data, headers=headers, method=method
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            status = int(response.status)
+            raw = response.read()
+    except HTTPError as exc:
+        logger.detail("ERROR", "%s %s %s failed (HTTP %s)", service, method, endpoint, exc.code)
+        return None
+    except URLError as exc:
+        logger.detail("ERROR", "%s %s %s failed (%s)", service, method, endpoint, exc.reason)
+        return None
+    logger.detail("INFO", "%s %s %s (HTTP %d)", service, method, endpoint, status)
+    if method != "GET":
+        return status, None
+    try:
+        return status, json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        logger.detail("ERROR", "%s %s returned invalid JSON: %s", service, endpoint, exc)
+        return None
+
+
+def sonarr_replace(path: Path, logger: Logger) -> None:
+    """Resolve the episode, then delete the file and queue its replacement."""
+    marker = re.search(r"S([0-9]{2})E([0-9]{2})", path.name)
+    if marker is None:
+        logger.detail("ERROR", "Sonarr: could not parse SxxEyy: %s", path)
+        return
+    season, episode = int(marker.group(1)), int(marker.group(2))
+    series_name = path.parent.parent.name
+    if not series_name:
+        logger.detail("ERROR", "Sonarr: no series folder for %s", path)
+        return
+    wanted = series_name.casefold()
+
+    series_result = _api_call(
+        logger, "Sonarr", SONARR_URL, SONARR_API_KEY, "GET", "/api/v3/series"
+    )
+    if series_result is None:
+        return
+    series_data = series_result[1]
+    if not isinstance(series_data, list):
+        logger.detail("ERROR", "Sonarr: series list is not an array")
+        return
+    matches: list[dict[str, Any]] = []
+    for item in series_data:
+        if not isinstance(item, dict):
+            continue
+        title = item.get("title")
+        series_path = item.get("path")
+        leaf = _path_leaf(series_path)
+        if (isinstance(title, str) and title.casefold() == wanted) or leaf.casefold() == wanted:
+            matches.append(item)
+    if len(matches) != 1:
+        logger.detail(
+            "ERROR", "Sonarr: %d series matches for '%s' -- file kept", len(matches), series_name
+        )
+        return
+    try:
+        series_id = int(matches[0].get("id"))
+    except (TypeError, ValueError):
+        logger.detail("ERROR", "Sonarr: missing or invalid series id -- file kept")
+        return
+
+    episode_result = _api_call(
+        logger,
+        "Sonarr",
+        SONARR_URL,
+        SONARR_API_KEY,
+        "GET",
+        f"/api/v3/episode?seriesId={series_id}",
+    )
+    if episode_result is None:
+        return
+    episodes = episode_result[1]
+    if not isinstance(episodes, list):
+        logger.detail("ERROR", "Sonarr: episode list is not an array")
+        return
+    found = [
+        item
+        for item in episodes
+        if isinstance(item, dict)
+        and item.get("seasonNumber") == season
+        and item.get("episodeNumber") == episode
+    ]
+    if len(found) != 1:
+        logger.detail(
+            "ERROR", "Sonarr: %d episode matches for S%02dE%02d -- file kept",
+            len(found), season, episode,
+        )
+        return
+
+    try:
+        episode_id = int(found[0].get("id"))
+    except (TypeError, ValueError):
+        logger.detail("ERROR", "Sonarr: missing or invalid episode id -- file kept")
+        return
+
+    try:
+        path.unlink()
+    except OSError as exc:
+        logger.detail("ERROR", "Sonarr: could not delete %s: %s", path, exc)
+        return
+    logger.detail("INFO", "Sonarr: deleted corrupt file %s", path)
+    _api_call(
+        logger,
+        "Sonarr",
+        SONARR_URL,
+        SONARR_API_KEY,
+        "POST",
+        "/api/v3/command",
+        {"name": "RefreshSeries", "seriesId": series_id},
+    )
+    _api_call(
+        logger,
+        "Sonarr",
+        SONARR_URL,
+        SONARR_API_KEY,
+        "PUT",
+        "/api/v3/episode/monitor",
+        {"episodeIds": [episode_id], "monitored": True},
+    )
+    _api_call(
+        logger,
+        "Sonarr",
+        SONARR_URL,
+        SONARR_API_KEY,
+        "POST",
+        "/api/v3/command",
+        {"name": "EpisodeSearch", "episodeIds": [episode_id]},
+    )
+
+
+def parse_movie_name(name: str) -> tuple[str, str] | None:
+    """Title and year from a movie filename, ignoring bracketed release tags."""
+    clean = re.sub(r"\[[^\]]+\]", "", name)
+    year = re.search(r"\((\d{4})\)", clean)
+    if year is None:
+        return None
+    title = re.sub(r"\(\d{4}\).*$", "", clean).strip()
+    return (title, year.group(1)) if title else None
+
+
+def radarr_replace(path: Path, logger: Logger) -> None:
+    """Resolve the movie, then delete the file and queue its replacement."""
+    parsed = parse_movie_name(path.name)
+    if parsed is None:
+        logger.detail("ERROR", "Radarr: could not parse movie title/year: %s", path)
+        return
+    title, year = parsed
+    endpoint = "/api/v3/movie?" + urllib.parse.urlencode({"term": f"{title} {year}"})
+    result = _api_call(logger, "Radarr", RADARR_URL, RADARR_API_KEY, "GET", endpoint)
+    if result is None:
+        return
+    movies = result[1]
+    if not isinstance(movies, list):
+        logger.detail("ERROR", "Radarr: movie list is not an array")
+        return
+    wanted_year = int(year)
+    matches = [
+        item
+        for item in movies
+        if isinstance(item, dict)
+        and item.get("title") == title
+        and item.get("year") == wanted_year
+    ]
+    if len(matches) != 1:
+        logger.detail(
+            "ERROR", "Radarr: %d movie matches for '%s (%s)' -- file kept",
+            len(matches), title, year,
+        )
+        return
+    movie = matches[0]
+    try:
+        movie_id = int(movie.get("id"))
+    except (TypeError, ValueError):
+        logger.detail("ERROR", "Radarr: missing or invalid movie id -- file kept")
+        return
+    movie_file = movie.get("movieFile")
+    movie_file = movie_file if isinstance(movie_file, dict) else {}
+    raw_file_id = movie_file.get("id")
+    try:
+        movie_file_id = int(raw_file_id) if raw_file_id else None
+    except (TypeError, ValueError):
+        movie_file_id = None
+    if movie_file_id is not None:
+        remote_leaf = _path_leaf(movie_file.get("path"))
+        if remote_leaf != path.name:
+            logger.detail(
+                "ERROR", "Radarr: file leaf mismatch ('%s' vs '%s') -- file kept",
+                remote_leaf, path.name,
+            )
+            return
+
+    try:
+        path.unlink()
+    except OSError as exc:
+        logger.detail("ERROR", "Radarr: could not delete %s: %s", path, exc)
+        return
+    logger.detail("INFO", "Radarr: deleted corrupt file %s", path)
+    if movie_file_id is not None:
+        _api_call(
+            logger, "Radarr", RADARR_URL, RADARR_API_KEY, "DELETE",
+            f"/api/v3/moviefile/{movie_file_id}",
+        )
+    movie["monitored"] = True
+    _api_call(
+        logger, "Radarr", RADARR_URL, RADARR_API_KEY, "PUT", f"/api/v3/movie/{movie_id}", movie
+    )
+    _api_call(
+        logger,
+        "Radarr",
+        RADARR_URL,
+        RADARR_API_KEY,
+        "POST",
+        "/api/v3/command",
+        {"name": "MoviesSearch", "movieIds": [movie_id]},
+    )
+
+
+def handle_corrupt(
+    path: Path,
+    reason: str,
+    logger: Logger,
+    dry_run: bool,
+    corrupt_log: Path | None,
+) -> None:
+    """Record a corrupt file and request replacement without affecting exit status."""
+    logger.detail("ERROR", "Corrupt file: %s (%s)", path, reason)
+    if corrupt_log is not None:
+        try:
+            with corrupt_log.open("a", encoding="utf-8") as handle:
+                handle.write(f"{path}\n")
+        except OSError as exc:
+            logger.detail("ERROR", "Corrupt log write failed: %s", exc)
+    if re.search(r"S[0-9]{2}E[0-9]{2}", path.name):
+        service, api_key, handler = "Sonarr", SONARR_API_KEY, sonarr_replace
+    elif parse_movie_name(path.name) is not None:
+        service, api_key, handler = "Radarr", RADARR_API_KEY, radarr_replace
+    else:
+        logger.detail("ERROR", "Could not classify corrupt file as episode or movie: %s", path)
+        return
+    if dry_run:
+        logger.detail("INFO", "Dry run -- no %s replacement for %s", service, path)
+        return
+    if api_key == "YOUR_API_KEY_HERE":
+        logger.detail("INFO", "%s replacement skipped -- no API key configured", service)
+        return
+    try:
+        handler(path, logger)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        logger.detail("ERROR", "%s replacement failed for %s: %s", service, path, exc)
+
+
+def remux_mkv(
+    path: Path,
+    st: os.stat_result,
+    logger: Logger,
+    reason: str,
+    display: str,
+    dry_run: bool,
+    corrupt_log: Path | None,
+) -> bool:
     """Stream-copy the file through ffmpeg. Replace it only on ffmpeg success."""
     logger.detail("INFO", "Remuxing (%s): %s", reason, display)
     tmp = _track_temp(path.with_suffix(".tmp"))
@@ -309,6 +600,13 @@ def remux_mkv(path: Path, st: os.stat_result, logger: Logger, reason: str, displ
     if result.returncode != 0:
         logger.detail("ERROR", "ffmpeg remux failed (%d)", result.returncode)
         _discard_temp(tmp)
+        handle_corrupt(
+            path,
+            f"ffmpeg remux failed (exit {result.returncode}; {reason})",
+            logger,
+            dry_run,
+            corrupt_log,
+        )
         return False
     os.replace(tmp, path)
     _discard_temp(tmp)
@@ -688,8 +986,10 @@ def rename_tracks(path: Path, data: Json, logger: Logger, display: str) -> None:
 
 
 def write_tags(path: Path, meta: Metadata, logger: Logger, display: str) -> bool:
-    """Write the tag XML next to the file and apply it. True means a write failed."""
-    tags_path = _track_temp(path.parent / f"{_base_name(path)}.tags.tmp")
+    """Write the tag XML in the default temp dir and apply it. True means failed."""
+    handle, name = tempfile.mkstemp(prefix="apply-metadata-tags-", suffix=".xml")
+    os.close(handle)
+    tags_path = _track_temp(Path(name))
     try:
         tags_path.write_text(build_tags_xml(meta), encoding="utf-8")
         result = _run(["mkvpropedit", str(path), "--tags", f"all:{tags_path}"])
@@ -701,14 +1001,20 @@ def write_tags(path: Path, meta: Metadata, logger: Logger, display: str) -> bool
     return False
 
 
-def process_file(path: Path, display: str, logger: Logger, dry_run: bool) -> bool:
+def process_file(
+    path: Path,
+    display: str,
+    logger: Logger,
+    dry_run: bool,
+    corrupt_log: Path | None,
+) -> bool:
     """Process one MKV. True means a container-title or tag write failed."""
     logger.info("Processing %s", display, progress=True)
     st = path.stat()
 
     data = probe(path)
     if data is None:
-        if not remux_mkv(path, st, logger, "mkvmerge -J failed", display):
+        if not remux_mkv(path, st, logger, "mkvmerge -J failed", display, dry_run, corrupt_log):
             logger.finish("INFO", "Skipped %s", display)
             return False
         data = probe(path)
@@ -717,7 +1023,7 @@ def process_file(path: Path, display: str, logger: Logger, dry_run: bool) -> boo
             return False
 
     if _uid_needs_remux(data):
-        if not remux_mkv(path, st, logger, "UID sanity", display):
+        if not remux_mkv(path, st, logger, "UID sanity", display, dry_run, corrupt_log):
             logger.finish("INFO", "Skipped %s", display)
             return False
         data = probe(path)
@@ -809,6 +1115,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true", help="probe and log without writing")
     parser.add_argument("--debug", action="store_true", help="emit DEBUG lines")
     parser.add_argument("--audit-log", metavar="FILE", help="append timestamped log lines to FILE")
+    parser.add_argument("--corrupt-log", metavar="FILE", help="append corrupt MKV paths to FILE")
     parser.add_argument("file", nargs="?", metavar="FILE", help="single MKV to process")
     return parser
 
@@ -824,6 +1131,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     audit_path = Path(args.audit_log) if args.audit_log else None
+    corrupt_log = Path(args.corrupt_log) if args.corrupt_log else None
     if audit_path is not None:
         try:
             with audit_path.open("a", encoding="utf-8"):
@@ -855,7 +1163,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     had_error = False
     for path, display in work:
         try:
-            if process_file(path, display, logger, args.dry_run):
+            if process_file(path, display, logger, args.dry_run, corrupt_log):
                 had_error = True
         except OSError as exc:
             logger.detail("ERROR", "Failed to process %s: %s", display, exc)
