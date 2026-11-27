@@ -186,7 +186,7 @@ class Logger:
     def __init__(self, audit_path: Path | None, debug_enabled: bool) -> None:
         self._audit = audit_path
         self._debug_enabled = debug_enabled
-        self._progress_width = 0
+        self._progress_active = False
 
     def _write_audit(self, level: str, text: str) -> None:
         if self._audit is None:
@@ -213,7 +213,7 @@ class Logger:
         line = f"[{level}] {text}"
         if progress and not self._debug_enabled:
             if sys.stdout.isatty():
-                self._progress_width = len(line)
+                self._progress_active = True
                 print(line + "\r", end="", flush=True)
             return
         print(line, flush=True)
@@ -239,12 +239,14 @@ class Logger:
         text = message % args if args else message
         self._write_audit(level, text)
         line = f"[{level}] {text}"
-        if self._debug_enabled or not sys.stdout.isatty() or not self._progress_width:
+        if self._debug_enabled or not sys.stdout.isatty() or not self._progress_active:
             print(line, flush=True)
             return
-        pad = " " * max(self._progress_width - len(line), 0)
-        self._progress_width = 0
-        print(pad + "\r" + line + "\n", end="", flush=True)
+        self._progress_active = False
+        status, sep, rest = text.partition(" ")
+        width = len("Processing")
+        console_line = f"[{level}] {status.ljust(width)}{sep}{rest}"
+        print("\r" + console_line + "\n", end="", flush=True)
 
     def debug(self, message: str, *args: object) -> None:
         """Log a DEBUG line, only when --debug is set."""
