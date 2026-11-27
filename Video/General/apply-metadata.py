@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Apply Jellyfin metadata, track names and a clean container title to MKV files.
 
-Python port of apply-metadata.sh. The CLI, log lines and file effects match the
-shell version; the internals do not. All XML and JSON work is done in-process
-(xml.etree.ElementTree, json) instead of xmlstarlet and jq.
+Python port of apply-metadata.sh. The CLI and file effects match the shell
+version; per-file console logging is quiet unless --debug is set. All XML and
+JSON work is done in-process (xml.etree.ElementTree, json) instead of
+xmlstarlet and jq.
 
 Track names follow the stream's actual codec: a name that still says TrueHD or
 FLAC on an AAC stream is rewritten to AAC, and release-group junk is stripped
@@ -185,21 +186,41 @@ class Logger:
     def __init__(self, audit_path: Path | None, debug_enabled: bool) -> None:
         self._audit = audit_path
         self._debug_enabled = debug_enabled
+        self._progress_width = 0
 
-    def _emit(self, level: str, message: str, args: tuple[object, ...]) -> None:
+    def _write_audit(self, level: str, text: str) -> None:
+        if self._audit is None:
+            return
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            with self._audit.open("a", encoding="utf-8") as handle:
+                handle.write(f"{stamp}  [{level}] {text}\n")
+        except OSError as exc:
+            print(f"Audit log write failed: {exc}", file=sys.stderr)
+
+    def _emit(
+        self,
+        level: str,
+        message: str,
+        args: tuple[object, ...],
+        console: bool = True,
+        progress: bool = False,
+    ) -> None:
         text = message % args if args else message
-        print(f"[{level}] {text}", flush=True)
-        if self._audit is not None:
-            stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            try:
-                with self._audit.open("a", encoding="utf-8") as handle:
-                    handle.write(f"{stamp}  [{level}] {text}\n")
-            except OSError as exc:
-                print(f"Audit log write failed: {exc}", file=sys.stderr)
+        self._write_audit(level, text)
+        if not console:
+            return
+        line = f"[{level}] {text}"
+        if progress and not self._debug_enabled:
+            if sys.stdout.isatty():
+                self._progress_width = len(line)
+                print(line + "\r", end="", flush=True)
+            return
+        print(line, flush=True)
 
-    def info(self, message: str, *args: object) -> None:
+    def info(self, message: str, *args: object, progress: bool = False) -> None:
         """Log an INFO line."""
-        self._emit("INFO", message, args)
+        self._emit("INFO", message, args, progress=progress)
 
     def warn(self, message: str, *args: object) -> None:
         """Log a WARN line."""
@@ -208,6 +229,22 @@ class Logger:
     def error(self, message: str, *args: object) -> None:
         """Log an ERROR line."""
         self._emit("ERROR", message, args)
+
+    def detail(self, level: str, message: str, *args: object) -> None:
+        """Audit a detail line, printing it to console only under --debug."""
+        self._emit(level, message, args, console=self._debug_enabled)
+
+    def finish(self, level: str, message: str, *args: object) -> None:
+        """Finish the in-place status line, or log a normal terminal line."""
+        text = message % args if args else message
+        self._write_audit(level, text)
+        line = f"[{level}] {text}"
+        if self._debug_enabled or not sys.stdout.isatty() or not self._progress_width:
+            print(line, flush=True)
+            return
+        pad = " " * max(self._progress_width - len(line), 0)
+        self._progress_width = 0
+        print(pad + "\r" + line + "\n", end="", flush=True)
 
     def debug(self, message: str, *args: object) -> None:
         """Log a DEBUG line, only when --debug is set."""
@@ -248,7 +285,7 @@ def _restore_mtime(path: Path, st: os.stat_result) -> None:
 
 def remux_mkv(path: Path, st: os.stat_result, logger: Logger, reason: str, display: str) -> bool:
     """Stream-copy the file through ffmpeg. Replace it only on ffmpeg success."""
-    logger.info("Remuxing (%s): %s", reason, display)
+    logger.detail("INFO", "Remuxing (%s): %s", reason, display)
     tmp = _track_temp(path.with_suffix(".tmp"))
     result = _run(
         [
@@ -268,7 +305,7 @@ def remux_mkv(path: Path, st: os.stat_result, logger: Logger, reason: str, displ
         ]
     )
     if result.returncode != 0:
-        logger.error("ffmpeg remux failed (%d)", result.returncode)
+        logger.detail("ERROR", "ffmpeg remux failed (%d)", result.returncode)
         _discard_temp(tmp)
         return False
     os.replace(tmp, path)
@@ -514,7 +551,7 @@ def build_metadata(root: ET.Element, base: str, directory: Path, logger: Logger)
             etitle=etitle,
         )
 
-    logger.warn("Unknown NFO root <%s> -- skipping tags", root.tag)
+    logger.detail("WARN", "Unknown NFO root <%s> -- skipping tags", root.tag)
     return None
 
 
@@ -657,29 +694,33 @@ def write_tags(path: Path, meta: Metadata, logger: Logger, display: str) -> bool
     finally:
         _discard_temp(tags_path)
     if result.returncode != 0:
-        logger.error("mkvpropedit tag write failed: %s", display)
+        logger.detail("ERROR", "mkvpropedit tag write failed: %s", display)
         return True
     return False
 
 
 def process_file(path: Path, display: str, logger: Logger, dry_run: bool) -> bool:
     """Process one MKV. True means a container-title or tag write failed."""
-    logger.info("Processing: %s", display)
+    logger.info("Processing %s", display, progress=True)
     st = path.stat()
 
     data = probe(path)
     if data is None:
         if not remux_mkv(path, st, logger, "mkvmerge -J failed", display):
+            logger.finish("INFO", "Skipped %s", display)
             return False
         data = probe(path)
         if data is None:
+            logger.finish("INFO", "Skipped %s", display)
             return False
 
     if _uid_needs_remux(data):
         if not remux_mkv(path, st, logger, "UID sanity", display):
+            logger.finish("INFO", "Skipped %s", display)
             return False
         data = probe(path)
         if data is None:
+            logger.finish("INFO", "Skipped %s", display)
             return False
 
     base = _base_name(path)
@@ -690,12 +731,12 @@ def process_file(path: Path, display: str, logger: Logger, dry_run: bool) -> boo
         if element is None:
             # Keep the shell's path form: scan-mode paths carry their ./ prefix.
             nfo_display = posixpath.join(posixpath.dirname(display) or ".", nfo.name)
-            logger.warn("Invalid XML in NFO -- ignoring: %s", nfo_display)
+            logger.detail("WARN", "Invalid XML in NFO -- ignoring: %s", nfo_display)
         else:
             meta = build_metadata(element, base, path.parent, logger)
 
     if meta is not None and already_processed(path, meta):
-        logger.info("Skipping: Already processed.")
+        logger.finish("INFO", "Skipped %s", display)
         return False
 
     failed = False
@@ -709,7 +750,7 @@ def process_file(path: Path, display: str, logger: Logger, dry_run: bool) -> boo
             if result.returncode == 0:
                 logger.debug("Container title: '%s' -> '%s'", current_title, new_title)
             else:
-                logger.error("mkvpropedit container title failed: %s", display)
+                logger.detail("ERROR", "mkvpropedit container title failed: %s", display)
                 failed = True
 
         rename_tracks(path, data, logger, display)
@@ -719,7 +760,12 @@ def process_file(path: Path, display: str, logger: Logger, dry_run: bool) -> boo
 
         _restore_mtime(path, st)
 
-    logger.info("Finished: %s", display)
+    if dry_run:
+        logger.finish("INFO", "Skipped %s", display)
+    elif failed:
+        logger.finish("ERROR", "Failed %s", display)
+    else:
+        logger.finish("INFO", "Processed %s", display)
     return failed
 
 
@@ -810,7 +856,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             if process_file(path, display, logger, args.dry_run):
                 had_error = True
         except OSError as exc:
-            logger.error("Failed to process %s: %s", display, exc)
+            logger.detail("ERROR", "Failed to process %s: %s", display, exc)
+            logger.finish("ERROR", "Failed %s", display)
             had_error = True
 
     if had_error:
