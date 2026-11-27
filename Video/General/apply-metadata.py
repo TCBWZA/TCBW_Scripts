@@ -53,6 +53,11 @@ from urllib.error import HTTPError, URLError
 # U+2013 EN DASH, the generated episode-title separator. Escape keeps source ASCII.
 EN_DASH = "\u2013"
 
+ANSI_YELLOW = "\033[33m"
+ANSI_RED = "\033[31m"
+ANSI_RESET = "\033[0m"
+_LEVEL_COLOURS: dict[str, str] = {"WARN": ANSI_YELLOW, "ERROR": ANSI_RED}
+
 SONARR_URL = "http://docker.local:8989"
 SONARR_API_KEY = "YOUR_API_KEY_HERE"
 RADARR_URL = "http://docker.local:7878"
@@ -191,6 +196,14 @@ atexit.register(_cleanup_temp_files)
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
+def _screen_line(level: str, text: str) -> str:
+    """Build a console line, colouring only WARN/ERROR tags on a TTY."""
+    colour = _LEVEL_COLOURS.get(level)
+    if colour is None or not sys.stdout.isatty():
+        return f"[{level}] {text}"
+    return f"{colour}[{level}]{ANSI_RESET} {text}"
+
+
 class Logger:
     """Console logger matching the shell format, with optional audit file."""
 
@@ -221,7 +234,7 @@ class Logger:
         self._write_audit(level, text)
         if not console:
             return
-        line = f"[{level}] {text}"
+        line = _screen_line(level, text)
         if progress and not self._debug_enabled:
             if sys.stdout.isatty():
                 self._progress_active = True
@@ -249,14 +262,14 @@ class Logger:
         """Finish the in-place status line, or log a normal terminal line."""
         text = message % args if args else message
         self._write_audit(level, text)
-        line = f"[{level}] {text}"
+        line = _screen_line(level, text)
         if self._debug_enabled or not sys.stdout.isatty() or not self._progress_active:
             print(line, flush=True)
             return
         self._progress_active = False
         status, sep, rest = text.partition(" ")
         width = len("Processing")
-        console_line = f"[{level}] {status.ljust(width)}{sep}{rest}"
+        console_line = _screen_line(level, f"{status.ljust(width)}{sep}{rest}")
         print("\r" + console_line + "\n", end="", flush=True)
 
     def debug(self, message: str, *args: object) -> None:
