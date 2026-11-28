@@ -429,7 +429,7 @@ Python port of `apply-metadata.sh`. Standard library only (XML and JSON in-proce
 - Audio track names are corrected to the stream's actual codec (`TrueHD 5.1` -> `AAC 5.1`) instead of keeping a stale codec word, and XML is escaped once rather than twice.
 - Leading-zero season/episode values are parsed with `int()`, not as octal.
 
-> **Warning: invalid NFOs are deleted.** When `apply-metadata.py` finds an NFO whose XML will not parse, it logs an ERROR detail line and `[ERROR] Skipped <file>`, deletes the invalid NFO so Jellyfin can recreate it (the script does not call Jellyfin), and skips that MKV for the run with its container title and tags left untouched. The run stays non-fatal. With `--dry-run` it logs `would delete` and deletes nothing.
+> **Warning: malformed NFOs are deleted; multi-episode NFOs are merged.** An NFO whose XML will not parse is skipped for that run: in a real run the script logs an ERROR line plus `[ERROR] Skipped <file>`, deletes the NFO, leaves the MKV's container title and tags untouched, and keeps the run non-fatal. With `--dry-run` it logs `would delete` and removes nothing. Two or more `<episodedetails>` blocks are a supported multi-episode sidecar, which the script preserves and merges following Jellyfin: blocks are sorted by episode number, the lowest-numbered block supplies the base season, episode, show and air date, non-empty titles and plots are joined with ` / ` without truncation, `EPISODE_END` is the highest numeric episode, and the container title uses `SxxEyy-zz`. A later run skips the file because the double-processing guard also checks `EPISODE_END`.
 
 ---
 

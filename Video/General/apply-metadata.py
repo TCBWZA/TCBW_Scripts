@@ -675,17 +675,21 @@ def _find_nfo(directory: Path, base: str) -> Path | None:
     return None
 
 
+def _parse_xml_text(text: str) -> ET.Element | None:
+    text = "\n".join(line.lstrip() for line in text.split("\n"))
+    try:
+        return ET.fromstring(text)
+    except ET.ParseError:
+        return None
+
+
 def _parse_xml_bytes(data: bytes) -> ET.Element | None:
     """Parse NFO bytes after the shell's BOM and leading-whitespace cleanup."""
     try:
         text = data.decode("utf-8-sig")
     except UnicodeDecodeError:
         return None
-    text = "\n".join(line.lstrip() for line in text.split("\n"))
-    try:
-        return ET.fromstring(text)
-    except ET.ParseError:
-        return None
+    return _parse_xml_text(text)
 
 
 def _read_nfo(path: Path) -> ET.Element | None:
@@ -694,6 +698,24 @@ def _read_nfo(path: Path) -> ET.Element | None:
     except OSError:
         return None
     return _parse_xml_bytes(data)
+
+
+def _read_multi_episode_nfo(path: Path) -> list[ET.Element] | None:
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError):
+        return None
+    blocks = re.split(r"(?i)(?<=</episodedetails>)", text)
+    roots: list[ET.Element] = []
+    for block in blocks:
+        if not block.strip():
+            continue
+        root = _parse_xml_text(block)
+        if root is not None and root.tag == "episodedetails":
+            roots.append(root)
+    if len(roots) >= 2:
+        return roots
+    return None
 
 
 def _child_text(root: ET.Element, name: str) -> str:
@@ -714,6 +736,22 @@ def trim_trailing_dash(value: str) -> str:
     while value and value[-1] in "-" + EN_DASH + "\u2014":
         value = value[:-1].rstrip()
     return value
+
+
+def _episode_number(root: ET.Element) -> int | None:
+    value = _child_text(root, "episode")
+    return int(value) if re.fullmatch(r"[0-9]+", value) else None
+
+
+def _episode_sort_key(root: ET.Element) -> tuple[int, int]:
+    number = _episode_number(root)
+    if number is None:
+        return (1, 0)
+    return (0, number)
+
+
+def _join_episode_parts(parts: list[str]) -> str:
+    return " / ".join(part for part in parts if part)
 
 
 def _find_series_nfo(directory: Path) -> Path | None:
@@ -794,6 +832,75 @@ class Metadata:
     season: str = ""
     episode: str = ""
     etitle: str = ""
+    episode_end: str = ""
+
+
+def build_episode_metadata(root: ET.Element, directory: Path, logger: Logger) -> Metadata:
+    showtitle = _child_text(root, "showtitle") or resolve_series_root(directory)
+    showtitle = trim_trailing_dash(showtitle)
+    season = _child_text(root, "season")
+    episode = _child_text(root, "episode")
+    etitle = trim_trailing_dash(_child_text(root, "title") or f"Episode {episode}")
+    plot = _child_text(root, "plot")
+    aired = _child_text(root, "aired")
+    year = aired[:4]
+    if re.fullmatch(r"[0-9]+", season) and re.fullmatch(r"[0-9]+", episode):
+        marker = f"S{int(season):02d}E{int(episode):02d}"
+        container_title = f"{showtitle} {EN_DASH} {marker} {EN_DASH} {etitle}"
+    else:
+        logger.debug(
+            "Season/episode not numeric ('%s'/'%s') -- omitting SxxEyy from title",
+            season,
+            episode,
+        )
+        container_title = f"{showtitle} {EN_DASH} {etitle}"
+    return Metadata(
+        kind="EPISODE",
+        container_title=container_title,
+        tags={
+            "TITLE": etitle,
+            "DESCRIPTION": plot,
+            "SERIES": showtitle,
+            "SHOW": showtitle,
+            "SEASON": season,
+            "EPISODE": episode,
+            "DATE_RELEASED": year,
+            "AIRED": aired,
+        },
+        title=etitle,
+        plot=plot,
+        showtitle=showtitle,
+        season=season,
+        episode=episode,
+        etitle=etitle,
+    )
+
+
+def build_merged_episode_metadata(roots: list[ET.Element], directory: Path, logger: Logger) -> Metadata:
+    sorted_roots = sorted(roots, key=_episode_sort_key)
+    base = build_episode_metadata(sorted_roots[0], directory, logger)
+    etitle = _join_episode_parts([trim_trailing_dash(_child_text(root, "title")) for root in sorted_roots])
+    plot = _join_episode_parts([_child_text(root, "plot") for root in sorted_roots])
+    if not etitle:
+        etitle = base.etitle
+    base.title = etitle
+    base.plot = plot
+    base.etitle = etitle
+    base.tags["TITLE"] = etitle
+    base.tags["DESCRIPTION"] = plot
+    numeric_episodes = [number for root in sorted_roots if (number := _episode_number(root)) is not None]
+    if numeric_episodes:
+        episode_end = str(max(numeric_episodes))
+        base.episode_end = episode_end
+        base.tags["EPISODE_END"] = episode_end
+    if (
+        re.fullmatch(r"[0-9]+", base.season)
+        and re.fullmatch(r"[0-9]+", base.episode)
+        and re.fullmatch(r"[0-9]+", base.episode_end)
+    ):
+        marker = f"S{int(base.season):02d}E{int(base.episode):02d}-{int(base.episode_end):02d}"
+        base.container_title = f"{base.showtitle} {EN_DASH} {marker} {EN_DASH} {etitle}"
+    return base
 
 
 def build_metadata(root: ET.Element, base: str, directory: Path, logger: Logger) -> Metadata | None:
@@ -825,44 +932,7 @@ def build_metadata(root: ET.Element, base: str, directory: Path, logger: Logger)
         )
 
     if kind == "episodedetails":
-        showtitle = _child_text(root, "showtitle") or resolve_series_root(directory)
-        showtitle = trim_trailing_dash(showtitle)
-        season = _child_text(root, "season")
-        episode = _child_text(root, "episode")
-        etitle = trim_trailing_dash(_child_text(root, "title") or f"Episode {episode}")
-        plot = _child_text(root, "plot")
-        aired = _child_text(root, "aired")
-        year = aired[:4]
-        if re.fullmatch(r"[0-9]+", season) and re.fullmatch(r"[0-9]+", episode):
-            marker = f"S{int(season):02d}E{int(episode):02d}"
-            container_title = f"{showtitle} {EN_DASH} {marker} {EN_DASH} {etitle}"
-        else:
-            logger.debug(
-                "Season/episode not numeric ('%s'/'%s') -- omitting SxxEyy from title",
-                season,
-                episode,
-            )
-            container_title = f"{showtitle} {EN_DASH} {etitle}"
-        return Metadata(
-            kind="EPISODE",
-            container_title=container_title,
-            tags={
-                "TITLE": etitle,
-                "DESCRIPTION": plot,
-                "SERIES": showtitle,
-                "SHOW": showtitle,
-                "SEASON": season,
-                "EPISODE": episode,
-                "DATE_RELEASED": year,
-                "AIRED": aired,
-            },
-            title=etitle,
-            plot=plot,
-            showtitle=showtitle,
-            season=season,
-            episode=episode,
-            etitle=etitle,
-        )
+        return build_episode_metadata(root, directory, logger)
 
     logger.detail("WARN", "Unknown NFO root <%s> -- skipping tags", root.tag)
     return None
@@ -948,6 +1018,7 @@ def already_processed(path: Path, meta: Metadata) -> bool:
             and _simple_value(root, "SHOW") == meta.showtitle
             and _simple_value(root, "SEASON") == meta.season
             and _simple_value(root, "EPISODE") == meta.episode
+            and _simple_value(root, "EPISODE_END") == meta.episode_end
             and _tag_title(root) == meta.etitle
         )
     return _tag_title(root) == meta.title and _simple_value(root, "DESCRIPTION") == meta.plot
@@ -1050,19 +1121,24 @@ def process_file(
     if nfo is not None:
         element = _read_nfo(nfo)
         if element is None:
-            # Keep the shell's path form: scan-mode paths carry their ./ prefix.
-            nfo_display = posixpath.join(posixpath.dirname(display) or ".", nfo.name)
-            if dry_run:
-                logger.detail("ERROR", "Invalid XML in NFO -- would delete: %s", nfo_display)
+            roots = _read_multi_episode_nfo(nfo)
+            if roots is not None:
+                meta = build_merged_episode_metadata(roots, path.parent, logger)
             else:
-                logger.detail("ERROR", "Invalid XML in NFO -- deleting: %s", nfo_display)
-                try:
-                    nfo.unlink()
-                except OSError as exc:
-                    logger.detail("ERROR", "Could not delete invalid NFO %s: %s", nfo_display, exc)
-            logger.finish("ERROR", "Skipped %s", display)
-            return False
-        meta = build_metadata(element, base, path.parent, logger)
+                # Keep the shell's path form: scan-mode paths carry their ./ prefix.
+                nfo_display = posixpath.join(posixpath.dirname(display) or ".", nfo.name)
+                if dry_run:
+                    logger.detail("ERROR", "Invalid XML in NFO -- would delete: %s", nfo_display)
+                else:
+                    logger.detail("ERROR", "Invalid XML in NFO -- deleting: %s", nfo_display)
+                    try:
+                        nfo.unlink()
+                    except OSError as exc:
+                        logger.detail("ERROR", "Could not delete invalid NFO %s: %s", nfo_display, exc)
+                logger.finish("ERROR", "Skipped %s", display)
+                return False
+        else:
+            meta = build_metadata(element, base, path.parent, logger)
 
     if meta is not None and already_processed(path, meta):
         logger.finish("INFO", "Skipped %s", display)
