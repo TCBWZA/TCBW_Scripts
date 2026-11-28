@@ -1052,9 +1052,17 @@ def process_file(
         if element is None:
             # Keep the shell's path form: scan-mode paths carry their ./ prefix.
             nfo_display = posixpath.join(posixpath.dirname(display) or ".", nfo.name)
-            logger.detail("WARN", "Invalid XML in NFO -- ignoring: %s", nfo_display)
-        else:
-            meta = build_metadata(element, base, path.parent, logger)
+            if dry_run:
+                logger.detail("ERROR", "Invalid XML in NFO -- would delete: %s", nfo_display)
+            else:
+                logger.detail("ERROR", "Invalid XML in NFO -- deleting: %s", nfo_display)
+                try:
+                    nfo.unlink()
+                except OSError as exc:
+                    logger.detail("ERROR", "Could not delete invalid NFO %s: %s", nfo_display, exc)
+            logger.finish("ERROR", "Skipped %s", display)
+            return False
+        meta = build_metadata(element, base, path.parent, logger)
 
     if meta is not None and already_processed(path, meta):
         logger.finish("INFO", "Skipped %s", display)

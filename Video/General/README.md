@@ -423,11 +423,13 @@ Unified NFO-to-MKV-tag applier for both movies and episodes, which also remuxes 
 
 ### apply-metadata.py
 
-Python port of `apply-metadata.sh` with the same CLI and file effects. Standard library only (XML and JSON in-process), so it needs `python3` plus `mkvmerge`, `mkvpropedit`, `mkvextract` and `ffmpeg` on `PATH`; no `jq` or `xmlstarlet`. On a TTY, console logs show one status line per file: `Processing <FILENAME>` is overwritten in place by `Processed`, `Skipped` or `Failed <FILENAME>`; redirected output prints only the final line. `--debug` prints detailed lines, and `--audit-log` writes them regardless.
+Python port of `apply-metadata.sh`. Standard library only (XML and JSON in-process), so it needs `python3` plus `mkvmerge`, `mkvpropedit`, `mkvextract` and `ffmpeg` on `PATH`; no `jq` or `xmlstarlet`. On a TTY, console logs show one status line per file: `Processing <FILENAME>` is overwritten in place by `Processed`, `Skipped` or `Failed <FILENAME>`; redirected output prints only the final line. `--debug` prints detailed lines, and `--audit-log` writes them regardless.
 
 - Deployed to the media root (`/main/media/Video/apply-metadata.py`); the bash applier remains the one the callers invoke.
 - Audio track names are corrected to the stream's actual codec (`TrueHD 5.1` -> `AAC 5.1`) instead of keeping a stale codec word, and XML is escaped once rather than twice.
 - Leading-zero season/episode values are parsed with `int()`, not as octal.
+
+> **Warning: invalid NFOs are deleted.** When `apply-metadata.py` finds an NFO whose XML will not parse, it logs an ERROR detail line and `[ERROR] Skipped <file>`, deletes the invalid NFO so Jellyfin can recreate it (the script does not call Jellyfin), and skips that MKV for the run with its container title and tags left untouched. The run stays non-fatal. With `--dry-run` it logs `would delete` and deletes nothing.
 
 ---
 
